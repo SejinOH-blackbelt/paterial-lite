@@ -98,4 +98,16 @@ describe('回るメーターの判定', () => {
     expect(needleAngle(s, mid)).toBeCloseTo(before);
     expect(passTime(s, s.firstPass)).toBeCloseTo(p);
   });
+
+  it('通過の前に続けて2回タップしても、針は飛ばない', () => {
+    const s = startSession('clay', 'clay', 10, 10);
+    const rng = createRng(6);
+    const p = passTime(s, s.firstPass);
+    const watch = [p - 0.04, p - 0.02, p - 0.005];
+    const before = watch.map((t) => needleAngle(s, t));
+    tapSession(s, p - 0.08, rng);
+    tapSession(s, p - 0.05, rng);
+    watch.forEach((t, i) => expect(needleAngle(s, t)).toBeCloseTo(before[i]));
+    expect(passTime(s, s.firstPass)).toBeCloseTo(p);
+  });
 });

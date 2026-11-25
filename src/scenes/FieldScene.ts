@@ -71,7 +71,7 @@ export class FieldScene extends Phaser.Scene {
   private tickSession: HarvestSession | null = null;
   private scheduledLap = 0;
   /** 予約済みでまだ鳴っていない拍の音の取り消し方法 */
-  private pendingTicks: { when: number; cancel: () => void }[] = [];
+  private pendingTicks: { when: number; pass: number; cancel: () => void }[] = [];
   private resources = new Map<string, { image: Phaser.GameObjects.Image; chipColor: number }>();
   private button!: Phaser.GameObjects.Container;
   private meter!: Phaser.GameObjects.Graphics;
@@ -181,8 +181,8 @@ export class FieldScene extends Phaser.Scene {
     const pointId = this.player.session?.pointId;
     const t = this.audio.heardTime(perfMs);
     const res = harvestTap(this.player, this.field, t, t, this.rng);
-    // タップで次の1周の速さが変わるので、予約していた拍の音を取り直す
-    if (res) this.resetTicks();
+    // タップで次の1周の速さが変わるので、時刻が変わった拍の音だけ予約を取り直す
+    if (res) this.refreshTicks();
     // 判定はその場で一瞬で終わるので、判定に合った音をすぐ鳴らす
     this.audio.harvestSound(res?.judgement ?? null);
     this.squash(this.button, 0.9);
@@ -302,6 +302,20 @@ export class FieldScene extends Phaser.Scene {
     if (s) this.scheduledLap = nextPass(s, this.audio.now);
   }
 
+  /** 速さが変わったあと：時刻が変わった通過の音だけ取り消し、そこから予約し直す（時刻が同じ音はそのまま） */
+  private refreshTicks(): void {
+    const s = this.player.session;
+    if (!s || s !== this.tickSession) return; // 採取が終わった・変わったときは scheduleTicks で全部やり直す
+    let redoFrom = Infinity;
+    this.pendingTicks = this.pendingTicks.filter((t) => {
+      if (Math.abs(passTime(s, t.pass) - t.when) < 1e-6) return true;
+      t.cancel();
+      redoFrom = Math.min(redoFrom, t.pass);
+      return false;
+    });
+    if (redoFrom < Infinity) this.scheduledLap = Math.min(this.scheduledLap, redoFrom);
+  }
+
   /** 採取中は、針がゾーンの真ん中を通る音を少し先まで予約しておく（予約すると、処理が重くても音がずれない） */
   private scheduleTicks(): void {
     const s = this.player.session;
@@ -318,7 +332,7 @@ export class FieldScene extends Phaser.Scene {
     this.scheduledLap = Math.max(this.scheduledLap, nextPass(s, this.audio.now));
     while (passTime(s, this.scheduledLap) < lookahead) {
       const when = passTime(s, this.scheduledLap);
-      this.pendingTicks.push({ when, cancel: this.audio.tick(when, this.scheduledLap >= s.firstPass) });
+      this.pendingTicks.push({ when, pass: this.scheduledLap, cancel: this.audio.tick(when, this.scheduledLap >= s.firstPass) });
       this.scheduledLap++;
     }
   }

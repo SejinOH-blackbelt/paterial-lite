@@ -165,8 +165,10 @@ function changeSpeed(s: HarvestSession, t: number, pass: number, rng: Rng): void
   const f = base > pt ? fracAt(s, base) : 0;
   let end = snapToHalfBeat(base + (1 - f) * dur, s.origin);
   if (end <= base + 0.15) end += beatInterval() / 2;
-  // それまでの針の動きは prevSeg に残す（base より前の時刻の表示と判定に使う）
-  s.prevSeg = { ...s.seg };
+  // それまでの針の動きは prevSeg に残す（base より前の時刻の表示と判定に使う）。
+  // ただし、いまの区間がまだ始まっていない（通過の前に続けてタップした）ときは、
+  // 実際の針はまだ prevSeg の動きなので、prevSeg はそのままにして次の予定だけ差し替える
+  if (s.seg.start <= t || !s.prevSeg) s.prevSeg = { ...s.seg };
   s.seg = { start: base, startFrac: f, end, endIndex: pass + 1, dur };
   s.lapBeats = beats;
 }

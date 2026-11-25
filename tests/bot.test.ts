@@ -123,12 +123,14 @@ describe('住民Bot', () => {
     const rng = createRng(9);
     const all = [b.h];
     const seen = new Set<string>();
+    const ids = new Map<object, number>(); // 採取（セッション）ごとの番号
     for (let t = 0; t < 60; t += 1 / 60) {
       updateFieldState(f, t);
       stepWalker(b.h.walker, 1 / 60);
       updateHarvester(b.h, f, all, t + 0.2, 0);
       for (const e of updateBot(b, f, all, t, rng)) {
-        const key = `${String(b.lastSession && (b.lastSession as { seg: { start: number } }).seg.start)}-${e.pointId}-${e.result.pass}`;
+        if (!ids.has(b.lastSession as object)) ids.set(b.lastSession as object, ids.size);
+        const key = `${ids.get(b.lastSession as object)}-${e.result.pass}`; // 採取ごとに通過の番号は1回だけ
         expect(seen.has(key)).toBe(false);
         seen.add(key);
       }

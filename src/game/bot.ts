@@ -5,7 +5,7 @@ import { BOT, FIELD, RESOURCE, RESOURCE_POINTS } from './config';
 import { harvestTap, moveHarvester, claimedByOther, type FieldState, type Harvester, type HarvestResult } from './harvest';
 import { createWalker, setTarget, type Point } from './movement';
 import { between, gaussian, intBetween, type Rng } from './random';
-import { beatInterval, nextPass, passTime } from './rhythm';
+import { beatInterval, nearestPass, nextPass, passTime } from './rhythm';
 
 export interface BotProfile {
   id: string;
@@ -87,6 +87,10 @@ export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[]
       const limit = (s.lapBeats * beatInterval()) / 2 - 0.02;
       const error = Math.max(-limit, Math.min(limit, gaussian(rng, bot.profile.timingError)));
       let time = passTime(s, lap) + error;
+      // 速さが変わると1周の長さが均等でなくなるので、ねらった周として判定される時刻か確かめ、
+      // はみ出していたら通過の時刻に近づける（前や後ろの周を叩いたことにならないように）
+      for (let i = 0; i < 6 && nearestPass(s, time) !== lap; i++) time = (time + passTime(s, lap)) / 2;
+      if (nearestPass(s, time) !== lap) time = passTime(s, lap);
       if (time < now) time = now;
       bot.nextTap = { lap, time };
     }
