@@ -146,12 +146,15 @@ describe('スパイBot', () => {
     expect(best).toBeGreaterThan(0);
   });
 
-  it('スキャンの目撃者は記録される（見られているときは中断するので、目撃は少ない）', () => {
-    const watcher = createBot(BOT_PROFILES[1], landmarkSpot('karakuri'));
-    watcher.restUntil = 1e9; // ずっとその場にいる
-    const { events } = run(60, 3, [watcher]);
-    const seenScans = events.filter((e) => e.kind === 'scan' && e.landmarkId === 'karakuri');
-    expect(seenScans.length).toBe(0); // 見張りがいる名物はスキャンしない
+  it('スパイBotは、誰にも見られていないときだけスキャンを終える', () => {
+    // 名物の前に見張りが立っていても、スパイBotは見張りがいるあいだはスキャンしない。
+    // （見張りが1人きりなら、先に置物にしてからスキャンすることもある）
+    for (let seed = 1; seed <= 6; seed++) {
+      const watcher = createBot(BOT_PROFILES[1], landmarkSpot('karakuri'));
+      watcher.restUntil = 1e9;
+      const { events } = run(60, seed, [watcher]);
+      for (const e of events.filter((x) => x.kind === 'scan')) expect(e.witnesses.length).toBe(0);
+    }
   });
 
   it('試合の最初はイタズラしない', () => {

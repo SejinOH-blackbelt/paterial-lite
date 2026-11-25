@@ -139,6 +139,39 @@ export class GameAudio {
     this.chime(t + 0.08, 1568, 0.16, out);
   }
 
+  /** まねっこの音（4か所それぞれの高さ） */
+  tone(freq: number): void {
+    const t = this.ctx.currentTime;
+    const out = this.ctx.createGain();
+    out.gain.value = 0.8;
+    out.connect(this.master);
+    this.chime(t, freq, 0.2, out);
+  }
+
+  /** スキャン失敗の「ブブー」 */
+  bubu(volume = 1): void {
+    const t = this.ctx.currentTime;
+    const out = this.ctx.createGain();
+    out.gain.value = volume;
+    out.connect(this.master);
+    for (const [start, len] of [[0, 0.16], [0.2, 0.3]] as const) {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      o.type = 'square';
+      o.frequency.value = 150;
+      const lp = this.ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 900;
+      g.gain.setValueAtTime(0.0001, t + start);
+      g.gain.exponentialRampToValueAtTime(0.25, t + start + 0.01);
+      g.gain.setValueAtTime(0.25, t + start + len - 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + start + len);
+      o.connect(lp).connect(g).connect(out);
+      o.start(t + start);
+      o.stop(t + start + len + 0.02);
+    }
+  }
+
   /** 置物にされたときの「ぽふっ」（ホコリが舞う、気の抜けた音） */
   pofu(volume = 1): void {
     const t = this.ctx.currentTime;

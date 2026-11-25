@@ -250,3 +250,39 @@ export const VISION = {
   /** 見えない場所の暗さ（0〜1） */
   fogAlpha: 0.82,
 } as const;
+
+/** 8つの国（docs/vision.md より。名産と叩く音のうち、企画書にないものは仮） */
+export const COUNTRIES = [
+  { id: 'wa', name: '和', sound: 'ポコッ', specialty: 'からくり歯車' },
+  { id: 'yo', name: '洋', sound: 'カーン', specialty: '音符クリスタル' },
+  { id: 'chu', name: '中', sound: 'チーン', specialty: '量産レンガ' },
+  { id: 'nanbei', name: '南米', sound: 'ドンッ', specialty: '太陽の羽根' },
+  { id: 'viking', name: 'バイキング', sound: 'コツッ', specialty: '溶けない氷' },
+  { id: 'arabian', name: 'アラビアン', sound: 'サラッ', specialty: '蛇の砂時計' },
+  { id: 'atlantis', name: 'アトランティス', sound: 'ポチャン', specialty: '深海の真珠' },
+  { id: 'steampunk', name: 'スチームパンク', sound: 'ガイン', specialty: '雷のコイル' },
+] as const;
+
+/** この採取場がある国（スパイが忍び込んだ国） */
+export const HOME_COUNTRY = 'wa';
+
+/** 素材の呼び名 */
+export const RESOURCE_NAMES = { clay: '粘土', bamboo: '木材', stone: '鉱石' } as const;
+
+/** スキャンのミニゲーム（クイズ か まねっこ のどちらかがランダムに出る） */
+export const SCAN_GAME = {
+  /** クイズの問題数（全問正解でカケラ1つ） */
+  quizQuestions: 3,
+  /** 1問の制限時間（秒）。時間切れは不正解 */
+  secondsPerQuestion: 6,
+  /** まねっこで覚える長さ */
+  mimicLength: 4,
+  /** まねっこのお手本で、1つ光らせる時間（秒） */
+  mimicStepSeconds: 0.5,
+  /** まねっこの入力の制限時間（秒） */
+  mimicInputSeconds: 6,
+  /** まねっこが出る確率（それ以外はクイズ） */
+  mimicChance: 0.5,
+  /** スパイBotがスキャンに失敗する確率 */
+  botFailChance: 0.15,
+} as const;

@@ -3,7 +3,7 @@
 // ・ときどき名物へ向かい、まわりに誰もいなければスキャンする（誰か来たら中断して採取に戻る）
 // ・試合の途中から、目撃者がいないときだけイタズラ（置物にする）をする
 
-import { LANDMARKS, SPY, SPY_BOT } from './config';
+import { LANDMARKS, SCAN_GAME, SPY, SPY_BOT } from './config';
 import { updateBot, type Bot, type BotTapEvent } from './bot';
 import type { FieldState, Harvester } from './harvest';
 import { setTarget } from './movement';
@@ -66,7 +66,7 @@ export function updateSpyBot(
     } else {
       const ev = updateScan(spy, all, now);
       if (ev) {
-        out.spyEvents.push(ev);
+        out.spyEvents.push(ev); // 成功（scan）でも失敗（scanFail）でも、ひと休みして次へ
         mind.goal = null;
         bot.restUntil = now + 0.5;
       }
@@ -76,11 +76,11 @@ export function updateSpyBot(
 
   // 名物へ向かっている途中
   if (mind.goal) {
-    if (spy.scanned.has(mind.goal) || spy.scansThisRound >= SPY.scansPerRound) {
+    if (spy.scanned.has(mind.goal) || spy.failed.has(mind.goal) || spy.scansThisRound >= SPY.scansPerRound) {
       mind.goal = null;
     } else if (h.walker.target) {
       return out;
-    } else if (watchers().length === 0 && startScan(spy, now)) {
+    } else if (watchers().length === 0 && startScan(spy, now, null, rng() < SCAN_GAME.botFailChance)) {
       return out;
     } else {
       // 着いたけれど誰かに見られている → あきらめて採取に戻る
@@ -92,7 +92,7 @@ export function updateSpyBot(
   const idle = !h.session && !h.walker.target && !h.waitingFor && now >= bot.restUntil;
   if (idle && mind.decidedAfterRest !== bot.restUntil) {
     mind.decidedAfterRest = bot.restUntil;
-    const left = LANDMARKS.filter((l) => !spy.scanned.has(l.id));
+    const left = LANDMARKS.filter((l) => !spy.scanned.has(l.id) && !spy.failed.has(l.id));
     if (spy.scansThisRound < SPY.scansPerRound && left.length > 0 && rng() < SPY_BOT.scanChance) {
       const l = left[Math.floor(rng() * left.length)];
       mind.goal = l.id;

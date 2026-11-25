@@ -6,6 +6,7 @@
 // ・塗りは時間とともに剥がれ、塗りムラ（元のグレー）が大きくなる
 
 import { LANDMARKS, SPY } from './config';
+import { checkTimeout, createScanGame, type QuizContext, type ScanGame } from './scanGame';
 import type { Harvester } from './harvest';
 import type { Point } from './movement';
 import type { Rng } from './random';
@@ -14,7 +15,8 @@ export type Landmark = (typeof LANDMARKS)[number];
 
 /** スパイがしたことの記録（リザルトの振り返りと、会議の推理に使う） */
 export interface SpyEvent {
-  kind: 'scan' | 'prank';
+  /** scan：スキャン成功、scanFail：スキャン失敗（名物が「ブブー」と鳴る）、prank：イタズラ */
+  kind: 'scan' | 'scanFail' | 'prank';
   time: number;
   /** 起きた場所（スパイの足元） */
   at: Point;
@@ -31,8 +33,14 @@ export interface SpyState {
   scanned: Set<string>;
   scansThisRound: number;
   pranksThisRound: number;
-  /** スキャン中なら、その名物と始めた時刻 */
-  scan: { landmarkId: string; start: number } | null;
+  /**
+   * スキャン中なら、その名物と始めた時刻。
+   * game：プレイヤーのスパイが遊ぶミニゲーム（Botのスパイは null で、時間がたつと終わる）
+   * botFail：Botのスパイが、このスキャンに失敗するか
+   */
+  scan: { landmarkId: string; start: number; game: ScanGame | null; botFail: boolean } | null;
+  /** このラウンドでスキャンに失敗した名物（そのラウンドのあいだはもうスキャンできない） */
+  failed: Set<string>;
   /** 塗りムラの位置（胴体の中の割合 0〜1）。試合ごとに変わる */
   patch: { u: number; v: number };
   /** 試合が始まった時刻（塗りが剥がれる速さの基準） */
@@ -53,6 +61,7 @@ export function createSpyState(spy: Harvester, now: number, rng: Rng): SpyState 
     scansThisRound: 0,
     pranksThisRound: 0,
     scan: null,
+    failed: new Set(),
     patch: { u: 0.2 + rng() * 0.6, v: 0.25 + rng() * 0.55 },
     startedAt: now,
     log: [],
@@ -64,6 +73,7 @@ export function newRound(s: SpyState): void {
   s.scansThisRound = 0;
   s.pranksThisRound = 0;
   s.scan = null;
+  s.failed.clear();
 }
 
 /** 塗りムラの大きさ（ピクセル）。時間とともに大きくなる */
@@ -76,7 +86,7 @@ const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 
 /** p の近くにある、まだスキャンしていない名物（なければ null） */
 export function scannableLandmark(s: SpyState, p: Point): Landmark | null {
-  return LANDMARKS.find((l) => !s.scanned.has(l.id) && dist(l, p) <= SPY.scanRadius) ?? null;
+  return LANDMARKS.find((l) => !s.scanned.has(l.id) && !s.failed.has(l.id) && dist(l, p) <= SPY.scanRadius) ?? null;
 }
 
 /** スパイがスキャンを始められるか（名物のそば・立ち止まっている・回数が残っている・置物でない） */
@@ -92,15 +102,27 @@ export function canScan(s: SpyState): boolean {
   );
 }
 
-export function startScan(s: SpyState, now: number): boolean {
+/**
+ * スキャンを始める。
+ * プレイヤーのスパイなら quiz にその場の状態と rng を渡す → ミニゲーム（クイズ か まねっこ）が始まる。
+ * Botのスパイなら quiz は null → 時間がたつと終わる（botFail なら失敗）。
+ */
+export function startScan(
+  s: SpyState,
+  now: number,
+  quiz: { ctx: Omit<QuizContext, 'landmarkId'>; rng: Rng } | null = null,
+  botFail = false,
+): boolean {
   if (!canScan(s)) return false;
-  s.scan = { landmarkId: scannableLandmark(s, s.spy.walker.pos)!.id, start: now };
+  const landmarkId = scannableLandmark(s, s.spy.walker.pos)!.id;
+  const game = quiz ? createScanGame({ ...quiz.ctx, landmarkId }, now, quiz.rng) : null;
+  s.scan = { landmarkId, start: now, game, botFail };
   return true;
 }
 
-/** スキャンの進み具合（0〜1）。スキャン中でなければ 0 */
+/** Botのスキャンの進み具合（0〜1）。スキャン中でなければ 0 */
 export function scanProgress(s: SpyState, now: number): number {
-  return s.scan ? Math.min(1, (now - s.scan.start) / SPY.scanSeconds) : 0;
+  return s.scan && !s.scan.game ? Math.min(1, (now - s.scan.start) / SPY.scanSeconds) : 0;
 }
 
 /** p から半径 r の中にいる、置物でないパテ（except は除く） */
@@ -120,8 +142,20 @@ export function updateScan(s: SpyState, all: readonly Harvester[], now: number):
     s.scan = null; // 動いた・採取を始めた → 中断
     return null;
   }
-  if (now - s.scan.start < SPY.scanSeconds) return null;
+  // 終わったか：ミニゲームなら成功・失敗が決まったとき、Botなら時間がたったとき
+  const game = s.scan.game;
+  if (game) checkTimeout(game, now);
+  const finished = game ? game.result !== 'playing' : now - s.scan.start >= SPY.scanSeconds;
+  if (!finished) return null;
+  const success = game ? game.result === 'success' : !s.scan.botFail;
   s.scan = null;
+  if (!success) {
+    // 失敗：その名物は、このラウンドのあいだスキャンできない。「ブブー」と鳴るので近くにいれば気づく
+    s.failed.add(l.id);
+    const ev: SpyEvent = { kind: 'scanFail', time: now, at: { ...h.walker.pos }, landmarkId: l.id, witnesses: pawnsNear(all, h.walker.pos, SPY.witnessRadius, [h]) };
+    s.log.push(ev);
+    return ev;
+  }
   s.scanned.add(l.id);
   s.scansThisRound++;
   s.fragments++;

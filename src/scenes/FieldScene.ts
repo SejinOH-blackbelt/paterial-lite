@@ -34,6 +34,7 @@ import { GameAudio } from './audio';
 import { makePartTextures, type HeadPart } from './partTextures';
 import { PateView } from './PateView';
 import { LANDMARK_TEX, makeSpyTextures } from './spyTextures';
+import { PAD_TONES, ScanGameView } from './ScanGameView';
 import { EMPTY_RES_TEX, makeResourceTextures, RES_CHIP_COLOR, RES_SIZE, RES_TEX } from './resourceTextures';
 import { drawGround, makeTextures, TEX } from './textures';
 
@@ -90,6 +91,8 @@ export class FieldScene extends Phaser.Scene {
   private prankButton: Phaser.GameObjects.Container | null = null;
   private spyUi!: Phaser.GameObjects.Graphics;
   private fragmentsText: Phaser.GameObjects.Text | null = null;
+  /** スキャンのミニゲームの画面（遊んでいるあいだだけ） */
+  private scanView: ScanGameView | null = null;
   private marker!: Phaser.GameObjects.Image;
   private audio!: GameAudio;
   /** 0拍目の時刻（音の時計） */
@@ -168,9 +171,16 @@ export class FieldScene extends Phaser.Scene {
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
       this.audio.resume();
       if (this.player.frozen) return; // 置物にされたら、もう動けない
+      if (this.scanView?.owns(over)) {
+        this.downOnButton = true; // ミニゲームのパネルの上は、歩くタップにしない
+        return;
+      }
       if (this.scanButton && over.includes(this.scanButton)) {
         this.downOnButton = true;
-        if (startScan(this.spy, this.audio.heardTime())) this.squash(this.scanButton, 0.9);
+        // スキャン：その国の状態からクイズを作る（または、まねっこ）
+        if (startScan(this.spy, this.audio.heardTime(), { ctx: { stock: this.field.stock }, rng: this.rng })) {
+          this.squash(this.scanButton, 0.9);
+        }
         return;
       }
       if (this.prankButton && over.includes(this.prankButton)) {
@@ -347,8 +357,10 @@ export class FieldScene extends Phaser.Scene {
       }
     }
     if (this.isPlayerSpy) {
+      this.syncScanView(heard);
       const ev = updateScan(this.spy, this.all, heard);
       if (ev) this.onSpyEvent(ev, heard);
+      if (!this.spy.scan) this.syncScanView(heard);
     }
     const walking = isWalking(this.player.walker);
     if (!walking && this.marker.visible && this.marker.alpha === 1) {
@@ -614,6 +626,21 @@ export class FieldScene extends Phaser.Scene {
     }
   }
 
+  /** スキャンのミニゲームの画面を、遊んでいるあいだだけ出す */
+  private syncScanView(heard: number): void {
+    const game = this.spy.scan?.game ?? null;
+    if (!game) {
+      this.scanView?.destroy();
+      this.scanView = null;
+      return;
+    }
+    if (!this.scanView) {
+      this.scanView = new ScanGameView(this, game, (pad) => this.audio.tone(PAD_TONES[pad]), () => this.audio.heardTime());
+    }
+    this.scanView.update();
+    void heard;
+  }
+
   /** スパイがスキャンやイタズラをしたとき（見える範囲・聞こえる範囲にいれば分かる） */
   private onSpyEvent(ev: SpyEvent, heard: number): void {
     const me = this.player.walker.pos;
@@ -621,7 +648,13 @@ export class FieldScene extends Phaser.Scene {
     const volume = this.isPlayerSpy ? 1 : Math.max(0, 1 - d / BOT.hearRadius) ** 2;
     const delayMs = Math.max(0, ev.time - heard) * 1000;
     this.time.delayedCall(delayMs, () => {
-      if (ev.kind === 'scan') {
+      if (ev.kind === 'scanFail') {
+        // スキャン失敗：名物が「ブブー」と鳴る（近くにいれば聞こえる）
+        if (volume > 0.02) this.audio.bubu(volume);
+        const img = this.landmarks.get(ev.landmarkId!);
+        if (img) this.squash(img, 0.9);
+        if (this.isPlayerSpy) this.popText('スキャン失敗…（次のラウンドまで無理）', '#e03131', 14, 10);
+      } else if (ev.kind === 'scan') {
         // スキャン完了の瞬間、名物が一瞬光る（霧の外なら見えない）
         const img = this.landmarks.get(ev.landmarkId!);
         if (img) {
