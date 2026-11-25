@@ -21,6 +21,8 @@ export interface Harvester {
   waitingFor: string | null;
   /** スパイのイタズラで「土の置物」にされた（試合が終わるまで動けない） */
   frozen: boolean;
+  /** 素材の種類ごとに、これまで採取した数（ミッションの進み具合に使う） */
+  gathered: Record<string, number>;
 }
 
 /** 採取場の素材ポイントの残りの量（全員で共有する） */
@@ -31,7 +33,7 @@ export interface FieldState {
 }
 
 export function createHarvester(walker: Walker): Harvester {
-  return { walker, materials: 0, session: null, claim: null, waitingFor: null, frozen: false };
+  return { walker, materials: 0, session: null, claim: null, waitingFor: null, frozen: false, gathered: {} };
 }
 
 export function createFieldState(): FieldState {
@@ -173,6 +175,8 @@ export function harvestTap(h: Harvester, f: FieldState, t: number, now: number, 
   const gain = Math.min(r.gain, used);
   f.stock[id] -= used;
   h.materials += gain;
+  const kind = pointById(id).kind;
+  h.gathered[kind] = (h.gathered[kind] ?? 0) + gain;
   const depleted = used > 0 && f.stock[id] <= 0;
   if (depleted) {
     f.regenAt[id] = now + STOCK.regenSeconds;

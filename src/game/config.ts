@@ -231,12 +231,14 @@ export const SPY = {
   scanRadius: 40,
   /** スキャンにかかる秒数（そのあいだ動くと中断） */
   scanSeconds: 3,
-  /** 1ラウンドにスキャンできる数 */
-  scansPerRound: 2,
-  /** 集めれば勝ちになるカケラの数 */
+  /** スキャンに失敗した名物を、もう一度スキャンできるまでの秒数 */
+  scanFailLockSeconds: 60,
+  /** 集めれば勝ちになるカケラの数（名物の数） */
   fragmentsToWin: 3,
-  /** 1ラウンドにイタズラ（置物にする）できる回数 */
-  pranksPerRound: 1,
+  /** 試合が始まってから、イタズラ（置物にする）できるようになるまでの秒数 */
+  prankStartDelay: 20,
+  /** イタズラを一度使ってから、次に使えるまでの秒数 */
+  prankCooldown: 30,
   /** イタズラが届く距離 */
   prankRange: 52,
   /** イタズラやスキャンを見られてしまう距離（このなかにいるパテが目撃者になる） */
@@ -251,8 +253,6 @@ export const SPY = {
 export const SPY_BOT = {
   /** ひと休みのあと、採取ではなく名物のスキャンに向かう確率 */
   scanChance: 0.45,
-  /** イタズラを考え始めるまでの秒数（試合が始まってすぐはしない） */
-  prankAfterSeconds: 20,
   /** 近くにパテがいて、目撃者がいないとき、1秒あたりにイタズラする確率 */
   prankChancePerSecond: 0.15,
 } as const;
@@ -301,4 +301,51 @@ export const SCAN_GAME = {
   botFailChance: 0.15,
   /** 「ゲージがいちばん多い素材」の問題を出すのに必要な、1位と2位のゲージの差（割合） */
   gaugeMargin: 0.15,
+} as const;
+
+/** ミッション（いまは採取だけ。M6 で加工とお祈りを足す）。全員に同じものが割り当てられる */
+export const MISSIONS = [
+  { kind: 'clay', need: 6 },
+  { kind: 'bamboo', need: 5 },
+  { kind: 'stone', need: 4 },
+] as const;
+
+/** 試合 */
+export const MATCH = {
+  /** 制限時間（秒）。過ぎたらスパイの勝ち */
+  timeLimit: 300,
+  /** 会議の長さ（秒） */
+  meetingSeconds: 30,
+  /** 置物のそばで「呼び出し」できる距離 */
+  reportRadius: 56,
+  /** 緊急の呼び出しができる場所（鳥居。M6 で土の祠に移す）からの距離 */
+  emergencyRadius: 60,
+  /** 緊急の呼び出しの回数（1人あたり） */
+  emergencyPerPawn: 1,
+  /** スパイを当てたとき、スパイの素材から没収する割合（罰金） */
+  fineRate: 0.5,
+  /** ぬれぎぬのとき、投票した1体が払うお詫びの素材（賠償） */
+  compensation: 3,
+  /** 会議のあと、全員が集まる場所の半径（鳥居のまわり） */
+  regroupRadius: 64,
+} as const;
+
+/** 住民Botの疑い度（だれをどれだけ怪しいと思うか） */
+export const SUSPICION = {
+  /** イタズラを目撃した */
+  sawPrank: 100,
+  /** スキャンの光を見た */
+  sawScan: 40,
+  /** スキャン失敗の「ブブー」を近くで聞いた */
+  heardScanFail: 25,
+  /** 採取の「コツッ」を近くで聞いた（1回ごと） */
+  heardKotsu: 4,
+  /** 塗りムラが見える距離で、1秒ごとに上がる量（塗りムラが大きいほど多い） */
+  sawPatchPerSecond: 3,
+  /** 塗りムラが見える距離 */
+  patchSeeRadius: 44,
+  /** これ以上怪しいと思ったら投票する（それ未満ならスキップ） */
+  voteThreshold: 12,
+  /** 置物を見つけてから呼び出すまでの秒数 */
+  reportDelay: 1.2,
 } as const;

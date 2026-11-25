@@ -614,8 +614,8 @@ export class FieldScene extends Phaser.Scene {
     g.clear();
     if (!this.isPlayerSpy || !this.scanButton || !this.prankButton) return;
     const scanning = this.spy.scan !== null;
-    this.scanButton.setAlpha(canScan(this.spy) || scanning ? 1 : 0.4);
-    const target = prankTarget(this.spy, this.all);
+    this.scanButton.setAlpha(canScan(this.spy, heard) || scanning ? 1 : 0.4);
+    const target = prankTarget(this.spy, this.all, heard);
     this.prankButton.setAlpha(target ? 1 : 0.4);
     this.fragmentsText?.setText(`設計図のカケラ ${this.spy.fragments} / ${SPY.fragmentsToWin}`);
     if (scanning) {

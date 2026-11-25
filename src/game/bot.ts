@@ -2,7 +2,7 @@
 // 近くの空いている素材ポイントへ歩き、何周か採取したら、ひと休みして別の場所へ移ります。
 
 import { BOT, FIELD, RESOURCE, RESOURCE_POINTS } from './config';
-import { harvestTap, moveHarvester, claimedByOther, type FieldState, type Harvester, type HarvestResult } from './harvest';
+import { createHarvester, harvestTap, moveHarvester, claimedByOther, type FieldState, type Harvester, type HarvestResult } from './harvest';
 import { createWalker, setTarget, type Point } from './movement';
 import { between, gaussian, intBetween, type Rng } from './random';
 import { beatInterval, nearestPass, nextPass, passTime } from './rhythm';
@@ -44,7 +44,7 @@ export function createBot(profile: BotProfile, pos: Point): Bot {
 }
 
 function createHarvesterLike(pos: Point): Harvester {
-  return { walker: createWalker(pos), materials: 0, session: null, claim: null, waitingFor: null, frozen: false };
+  return createHarvester(createWalker(pos));
 }
 
 /** いまの場所から少し離れた場所へ歩く（着いたらひと休み） */

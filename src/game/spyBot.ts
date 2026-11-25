@@ -8,7 +8,7 @@ import { updateBot, type Bot, type BotTapEvent } from './bot';
 import type { FieldState, Harvester } from './harvest';
 import { setTarget } from './movement';
 import type { Rng } from './random';
-import { pawnsNear, prank, prankTarget, startScan, updateScan, type SpyEvent, type SpyState } from './spy';
+import { isLocked, pawnsNear, prank, prankTarget, startScan, updateScan, type SpyEvent, type SpyState } from './spy';
 
 export interface SpyBotMind {
   /** 向かっている名物（なければ null） */
@@ -50,9 +50,9 @@ export function updateSpyBot(
   // イタズラ：試合の途中から、近くに相手がいて、ほかに見ている人がいないときだけ（1秒ごとに考える）
   if (now >= mind.nextPrankRoll) {
     mind.nextPrankRoll = now + 1;
-    const target = prankTarget(spy, all);
+    const target = prankTarget(spy, all, now);
     const lonely = target && pawnsNear(all, h.walker.pos, SPY.witnessRadius, [h, target]).length === 0;
-    if (now - spy.startedAt >= SPY_BOT.prankAfterSeconds && lonely && rng() < SPY_BOT.prankChancePerSecond) {
+    if (lonely && rng() < SPY_BOT.prankChancePerSecond) {
       const ev = prank(spy, all, now);
       if (ev) out.spyEvents.push(ev);
     }
@@ -76,7 +76,7 @@ export function updateSpyBot(
 
   // 名物へ向かっている途中
   if (mind.goal) {
-    if (spy.scanned.has(mind.goal) || spy.failed.has(mind.goal) || spy.scansThisRound >= SPY.scansPerRound) {
+    if (spy.scanned.has(mind.goal) || isLocked(spy, mind.goal, now)) {
       mind.goal = null;
     } else if (h.walker.target) {
       return out;
@@ -92,8 +92,8 @@ export function updateSpyBot(
   const idle = !h.session && !h.walker.target && !h.waitingFor && now >= bot.restUntil;
   if (idle && mind.decidedAfterRest !== bot.restUntil) {
     mind.decidedAfterRest = bot.restUntil;
-    const left = LANDMARKS.filter((l) => !spy.scanned.has(l.id) && !spy.failed.has(l.id));
-    if (spy.scansThisRound < SPY.scansPerRound && left.length > 0 && rng() < SPY_BOT.scanChance) {
+    const left = LANDMARKS.filter((l) => !spy.scanned.has(l.id) && !isLocked(spy, l.id, now));
+    if (left.length > 0 && rng() < SPY_BOT.scanChance) {
       const l = left[Math.floor(rng() * left.length)];
       mind.goal = l.id;
       h.claim = null;

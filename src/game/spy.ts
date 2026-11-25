@@ -1,7 +1,8 @@
 // スパイのルール。画面表示（Phaser）には依存しません。
 // ・試合の最初に、6体のうち1体がスパイになる（バイキングから送り込まれた代表パテ。茶色に塗ってある）
-// ・スパイは名物のそばで3秒じっとすると「スキャン」でき、設計図のカケラを1つ得る（1ラウンド2つまで、同じ名物は1回）
-// ・スパイは1ラウンドに1回、近くのパテを「土の置物」にできる（試合が終わるまで戻らない）
+// ・スパイは名物のそばで「スキャン」でき（ミニゲーム）、成功すると設計図のカケラを1つ得る（同じ名物は1回）。
+//   失敗した名物は、しばらくスキャンできない
+// ・スパイは近くのパテを「土の置物」にできる（試合が終わるまで戻らない）。一度使うとしばらく使えない
 // ・スキャンやイタズラの瞬間、近くにいたパテは「目撃者」になる（会議の推理に使う）
 // ・塗りは時間とともに剥がれ、塗りムラ（元のグレー）が大きくなる
 
@@ -31,16 +32,16 @@ export interface SpyState {
   spy: Harvester;
   fragments: number;
   scanned: Set<string>;
-  scansThisRound: number;
-  pranksThisRound: number;
+  /** 最後にイタズラした時刻 */
+  lastPrankAt: number;
   /**
    * スキャン中なら、その名物と始めた時刻。
    * game：プレイヤーのスパイが遊ぶミニゲーム（Botのスパイは null で、時間がたつと終わる）
    * botFail：Botのスパイが、このスキャンに失敗するか
    */
   scan: { landmarkId: string; start: number; game: ScanGame | null; botFail: boolean } | null;
-  /** このラウンドでスキャンに失敗した名物（そのラウンドのあいだはもうスキャンできない） */
-  failed: Set<string>;
+  /** スキャンに失敗した名物と、もう一度スキャンできるようになる時刻 */
+  failed: Map<string, number>;
   /** 塗りムラの位置（胴体の中の割合 0〜1）。試合ごとに変わる */
   patch: { u: number; v: number };
   /** 試合が始まった時刻（塗りが剥がれる速さの基準） */
@@ -58,22 +59,13 @@ export function createSpyState(spy: Harvester, now: number, rng: Rng): SpyState 
     spy,
     fragments: 0,
     scanned: new Set(),
-    scansThisRound: 0,
-    pranksThisRound: 0,
+    lastPrankAt: -Infinity,
     scan: null,
-    failed: new Set(),
+    failed: new Map(),
     patch: { u: 0.2 + rng() * 0.6, v: 0.25 + rng() * 0.55 },
     startedAt: now,
     log: [],
   };
-}
-
-/** 新しいラウンド：スキャンとイタズラの回数を戻す */
-export function newRound(s: SpyState): void {
-  s.scansThisRound = 0;
-  s.pranksThisRound = 0;
-  s.scan = null;
-  s.failed.clear();
 }
 
 /** 塗りムラの大きさ（ピクセル）。時間とともに大きくなる */
@@ -84,22 +76,20 @@ export function patchSize(s: SpyState, now: number): number {
 
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 
-/** p の近くにある、まだスキャンしていない名物（なければ null） */
-export function scannableLandmark(s: SpyState, p: Point): Landmark | null {
-  return LANDMARKS.find((l) => !s.scanned.has(l.id) && !s.failed.has(l.id) && dist(l, p) <= SPY.scanRadius) ?? null;
+/** 失敗してスキャンできない名物か */
+export function isLocked(s: SpyState, id: string, now: number): boolean {
+  return (s.failed.get(id) ?? -Infinity) > now;
 }
 
-/** スパイがスキャンを始められるか（名物のそば・立ち止まっている・回数が残っている・置物でない） */
-export function canScan(s: SpyState): boolean {
+/** p の近くにある、まだスキャンしていない（失敗の待ち時間中でもない）名物（なければ null） */
+export function scannableLandmark(s: SpyState, p: Point, now: number): Landmark | null {
+  return LANDMARKS.find((l) => !s.scanned.has(l.id) && !isLocked(s, l.id, now) && dist(l, p) <= SPY.scanRadius) ?? null;
+}
+
+/** スパイがスキャンを始められるか（名物のそば・立ち止まっている・置物でない） */
+export function canScan(s: SpyState, now: number): boolean {
   const h = s.spy;
-  return (
-    !h.frozen &&
-    !h.walker.target &&
-    !h.session &&
-    s.scan === null &&
-    s.scansThisRound < SPY.scansPerRound &&
-    scannableLandmark(s, h.walker.pos) !== null
-  );
+  return !h.frozen && !h.walker.target && !h.session && s.scan === null && scannableLandmark(s, h.walker.pos, now) !== null;
 }
 
 /**
@@ -113,8 +103,8 @@ export function startScan(
   quiz: { ctx: Omit<QuizContext, 'landmarkId'>; rng: Rng } | null = null,
   botFail = false,
 ): boolean {
-  if (!canScan(s)) return false;
-  const landmarkId = scannableLandmark(s, s.spy.walker.pos)!.id;
+  if (!canScan(s, now)) return false;
+  const landmarkId = scannableLandmark(s, s.spy.walker.pos, now)!.id;
   const game = quiz ? createScanGame({ ...quiz.ctx, landmarkId }, now, quiz.rng) : null;
   s.scan = { landmarkId, start: now, game, botFail };
   return true;
@@ -150,14 +140,13 @@ export function updateScan(s: SpyState, all: readonly Harvester[], now: number):
   const success = game ? game.result === 'success' : !s.scan.botFail;
   s.scan = null;
   if (!success) {
-    // 失敗：その名物は、このラウンドのあいだスキャンできない。「ブブー」と鳴るので近くにいれば気づく
-    s.failed.add(l.id);
+    // 失敗：その名物は、しばらくスキャンできない。「ブブー」と鳴るので近くにいれば気づく
+    s.failed.set(l.id, now + SPY.scanFailLockSeconds);
     const ev: SpyEvent = { kind: 'scanFail', time: now, at: { ...h.walker.pos }, landmarkId: l.id, witnesses: pawnsNear(all, h.walker.pos, SPY.witnessRadius, [h]) };
     s.log.push(ev);
     return ev;
   }
   s.scanned.add(l.id);
-  s.scansThisRound++;
   s.fragments++;
   const ev: SpyEvent = {
     kind: 'scan',
@@ -170,9 +159,14 @@ export function updateScan(s: SpyState, all: readonly Harvester[], now: number):
   return ev;
 }
 
+/** イタズラが使えるまで、あと何秒か（0 なら使える） */
+export function prankWait(s: SpyState, now: number): number {
+  return Math.max(0, s.startedAt + SPY.prankStartDelay - now, s.lastPrankAt + SPY.prankCooldown - now);
+}
+
 /** イタズラできる相手（届く距離にいる、いちばん近い、置物でないパテ）。できなければ null */
-export function prankTarget(s: SpyState, all: readonly Harvester[]): Harvester | null {
-  if (s.spy.frozen || s.pranksThisRound >= SPY.pranksPerRound) return null;
+export function prankTarget(s: SpyState, all: readonly Harvester[], now: number): Harvester | null {
+  if (s.spy.frozen || prankWait(s, now) > 0) return null;
   const p = s.spy.walker.pos;
   const near = pawnsNear(all, p, SPY.prankRange, [s.spy]).sort((a, b) => dist(a.walker.pos, p) - dist(b.walker.pos, p));
   return near[0] ?? null;
@@ -180,14 +174,14 @@ export function prankTarget(s: SpyState, all: readonly Harvester[]): Harvester |
 
 /** イタズラ：相手を「土の置物」にする（試合が終わるまで戻らない）。近くにいたパテが目撃者になる */
 export function prank(s: SpyState, all: readonly Harvester[], now: number): SpyEvent | null {
-  const target = prankTarget(s, all);
+  const target = prankTarget(s, all, now);
   if (!target) return null;
   target.frozen = true;
   target.session = null;
   target.claim = null;
   target.waitingFor = null;
   target.walker.target = null;
-  s.pranksThisRound++;
+  s.lastPrankAt = now;
   const ev: SpyEvent = {
     kind: 'prank',
     time: now,
@@ -199,7 +193,7 @@ export function prank(s: SpyState, all: readonly Harvester[], now: number): SpyE
   return ev;
 }
 
-/** スパイがカケラを集めきったか */
-export function spyHasWon(s: SpyState): boolean {
+/** スパイが名物を全部スキャンしたか（勝つには、自分のミッションも全部終えている必要がある） */
+export function allScanned(s: SpyState): boolean {
   return s.fragments >= SPY.fragmentsToWin;
 }

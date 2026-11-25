@@ -4,7 +4,8 @@ import { createHarvester } from '../src/game/harvest';
 import { createWalker } from '../src/game/movement';
 import { createRng } from '../src/game/random';
 import { answerQuiz, checkTimeout, createScanGame, makeQuiz, mimicShowing, mimicStep, pressMimic, type MimicGame, type QuizGame } from '../src/game/scanGame';
-import { canScan, createSpyState, newRound, startScan, updateScan } from '../src/game/spy';
+import { SPY } from '../src/game/config';
+import { canScan, createSpyState, startScan, updateScan } from '../src/game/spy';
 
 const stock = { clay: 12, bamboo: 3, stone: 4 }; // ゲージ：粘土 100%・木材 30%・鉱石 50%
 
@@ -100,7 +101,7 @@ describe('スキャンのまねっこ', () => {
 });
 
 describe('スキャンの失敗', () => {
-  it('ミニゲームに失敗した名物は、そのラウンドのあいだスキャンできない。次のラウンドではできる', () => {
+  it('ミニゲームに失敗した名物は、しばらくスキャンできない。時間がたてばまたできる', () => {
     const torii = LANDMARKS[1];
     const spy = createHarvester(createWalker({ x: torii.x, y: torii.y + 20 }));
     const s = createSpyState(spy, 0, createRng(1));
@@ -109,9 +110,8 @@ describe('スキャンの失敗', () => {
     const ev = updateScan(s, [spy], 1)!;
     expect(ev.kind).toBe('scanFail');
     expect(s.fragments).toBe(0);
-    expect(canScan(s)).toBe(false);
-    newRound(s);
-    expect(canScan(s)).toBe(true);
+    expect(canScan(s, 2)).toBe(false);
+    expect(canScan(s, 1 + SPY.scanFailLockSeconds)).toBe(true);
   });
 
   it('ミニゲームに成功するとカケラを得る', () => {
