@@ -75,21 +75,25 @@ export class GameAudio {
    * - Good：ふつうの「ポコッ」
    * - Bad：低くこもった「ぽすっ」（失敗もコミカルに）
    */
-  harvestSound(judgement: 'excellent' | 'good' | 'bad' | null): void {
+  harvestSound(judgement: 'excellent' | 'good' | 'bad' | null, volume = 1): void {
     const t = this.ctx.currentTime;
+    // 音の大きさ（遠くのパテの音は小さく）
+    const out = this.ctx.createGain();
+    out.gain.value = volume;
+    out.connect(this.master);
     if (judgement === 'bad') {
-      this.thud(t);
+      this.thud(t, out);
       return;
     }
-    this.poko(t, judgement === 'excellent' ? 0.85 : 0.6, judgement === 'excellent' ? 560 : 520);
+    this.poko(t, judgement === 'excellent' ? 0.85 : 0.6, judgement === 'excellent' ? 560 : 520, out);
     if (judgement === 'excellent') {
-      this.chime(t + 0.04, 1318.5, 0.16); // ミ
-      this.chime(t + 0.1, 1975.5, 0.13); // シ（上がって明るく）
+      this.chime(t + 0.04, 1318.5, 0.16, out); // ミ
+      this.chime(t + 0.1, 1975.5, 0.13, out); // シ（上がって明るく）
     }
   }
 
   /** 素焼きをたたく「ポコッ」。中が空洞の、丸くて軽い音 */
-  private poko(t: number, vol: number, pitch: number): void {
+  private poko(t: number, vol: number, pitch: number, out: AudioNode): void {
     // 胴鳴り：高めから素早く下がる丸い音
     const body = this.ctx.createOscillator();
     const bg = this.ctx.createGain();
@@ -99,15 +103,15 @@ export class GameAudio {
     bg.gain.setValueAtTime(0.0001, t);
     bg.gain.exponentialRampToValueAtTime(vol, t + 0.004);
     bg.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-    body.connect(bg).connect(this.master);
+    body.connect(bg).connect(out);
     body.start(t);
     body.stop(t + 0.18);
     // 当たった瞬間の「コ」：ごく短いノイズを共鳴させる
-    this.noise(t, 0.02, 'bandpass', 1800, 3, vol * 0.5);
+    this.noise(t, 0.02, 'bandpass', 1800, 3, vol * 0.5, out);
   }
 
   /** 低くこもった「ぽすっ」 */
-  private thud(t: number): void {
+  private thud(t: number, out: AudioNode): void {
     const o = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     o.type = 'triangle';
@@ -119,15 +123,15 @@ export class GameAudio {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(0.5, t + 0.006);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
-    o.connect(lp).connect(g).connect(this.master);
+    o.connect(lp).connect(g).connect(out);
     o.start(t);
     o.stop(t + 0.17);
     // 砂をかぶったような「すっ」
-    this.noise(t, 0.06, 'lowpass', 700, 0.7, 0.25);
+    this.noise(t, 0.06, 'lowpass', 700, 0.7, 0.25, out);
   }
 
   /** キラッとした短いチャイム（澄んだ音に少しだけ倍音を足す） */
-  private chime(t: number, freq: number, vol: number): void {
+  private chime(t: number, freq: number, vol: number, out: AudioNode): void {
     for (const [mult, v] of [[1, vol], [2.01, vol * 0.25]] as const) {
       const o = this.ctx.createOscillator();
       const g = this.ctx.createGain();
@@ -136,14 +140,14 @@ export class GameAudio {
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(v, t + 0.005);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
-      o.connect(g).connect(this.master);
+      o.connect(g).connect(out);
       o.start(t);
       o.stop(t + 0.37);
     }
   }
 
   /** 短いノイズをフィルターに通した音（当たった瞬間の手ざわり） */
-  private noise(t: number, seconds: number, type: BiquadFilterType, freq: number, q: number, vol: number): void {
+  private noise(t: number, seconds: number, type: BiquadFilterType, freq: number, q: number, vol: number, out: AudioNode): void {
     const len = Math.floor(this.ctx.sampleRate * seconds);
     const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const d = buf.getChannelData(0);
@@ -156,7 +160,7 @@ export class GameAudio {
     f.Q.value = q;
     const g = this.ctx.createGain();
     g.gain.value = vol;
-    n.connect(f).connect(g).connect(this.master);
+    n.connect(f).connect(g).connect(out);
     n.start(t);
   }
 }

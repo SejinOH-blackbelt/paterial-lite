@@ -3,6 +3,7 @@
 import Phaser from 'phaser';
 import { PATE } from '../game/config';
 import type { Facing } from '../game/movement';
+import { partKey, type HeadPart } from './partTextures';
 import { PATE_SIZE, TEX } from './textures';
 
 /** 部品の置き場所（足元の中心を 0,0 とする） */
@@ -51,6 +52,17 @@ export class PateView extends Phaser.GameObjects.Container {
   /** 影の大きさに使う弾み具合（0〜1） */
   get bounce(): number {
     return this.stepBounce;
+  }
+
+  /** 頭のパーツ（6体を見分けるため）。胴体と一緒に揺れるように上半身に付ける */
+  private headPart: Phaser.GameObjects.Image | null = null;
+
+  setHeadPart(part: HeadPart): void {
+    this.headPart?.destroy();
+    this.headPart = this.scene.add
+      .image(0, PATE_LAYOUT.bodyBottom - PATE_SIZE.h + 5, partKey(part))
+      .setOrigin(0.5, 1);
+    this.upperBody.add(this.headPart);
   }
 
   setFacing(facing: Facing): void {

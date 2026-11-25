@@ -1,7 +1,8 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // 動きと採取のルールは src/game（movement.ts / harvest.ts / rhythm.ts）に任せます。
 import Phaser from 'phaser';
-import { COLORS, PATE, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, STOCK } from '../game/config';
+import { BOT, BOT_PROFILES, COLORS, PATE, PLAYER_PART, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, STOCK } from '../game/config';
+import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   createFieldState,
   createHarvester,
@@ -13,8 +14,10 @@ import {
   type Harvester,
 } from '../game/harvest';
 import { createWalker, isWalking, stepWalker } from '../game/movement';
+import { createRng, type Rng } from '../game/random';
 import { lapTime, needleAngle, nextLap, type HarvestSession, type Judgement } from '../game/rhythm';
 import { GameAudio } from './audio';
+import { makePartTextures, type HeadPart } from './partTextures';
 import { PateView } from './PateView';
 import { EMPTY_RES_TEX, makeResourceTextures, RES_CHIP_COLOR, RES_SIZE, RES_TEX } from './resourceTextures';
 import { drawGround, makeTextures, TEX } from './textures';
@@ -32,10 +35,32 @@ const JUDGE_TEXT: Record<Judgement, { text: string; color: string }> = {
   bad: { text: 'Bad', color: '#6f7378' },
 };
 
+/** 画面に出ているパテ1体（ルール上の状態と、見た目のセット） */
+interface PateEntity {
+  h: Harvester;
+  view: PateView;
+  shadow: Phaser.GameObjects.Image;
+  /** 住民Botなら、その頭脳。プレイヤーなら null */
+  bot: Bot | null;
+}
+
+/** 住民Botの最初の位置（採取場にばらけて立つ） */
+const BOT_STARTS = [
+  { x: 60, y: 140 },
+  { x: 300, y: 150 },
+  { x: 200, y: 260 },
+  { x: 300, y: 470 },
+  { x: 60, y: 580 },
+] as const;
+
 export class FieldScene extends Phaser.Scene {
+  /** プレイヤーのパテ（pates[0]） */
   private player!: Harvester;
   private pateSprite!: PateView;
-  private shadow!: Phaser.GameObjects.Image;
+  private pates: PateEntity[] = [];
+  /** 採取場にいる全員の状態（取り合いの判定に使う） */
+  private all: Harvester[] = [];
+  private rng!: Rng;
   private marker!: Phaser.GameObjects.Image;
   private audio!: GameAudio;
   /** 0拍目の時刻（音の時計） */
@@ -62,6 +87,7 @@ export class FieldScene extends Phaser.Scene {
   create(): void {
     makeTextures(this);
     makeResourceTextures(this);
+    makePartTextures(this);
     drawGround(this, SCREEN.width, SCREEN.height);
 
     // 音の時計。Phaser が用意した AudioContext を使う（なければ自分で作る）
@@ -76,9 +102,17 @@ export class FieldScene extends Phaser.Scene {
       this.resources.set(r.id, { image: img, chipColor: RES_CHIP_COLOR[r.kind] });
     }
 
-    this.player = createHarvester(createWalker({ x: SCREEN.width / 2, y: SCREEN.height * 0.6 }));
-    this.shadow = this.add.image(0, 0, TEX.shadow);
-    this.pateSprite = new PateView(this, 0, 0);
+    // パテ6体：プレイヤー1体 + 住民Bot 5体
+    this.rng = createRng(Date.now());
+    this.pates = [];
+    this.addPate(createHarvester(createWalker({ x: SCREEN.width / 2, y: SCREEN.height * 0.6 })), PLAYER_PART, null);
+    BOT_PROFILES.forEach((profile, i) => {
+      const bot = createBot(profile, BOT_STARTS[i]);
+      this.addPate(bot.h, profile.part, bot);
+    });
+    this.player = this.pates[0].h;
+    this.pateSprite = this.pates[0].view;
+    this.all = this.pates.map((e) => e.h);
     this.marker = this.add.image(0, 0, TEX.marker).setVisible(false);
 
     this.meter = this.add.graphics().setDepth(9200);
@@ -103,7 +137,14 @@ export class FieldScene extends Phaser.Scene {
       if (p.isDown && !this.downOnButton) this.goTo(p, false);
     });
 
-    this.syncSprite(0, false);
+    for (const e of this.pates) this.syncPate(e, 0);
+  }
+
+  private addPate(h: Harvester, part: HeadPart, bot: Bot | null): void {
+    const shadow = this.add.image(0, 0, TEX.shadow);
+    const view = new PateView(this, 0, 0);
+    view.setHeadPart(part);
+    this.pates.push({ h, view, shadow, bot });
   }
 
   private makeButton(): Phaser.GameObjects.Container {
@@ -118,7 +159,9 @@ export class FieldScene extends Phaser.Scene {
   }
 
   private goTo(p: Phaser.Input.Pointer, showMarker: boolean): void {
-    moveHarvester(this.player, { x: p.worldX, y: p.worldY });
+    const result = moveHarvester(this.player, { x: p.worldX, y: p.worldY }, this.all);
+    // ほかのパテが使っているポイントなら、そばで順番を待つ（空いたら自動で採取を始める）
+    if (result === 'wait' && showMarker) this.popText('じゅんばん待ち', '#2b1d14', 15, 0);
     const t = this.player.walker.target!;
     // 前の目印の「消える演出」が残っていたら止めてから、表示し直す
     this.tweens.killTweensOf(this.marker);
@@ -230,10 +273,13 @@ export class FieldScene extends Phaser.Scene {
     // スマホがもたついて1コマが長くなっても、ワープしないように上限をつける
     const dt = Math.min(deltaMs, 100) / 1000;
     const heard = this.audio.heardTime();
-    stepWalker(this.player.walker, dt);
     updateFieldState(this.field, heard);
-    // 最初の判定は、まだ音の予約が間に合う周から選ぶ（scheduleTicks と同じ締め切り）
-    updateHarvester(this.player, this.field, this.audio.now + SCHEDULE_AHEAD, this.origin);
+    for (const e of this.pates) {
+      stepWalker(e.h.walker, dt);
+      // 最初の判定は、まだ音の予約が間に合う周から選ぶ（scheduleTicks と同じ締め切り）
+      updateHarvester(e.h, this.field, this.all, this.audio.now + SCHEDULE_AHEAD, this.origin);
+      if (e.bot) for (const ev of updateBot(e.bot, this.field, this.all, heard, this.rng)) this.onBotTap(e, ev);
+    }
     const walking = isWalking(this.player.walker);
     if (!walking && this.marker.visible && this.marker.alpha === 1) {
       this.tweens.add({ targets: this.marker, alpha: 0, duration: 200, onComplete: () => this.marker.setVisible(false) });
@@ -241,7 +287,7 @@ export class FieldScene extends Phaser.Scene {
     this.scheduleTicks();
     this.drawMeter(heard);
     this.drawStock(heard);
-    this.syncSprite(dt, walking);
+    for (const e of this.pates) this.syncPate(e, dt);
   }
 
   /** 採取中は、針がゾーンの真ん中を通る音を少し先まで予約しておく（予約すると、処理が重くても音がずれない） */
@@ -359,15 +405,26 @@ export class FieldScene extends Phaser.Scene {
     }
   }
 
+  /** 住民Botが採取したとき：近いほど大きく音が聞こえる。遠いと聞こえない */
+  private onBotTap(e: PateEntity, ev: BotTapEvent): void {
+    e.view.playHit();
+    const point = this.resources.get(ev.pointId);
+    if (point) this.reactToHit(point.image, point.chipColor);
+    const me = this.player.walker.pos;
+    const d = Math.hypot(e.h.walker.pos.x - me.x, e.h.walker.pos.y - me.y);
+    const volume = Math.max(0, 1 - d / BOT.hearRadius) ** 2;
+    if (volume > 0.02) this.audio.harvestSound(ev.result.judgement, volume);
+  }
+
   /** 計算した位置と歩行状態を絵に反映する */
-  private syncSprite(dt: number, walking: boolean): void {
-    const { x, y } = this.player.walker.pos;
-    this.pateSprite.setPosition(x, y);
-    this.pateSprite.setFacing(this.player.walker.facing);
-    this.pateSprite.update(dt, walking);
-    this.shadow.setPosition(x, y - 1).setScale(1 - this.pateSprite.bounce * PATE.shadowShrink);
-    // 下にいるものほど手前に表示する（あとでパテが6体になったときのため）
-    this.pateSprite.setDepth(y);
-    this.shadow.setDepth(y - PateView.height);
+  private syncPate(e: PateEntity, dt: number): void {
+    const { x, y } = e.h.walker.pos;
+    e.view.setPosition(x, y);
+    e.view.setFacing(e.h.walker.facing);
+    e.view.update(dt, isWalking(e.h.walker));
+    e.shadow.setPosition(x, y - 1).setScale(1 - e.view.bounce * PATE.shadowShrink);
+    // 下にいるものほど手前に表示する
+    e.view.setDepth(y);
+    e.shadow.setDepth(y - PateView.height);
   }
 }

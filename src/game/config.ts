@@ -132,6 +132,8 @@ export const RESOURCE = {
   tapCenterUp: 24,
   /** パテが立つ位置（素材の中心からどれだけ下か） */
   standOffsetY: 44,
+  /** 使用中のポイントのそばで待つ場所（立つ場所からどれだけ右か） */
+  waitOffsetX: 34,
   /** 立つ位置にこれだけ近ければ採取が始まる */
   harvestRadius: 6,
 } as const;
@@ -152,3 +154,38 @@ export const RESOURCE_REACTION = {
   chipSpread: 21, // 左右に飛ぶ距離（ピクセル）
   chipRise: 18, // 上に飛ぶ距離（ピクセル）
 } as const;
+
+/** 頭のパーツ（6体を見分けるため。プレイヤーは花） */
+export const HEAD_PARTS = ['flower', 'kasa', 'horn', 'flag', 'sprout', 'feather'] as const;
+export const PLAYER_PART = 'flower';
+
+/** 住民Bot（和の国の住民）の動き */
+export const BOT = {
+  /** 1か所で何回採取したら、別の場所へ移るか（この範囲でランダム） */
+  tapsMin: 4,
+  tapsMax: 9,
+  /** 1周ぶん採取を休む確率（いつも完璧に叩かないように） */
+  skipLapChance: 0.15,
+  /** 移る前にひと休みする秒数（この範囲でランダム） */
+  restMin: 0.6,
+  restMax: 1.8,
+  /** 採取をやめたあと、ひと歩き離れる距離（この範囲でランダム） */
+  stepAsideMin: 40,
+  stepAsideMax: 80,
+  /** いちばん近い空きポイントを選ぶ確率（それ以外はほかの空きポイントからランダム） */
+  nearestChance: 0.7,
+  /** Botの採取音が聞こえる距離。これより遠いと聞こえない */
+  hearRadius: 170,
+} as const;
+
+/**
+ * 住民Botごとの個性。
+ * part：頭のパーツ、timingError：タイミングのズレの大きさ（秒、小さいほど上手）
+ */
+export const BOT_PROFILES = [
+  { id: 'kasa', part: 'kasa', timingError: 0.03 }, // 名人
+  { id: 'horn', part: 'horn', timingError: 0.05 },
+  { id: 'flag', part: 'flag', timingError: 0.07 },
+  { id: 'sprout', part: 'sprout', timingError: 0.09 },
+  { id: 'feather', part: 'feather', timingError: 0.12 }, // のんびり屋
+] as const;
