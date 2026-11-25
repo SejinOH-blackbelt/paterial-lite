@@ -10,6 +10,12 @@ export const RES_TEX: Record<ResourceKind, string> = {
   stone: 'res-stone',
 };
 
+export const EMPTY_RES_TEX: Record<ResourceKind, string> = {
+  clay: 'res-clay-empty',
+  bamboo: 'res-bamboo-empty',
+  stone: 'res-stone-empty',
+};
+
 export const RES_CHIP_COLOR: Record<ResourceKind, number> = {
   clay: COLORS.clayLight,
   bamboo: COLORS.bambooLight,
@@ -114,5 +120,45 @@ export function makeResourceTextures(scene: Phaser.Scene): void {
     ctx.strokeStyle = color(COLORS.stoneDark);
     ctx.lineWidth = 0.8;
     ctx.stroke(new Path2D('M 33 24 L 30 28 L 32 31 L 30 34 M 30 28 L 27 29 M 43 40 L 41 44 L 44 46'));
+  });
+
+  drawPart(scene, EMPTY_RES_TEX.clay, w, h, (ctx) => {
+    piece(ctx, 'M 3 44 Q 5 39 15 39 Q 20 35 32 38 Q 48 37 53 44 Q 55 49 41 50 Q 21 52 9 49 Q 4 48 3 44 Z',
+      clay, 'M 7 43 Q 24 37 47 42 Q 39 48 22 47 Q 12 47 7 43 Z',
+      'M 7 46 Q 21 51 43 47 Q 30 52 12 49 Z');
+    ctx.strokeStyle = color(COLORS.clayLight);
+    ctx.lineWidth = 1;
+    ctx.stroke(new Path2D('M 14 43 Q 22 41 32 42 M 23 46 Q 32 46 40 43'));
+  });
+
+  drawPart(scene, EMPTY_RES_TEX.bamboo, w, h, (ctx) => {
+    for (const [x, y, height] of [[30, 33, 13], [17, 38, 11], [40, 41, 8]]) {
+      ctx.save();
+      ctx.translate(x, y);
+      piece(ctx, `M -5 0 Q 0 -4 5 0 L 5 ${height} Q 0 ${height + 3} -5 ${height} Z`,
+        bamboo, `M 1 0 H 6 V ${height + 3} H 1 Z`,
+        `M -4 2 H -2 V ${height} H -4 Z`, -5);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 5, 2.7, 0, 0, Math.PI * 2);
+      ctx.fillStyle = color(COLORS.bambooLight);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 2.5, 1.2, 0, 0, Math.PI * 2);
+      ctx.fillStyle = color(COLORS.grassDark);
+      ctx.fill();
+      ctx.restore();
+    }
+  });
+
+  drawPart(scene, EMPTY_RES_TEX.stone, w, h, (ctx) => {
+    for (const [x, y] of [[30, 36], [12, 42], [39, 42]]) {
+      ctx.save();
+      ctx.translate(x, y);
+      piece(ctx, 'M 0 5 L 3 1 L 8 0 L 12 3 L 11 7 Q 4 9 0 5 Z',
+        stone, 'M 8 0 L 13 2 V 9 H 0 L 3 6 L 8 5 Z',
+        'M 2 4 L 4 2 L 8 1 L 9 3 L 5 4 Z');
+      ctx.restore();
+    }
   });
 }

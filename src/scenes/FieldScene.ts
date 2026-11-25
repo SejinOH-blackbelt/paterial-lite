@@ -16,7 +16,7 @@ import { createWalker, isWalking, stepWalker } from '../game/movement';
 import { lapTime, needleAngle, nextLap, type HarvestSession, type Judgement } from '../game/rhythm';
 import { GameAudio } from './audio';
 import { PateView } from './PateView';
-import { makeResourceTextures, RES_CHIP_COLOR, RES_SIZE, RES_TEX } from './resourceTextures';
+import { EMPTY_RES_TEX, makeResourceTextures, RES_CHIP_COLOR, RES_SIZE, RES_TEX } from './resourceTextures';
 import { drawGround, makeTextures, TEX } from './textures';
 
 /** 「たたく」ボタンの位置と大きさ */
@@ -259,35 +259,48 @@ export class FieldScene extends Phaser.Scene {
     const top = -90; // ゾーンの真ん中は真上
     const half = s.meter.perfectDeg / 2;
     const rad = Phaser.Math.DegToRad;
-    // 円の道
-    this.meter.lineStyle(12, COLORS.ink, 0.35);
+    // 素焼きの溝とその縁
+    this.meter.lineStyle(17, COLORS.ink);
     this.meter.strokeCircle(x, y, METER_R);
-    // 「おしい」ゾーン（ぴったりの両側）
-    this.meter.lineStyle(12, 0xffc078, 1);
+    this.meter.lineStyle(12, COLORS.meterTrack);
+    this.meter.strokeCircle(x, y, METER_R);
+    // 「おしい」ゾーン（中央は「ぴったり」で上塗り）
+    this.meter.lineStyle(12, COLORS.meterGood);
     this.meter.beginPath();
     this.meter.arc(x, y, METER_R, rad(top - half - s.meter.goodDeg), rad(top + half + s.meter.goodDeg));
     this.meter.strokePath();
     // 「ぴったり」ゾーン
-    this.meter.lineStyle(12, 0xd9480f, 1);
+    this.meter.lineStyle(12, COLORS.meterPerfect);
     this.meter.beginPath();
     this.meter.arc(x, y, METER_R, rad(top - half), rad(top + half));
     this.meter.strokePath();
+    // 真上の目盛りは拍と重なる位置
+    this.meter.lineStyle(2, COLORS.harvestHighlight);
+    this.meter.lineBetween(x, y - METER_R - 4, x, y - METER_R + 4);
     // 針（準備の間はうすく）
     const lapNow = Math.round((heard - s.origin) / s.meter.lap);
     const ready = lapNow >= s.firstLap;
     const a = rad(top + needleAngle(s, heard));
     const cos = Math.cos(a);
     const sin = Math.sin(a);
-    this.meter.lineStyle(4, COLORS.ink, ready ? 1 : 0.35);
-    this.meter.lineBetween(x + cos * (BUTTON.r + 2), y + sin * (BUTTON.r + 2), x + cos * (METER_R + 9), y + sin * (METER_R + 9));
-    this.meter.fillStyle(0xffd43b, ready ? 1 : 0.4);
-    this.meter.fillCircle(x + cos * METER_R, y + sin * METER_R, 7);
-    this.meter.lineStyle(2, COLORS.ink, ready ? 1 : 0.4);
-    this.meter.strokeCircle(x + cos * METER_R, y + sin * METER_R, 7);
+    const tipX = x + cos * (METER_R + 9);
+    const tipY = y + sin * (METER_R + 9);
+    const baseX = x + cos * (BUTTON.r + 2);
+    const baseY = y + sin * (BUTTON.r + 2);
+    const alpha = ready ? 1 : 0.4;
+    this.meter.fillStyle(COLORS.meterNeedle, alpha);
+    this.meter.lineStyle(3, COLORS.ink, alpha);
+    this.meter.beginPath();
+    this.meter.moveTo(tipX, tipY);
+    this.meter.lineTo(baseX - sin * 7, baseY + cos * 7);
+    this.meter.lineTo(baseX + sin * 7, baseY - cos * 7);
+    this.meter.closePath();
+    this.meter.fillPath();
+    this.meter.strokePath();
     // 針がゾーンの真ん中を通る瞬間に、ボタンのふちを光らせる
     if (ready && lapNow !== this.lastFlashLap && Math.abs(heard - lapTime(s, lapNow)) < 0.03) {
       this.lastFlashLap = lapNow;
-      const flash = this.add.circle(x, y, BUTTON.r + 2).setStrokeStyle(6, 0xffd43b).setDepth(9050);
+      const flash = this.add.circle(x, y, BUTTON.r + 2).setStrokeStyle(6, COLORS.meterNeedle).setDepth(9050);
       this.tweens.add({ targets: flash, scale: 1.2, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
     }
   }
@@ -306,11 +319,25 @@ export class FieldScene extends Phaser.Scene {
       const frac = empty ? 1 - Math.max(0, regenAt - heard) / STOCK.regenSeconds : stock / max;
       const bx = r.x - w / 2;
       const by = r.y - RES_SIZE.h - 10;
-      g.fillStyle(COLORS.ink, 0.55);
-      g.fillRoundedRect(bx - 1, by - 1, w + 2, h + 2, 3);
-      g.fillStyle(empty ? 0xb0aca4 : 0x8fd14f, 1);
-      if (frac > 0) g.fillRoundedRect(bx, by, w * frac, h, 2);
-      this.resources.get(r.id)!.image.setAlpha(empty ? 0.35 : 1);
+      g.fillStyle(COLORS.ink);
+      g.fillRoundedRect(bx - 2, by - 2, w + 4, h + 4, 5);
+      g.fillStyle(COLORS.stockTrack);
+      g.fillRoundedRect(bx, by, w, h, 3);
+      const fillWidth = w * frac;
+      if (fillWidth > 0) {
+        g.fillStyle(empty ? COLORS.stoneLight : COLORS.stockFill);
+        g.fillRoundedRect(bx, by, fillWidth, h, Math.min(3, fillWidth / 2));
+        if (fillWidth > 4) {
+          g.lineStyle(1, COLORS.harvestHighlight, 0.6);
+          g.lineBetween(bx + 2, by + 1.5, bx + fillWidth - 2, by + 1.5);
+        }
+      }
+      const { image } = this.resources.get(r.id)!;
+      const texture = empty ? EMPTY_RES_TEX[r.kind] : RES_TEX[r.kind];
+      if (image.texture.key !== texture) {
+        image.setTexture(texture);
+        if (!empty) this.squash(image, RESOURCE_REACTION.squash);
+      }
     }
   }
 

@@ -27,6 +27,13 @@ export const COLORS = {
   grassDark: 0x5c7a35, // 草の影
   path: 0xb9b2a3, // 石畳
   pathDark: 0x968e7f, // 石畳の目地
+  meterTrack: 0x805b47, // メーターの素焼きの溝
+  meterGood: 0xe8bb89, // 「おしい」ゾーンの淡い砂色
+  meterPerfect: 0xb74224, // 「ぴったり」ゾーンの濃い橙
+  meterNeedle: 0xffd43b, // 針と拍の光の金色
+  harvestHighlight: 0xfff3dc, // 目盛りと残量バーに当たる光
+  stockTrack: 0x624638, // 残量バーのくぼみ
+  stockFill: 0xb3c474, // 採取できる残量の若草色
 } as const;
 
 /** 採取場（パテが歩ける範囲）。上下は、あとで時間やノルマの表示を置くために空けておきます */
