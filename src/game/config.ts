@@ -43,6 +43,20 @@ export const COLORS = {
   meterNeedle: 0xffd43b, // 針と拍の光の金色
   harvestHighlight: 0xfff3dc, // 目盛りと残量バーに当たる光
   stockTrack: 0x624638, // 残量バーのくぼみ
+  landmarkWood: 0xa66c43, // 櫓の柱と板の木肌
+  landmarkWoodShade: 0x69422f, // 櫓の筋交いと板の側面
+  landmarkBrass: 0xd7a348, // からくり歯車の真鍮
+  landmarkBrassShade: 0x96652f, // 歯車の側面と軸の影
+  landmarkVermilion: 0xc64e32, // 鳥居の朱漆
+  landmarkVermilionLight: 0xeb8660, // 朱漆のかすれた光
+  landmarkIron: 0x45434a, // 茶釜と鳥居の笠木の暗い面
+  statueClay: 0xb58c72, // ホコリで少し色あせた素焼き
+  statueShade: 0x8c6655, // 置物の裾と空洞の縁
+  statueDust: 0xe8d6b9, // 置物に積もったホコリ
+  spyFog: 0x10100c, // 視界の外を覆う霧
+  scanPaper: 0xf8e6c2, // スキャン画面の生成りの紙
+  scanPads: [0xc77a51, 0x809451, 0x5a8798, 0xcaa450], // まねっこ歯車の銅・若草・青・真鍮
+  scanWarning: 0xb74224, // スキャンの残り時間が少ないときの朱
   stockFill: 0xb3c474, // 採取できる残量の若草色
 } as const;
 

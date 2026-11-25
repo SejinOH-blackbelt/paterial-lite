@@ -1,13 +1,13 @@
 // スキャンのミニゲーム（クイズ・まねっこ）の画面。画面の下半分にパネルを出します。
 // 判定のルールは src/game/scanGame.ts。この部品は表示とタップの受け付けだけ。
 import Phaser from 'phaser';
-import { SCAN_GAME, SCREEN } from '../game/config';
+import { COLORS, SCAN_GAME, SCREEN } from '../game/config';
 import { answerQuiz, mimicShowing, pressMimic, type ScanGame } from '../game/scanGame';
 
 /** パネルの位置と大きさ */
 const PANEL = { x: 12, y: 388, w: SCREEN.width - 24, h: 236 } as const;
-/** まねっこのボタンの色（4か所）と音の高さ */
-const PAD_COLORS = [0xe8590c, 0x2f9e44, 0x1971c2, 0xf08c00] as const;
+const TEXT_INK = Phaser.Display.Color.IntegerToColor(COLORS.ink).rgba;
+/** まねっこのボタンの音の高さ */
 export const PAD_TONES = [523.25, 659.25, 783.99, 1046.5] as const;
 
 export class ScanGameView {
@@ -18,7 +18,7 @@ export class ScanGameView {
   private readonly title: Phaser.GameObjects.Text;
   private readonly hitAreas: Phaser.GameObjects.GameObject[] = [];
   private choiceTexts: Phaser.GameObjects.Text[] = [];
-  private pads: Phaser.GameObjects.Arc[] = [];
+  private pads: Phaser.GameObjects.Graphics[] = [];
   private shownIndex = -1;
   private lastShowing: number | null = null;
 
@@ -26,15 +26,20 @@ export class ScanGameView {
   constructor(scene: Phaser.Scene, game: ScanGame, private readonly onTone: (pad: number) => void, private readonly now: () => number) {
     this.scene = scene;
     this.game = game;
-    const bg = scene.add.rectangle(PANEL.x, PANEL.y, PANEL.w, PANEL.h, 0xfff3dc, 0.96).setOrigin(0).setStrokeStyle(4, 0x2b1d14);
+    const bg = scene.add.rectangle(PANEL.x, PANEL.y, PANEL.w, PANEL.h, COLORS.scanPaper).setOrigin(0).setStrokeStyle(4, COLORS.ink);
     // パネルを押しても、うしろの採取場に「歩く」タップが届かないようにする
     bg.setInteractive();
     this.hitAreas.push(bg);
+    const frame = scene.add.graphics();
+    frame.lineStyle(5, COLORS.landmarkWood);
+    frame.strokeRect(PANEL.x + 3, PANEL.y + 3, PANEL.w - 6, PANEL.h - 6);
+    frame.lineStyle(1, COLORS.landmarkWoodShade, 0.5);
+    frame.strokeRoundedRect(PANEL.x + 7, PANEL.y + 7, PANEL.w - 14, PANEL.h - 14, 4);
     this.title = scene.add
-      .text(SCREEN.width / 2, PANEL.y + 22, '', { fontFamily: 'sans-serif', fontSize: '16px', fontStyle: 'bold', color: '#2b1d14', align: 'center', wordWrap: { width: PANEL.w - 24 } })
+      .text(SCREEN.width / 2, PANEL.y + 22, '', { fontFamily: 'sans-serif', fontSize: '16px', fontStyle: 'bold', color: TEXT_INK, align: 'center', wordWrap: { width: PANEL.w - 24 } })
       .setOrigin(0.5, 0);
     this.timer = scene.add.graphics();
-    this.root = scene.add.container(0, 0, [bg, this.title, this.timer]).setDepth(9700);
+    this.root = scene.add.container(0, 0, [bg, frame, this.title, this.timer]).setDepth(9700);
     if (game.kind === 'quiz') this.buildQuiz();
     else this.buildMimic();
   }
@@ -50,19 +55,24 @@ export class ScanGameView {
     for (let i = 0; i < 4; i++) {
       const x = PANEL.x + 12 + (i % 2) * (bw + 12);
       const y = PANEL.y + 102 + Math.floor(i / 2) * (bh + 10);
-      const b = this.scene.add.rectangle(x, y, bw, bh, 0xffffff).setOrigin(0).setStrokeStyle(3, 0x2b1d14).setInteractive();
+      const b = this.scene.add.rectangle(x, y, bw, bh, COLORS.harvestHighlight).setOrigin(0).setStrokeStyle(3, COLORS.ink).setInteractive();
+      const bevel = this.scene.add.graphics();
+      bevel.fillStyle(COLORS.landmarkWood, 0.36);
+      bevel.fillRect(x + 2, y + bh - 7, bw - 4, 5);
+      bevel.lineStyle(1, COLORS.landmarkWood, 0.45);
+      bevel.strokeRoundedRect(x + 5, y + 5, bw - 10, bh - 14, 4);
       const t = this.scene.add
-        .text(x + bw / 2, y + bh / 2, '', { fontFamily: 'sans-serif', fontSize: '15px', fontStyle: 'bold', color: '#2b1d14', align: 'center', wordWrap: { width: bw - 10 } })
+        .text(x + bw / 2, y + bh / 2, '', { fontFamily: 'sans-serif', fontSize: '15px', fontStyle: 'bold', color: TEXT_INK, align: 'center', wordWrap: { width: bw - 10 } })
         .setOrigin(0.5);
       b.on('pointerdown', () => {
         if (this.game.kind !== 'quiz') return;
         const q = this.game.questions[this.game.index];
         if (!q || i >= q.choices.length) return;
-        b.setFillStyle(0xffe8a3);
-        this.scene.time.delayedCall(120, () => b.setFillStyle(0xffffff));
+        b.setFillStyle(COLORS.partStraw);
+        this.scene.time.delayedCall(120, () => b.setFillStyle(COLORS.harvestHighlight));
         answerQuiz(this.game, i, this.now());
       });
-      this.root.add([b, t]);
+      this.root.add([b, bevel, t]);
       this.hitAreas.push(b);
       this.choiceTexts.push(t);
     }
@@ -77,8 +87,27 @@ export class ScanGameView {
       [cx, cy + 52],
       [cx - 62, cy],
     ];
+    // 歯車を取り付けた板と、中央の軸。
+    const mount = this.scene.add.graphics();
+    mount.lineStyle(11, COLORS.landmarkWoodShade);
+    mount.lineBetween(cx - 62, cy, cx + 62, cy);
+    mount.lineBetween(cx, cy - 52, cx, cy + 52);
+    mount.lineStyle(5, COLORS.landmarkWood);
+    mount.lineBetween(cx - 62, cy, cx + 62, cy);
+    mount.lineBetween(cx, cy - 52, cx, cy + 52);
+    mount.fillStyle(COLORS.landmarkBrassShade);
+    mount.fillCircle(cx, cy, 12);
+    mount.lineStyle(2, COLORS.ink);
+    mount.strokeCircle(cx, cy, 12);
+    mount.fillStyle(COLORS.landmarkBrass);
+    mount.fillRect(cx - 4, cy - 4, 8, 8);
+    this.root.add(mount);
+
     at.forEach(([x, y], i) => {
-      const pad = this.scene.add.circle(x, y, 26, PAD_COLORS[i], 0.45).setStrokeStyle(4, 0x2b1d14).setInteractive();
+      const pad = this.scene.add.circle(x, y, 26, COLORS.ink, 0).setInteractive();
+      const gear = this.scene.add.graphics({ x, y });
+      this.pads.push(gear);
+      this.drawPad(i, false);
       pad.on('pointerdown', () => {
         if (this.game.kind !== 'mimic') return;
         if (this.now() < this.game.showUntil) return;
@@ -86,16 +115,40 @@ export class ScanGameView {
         this.onTone(i);
         pressMimic(this.game, i, this.now());
       });
-      this.root.add(pad);
+      this.root.add([pad, gear]);
       this.hitAreas.push(pad);
-      this.pads.push(pad);
     });
   }
 
+  private drawPad(i: number, lit: boolean): void {
+    const gear = this.pads[i];
+    const teeth = Array.from({ length: 32 }, (_, n) => {
+      const angle = n * Math.PI / 16;
+      const radius = n % 4 === 1 || n % 4 === 2 ? 25 : 20;
+      return new Phaser.Math.Vector2(Math.cos(angle) * radius, Math.sin(angle) * radius);
+    });
+    gear.clear();
+    gear.fillStyle(COLORS.scanPads[i]);
+    gear.fillPoints(teeth, true);
+    gear.lineStyle(2.5, COLORS.ink);
+    gear.strokePoints(teeth, true);
+    gear.fillStyle(lit ? COLORS.harvestHighlight : COLORS.landmarkWoodShade);
+    gear.fillCircle(0, 0, 14);
+    gear.lineStyle(2, lit ? COLORS.meterNeedle : COLORS.partIvory);
+    gear.strokeCircle(0, 0, 14);
+    gear.fillStyle(lit ? COLORS.landmarkWoodShade : COLORS.partIvory);
+    // 色に加えて、軸の刻印の数でも見分けられる。
+    for (let n = 0; n <= i; n++) gear.fillCircle((n - i / 2) * 5, 0, 1.65);
+  }
+
   private flash(i: number): void {
-    const pad = this.pads[i];
-    pad.setFillStyle(PAD_COLORS[i], 1).setScale(1.12);
-    this.scene.time.delayedCall(180, () => pad.setFillStyle(PAD_COLORS[i], 0.45).setScale(1));
+    this.drawPad(i, true);
+    this.pads[i].setScale(1.12);
+    this.scene.time.delayedCall(180, () => {
+      if (!this.root.scene) return;
+      this.drawPad(i, false);
+      this.pads[i].setScale(1);
+    });
   }
 
   /** 毎コマ呼ぶ：問題の表示・残り時間・お手本の光 */
@@ -129,10 +182,10 @@ export class ScanGameView {
     const w = PANEL.w - 24;
     const frac = Phaser.Math.Clamp(left / total, 0, 1);
     this.timer.clear();
-    this.timer.fillStyle(0x2b1d14, 0.25);
-    this.timer.fillRect(PANEL.x + 12, PANEL.y + 8, w, 6);
-    this.timer.fillStyle(frac < 0.3 ? 0xe03131 : 0x2f9e44, 1);
-    this.timer.fillRect(PANEL.x + 12, PANEL.y + 8, w * frac, 6);
+    this.timer.fillStyle(COLORS.stockTrack, 0.5);
+    this.timer.fillRoundedRect(PANEL.x + 12, PANEL.y + 8, w, 6, 3);
+    this.timer.fillStyle(frac < 0.3 ? COLORS.scanWarning : COLORS.grassDark, 1);
+    if (frac > 0) this.timer.fillRoundedRect(PANEL.x + 12, PANEL.y + 8, w * frac, 6, Math.min(3, w * frac / 2));
   }
 
   destroy(): void {

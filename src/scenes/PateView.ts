@@ -1,10 +1,10 @@
 // パテ1体の「見た目」。胴体・腕・足を別々の部品にして、動き（アニメーション）を付けやすくしています。
 // 位置の計算はしません。src/game 側で決めた位置をもらって表示するだけです。
 import Phaser from 'phaser';
-import { COLORS, PATE } from '../game/config';
+import { PATE } from '../game/config';
 import type { Facing } from '../game/movement';
 import { PART_ORIGIN_Y, partKey, type HeadPart } from './partTextures';
-import { STATUE_SIZE, STATUE_TEX } from './spyTextures';
+import { PATCH_TEX, STATUE_SIZE, STATUE_TEX } from './spyTextures';
 import { PATE_SIZE, TEX } from './textures';
 
 /** 部品の置き場所（足元の中心を 0,0 とする） */
@@ -82,7 +82,7 @@ export class PateView extends Phaser.GameObjects.Container {
   /** 置物（スパイのイタズラ）。手足のないドーム型のハニワに変わり、もう動かない */
   private statue: Phaser.GameObjects.Image | null = null;
   /** 塗りムラ（スパイだけ）：胴体のどこかに元のグレーが見える */
-  private patch: Phaser.GameObjects.Rectangle | null = null;
+  private patch: Phaser.GameObjects.Image | null = null;
 
   get isStatue(): boolean {
     return this.statue !== null;
@@ -106,12 +106,13 @@ export class PateView extends Phaser.GameObjects.Container {
   /** 塗りムラを表示する（u, v：胴体の中の位置 0〜1、size：大きさのピクセル） */
   setPatch(u: number, v: number, size: number): void {
     if (!this.patch) {
-      this.patch = this.scene.add.rectangle(0, 0, size, size, COLORS.stone).setOrigin(0.5);
+      this.patch = this.scene.add.image(0, 0, PATCH_TEX);
       this.upperBody.addAt(this.patch, this.upperBody.getIndex(this.torso) + 1);
     }
     const x = (u - 0.5) * (PATE_SIZE.w - 14);
-    const y = PATE_LAYOUT.bodyBottom - PATE_SIZE.h * (1 - v) + 4;
-    this.patch.setPosition(x, y).setSize(size, size);
+    const y = 4 - PATE_SIZE.h * (1 - v);
+    this.patch.setPosition(this.torso.x + x * this.torso.scaleX, this.torso.y + y * this.torso.scaleY)
+      .setDisplaySize(size * this.torso.scaleX, size * this.torso.scaleY);
   }
 
   setFacing(facing: Facing): void {

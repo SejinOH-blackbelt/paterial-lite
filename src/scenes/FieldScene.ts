@@ -36,7 +36,7 @@ import { PateView } from './PateView';
 import { LANDMARK_TEX, makeSpyTextures } from './spyTextures';
 import { PAD_TONES, ScanGameView } from './ScanGameView';
 import { EMPTY_RES_TEX, makeResourceTextures, RES_CHIP_COLOR, RES_SIZE, RES_TEX } from './resourceTextures';
-import { drawGround, makeTextures, TEX } from './textures';
+import { drawGround, drawPart, makeTextures, TEX } from './textures';
 
 /** 「採取」ボタンの位置と大きさ */
 const BUTTON = { x: SCREEN.width / 2, y: 556, r: 38 } as const;
@@ -83,9 +83,8 @@ export class FieldScene extends Phaser.Scene {
   private spyMind: SpyBotMind | null = null;
   private isPlayerSpy = false;
   private landmarks = new Map<string, Phaser.GameObjects.Image>();
-  /** 見える範囲の外を暗くする霧と、その穴（自分のまわり） */
-  private fog!: Phaser.GameObjects.Graphics;
-  private fogHole!: Phaser.GameObjects.Graphics;
+  /** 見える範囲の外を暗くする霧 */
+  private fog!: Phaser.GameObjects.Image;
   /** スパイ用のボタン（プレイヤーがスパイのときだけ） */
   private scanButton: Phaser.GameObjects.Container | null = null;
   private prankButton: Phaser.GameObjects.Container | null = null;
@@ -538,21 +537,31 @@ export class FieldScene extends Phaser.Scene {
 
   /** 見える範囲の外を暗くする（自分のまわりだけ穴をあけた霧） */
   private setupFog(): void {
-    this.fog = this.add.graphics().setDepth(8800);
-    this.fog.fillStyle(0x10100c, VISION.fogAlpha);
-    this.fog.fillRect(0, 0, SCREEN.width, SCREEN.height);
-    this.fogHole = this.make.graphics({}, false);
-    this.fogHole.fillStyle(0xffffff, 1);
-    this.fogHole.fillCircle(0, 0, VISION.radius);
-    const mask = this.fogHole.createGeometryMask();
-    mask.setInvertAlpha(true);
-    this.fog.setMask(mask);
+    const key = 'field-vision-fog';
+    if (!this.textures.exists(key)) {
+      // 画面の端まで届く霧を一度だけ描く。毎コマ行うのは画像の移動だけ。
+      const width = SCREEN.width * 2;
+      const height = SCREEN.height * 2;
+      drawPart(this, key, width, height, (ctx) => {
+        const x = width / 2;
+        const y = height / 2;
+        const tint = Phaser.Display.Color.IntegerToColor(COLORS.spyFog);
+        const rgba = (alpha: number) => `rgba(${tint.red}, ${tint.green}, ${tint.blue}, ${alpha})`;
+        const gradient = ctx.createRadialGradient(x, y, VISION.radius, x, y, VISION.radius + 22);
+        gradient.addColorStop(0, rgba(0));
+        gradient.addColorStop(0.5, rgba(VISION.fogAlpha * 0.5));
+        gradient.addColorStop(1, rgba(VISION.fogAlpha));
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+      });
+    }
+    this.fog = this.add.image(0, 0, key).setDepth(8800);
     this.updateFog();
   }
 
   private updateFog(): void {
     const { x, y } = this.player.walker.pos;
-    this.fogHole.setPosition(x, y - 20); // パテの体の真ん中あたりを中心に見る
+    this.fog.setPosition(x, y - 20); // パテの体の真ん中あたりを中心に見る
   }
 
   /** 役の発表（M5 で本番の画面にします） */
