@@ -6,8 +6,9 @@
     <meta name="theme-color" content="#f3e6cc" />
     <title>PATERIAL Lite</title>
     <style>
-      html, body { margin: 0; padding: 0; height: 100%; background: #f3e6cc; overflow: hidden; touch-action: none; }
-      #game { width: 100%; height: 100%; }
+      html, body { margin: 0; padding: 0; height: 100%; background: #f3e6cc; overflow: hidden; }
+      /* ゲーム部分だけ、スクロールやダブルタップ拡大を止める（リズム採取の連打で画面が動かないように） */
+      #game { width: 100%; height: 100%; touch-action: none; }
     </style>
   </head>
   <body>
