@@ -4,7 +4,7 @@ import { FieldScene } from './scenes/FieldScene';
 import { TitleScene } from './scenes/TitleScene';
 
 // ゲーム全体の設定。画面サイズはスマホ縦持ちを基準に、端末に合わせて拡大縮小します。
-new Phaser.Game({
+const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
   width: SCREEN.width,
@@ -17,3 +17,6 @@ new Phaser.Game({
   },
   scene: [TitleScene, FieldScene],
 });
+
+// 開発中だけ、自動テストからゲームの中身をのぞけるようにする（公開版には入らない）
+if (import.meta.env.DEV) (window as unknown as { __game: Phaser.Game }).__game = game;

@@ -72,3 +72,38 @@ export const PATE = {
   /** 胴体が一番高いときに影が縮む割合 */
   shadowShrink: 0.2,
 } as const;
+
+/** リズム採取 */
+export const RHYTHM = {
+  /** テンポ（1分間の拍の数） */
+  bpm: 100,
+  /** 「ぴったり」になるズレの幅（秒）。拍の前後どちらにもこの幅まで */
+  perfectWindow: 0.07,
+  /** 「おしい」になるズレの幅（秒）。これより外は「はずれ」 */
+  goodWindow: 0.15,
+  /** 判定ごとにもらえる素材の数 */
+  gain: { perfect: 2, good: 1, miss: 0 },
+  /** 採取を始めてから、何拍目から判定するか（最初の拍は心の準備用） */
+  leadInBeats: 2,
+  /** 輪が縮み始めてから拍に重なるまでの拍数 */
+  ringLeadBeats: 1,
+  /** 音と画面のズレの手動補正（ミリ秒）。タップが早めに判定されると感じたら + にする */
+  calibrationMs: 0,
+} as const;
+
+/** 素材ポイント */
+export const RESOURCE = {
+  /** この半径の中をタップすると「このポイントで採取する」とみなす */
+  tapRadius: 34,
+  /** パテが立つ位置（素材の中心からどれだけ下か） */
+  standOffsetY: 38,
+  /** 立つ位置にこれだけ近ければ採取が始まる */
+  harvestRadius: 6,
+} as const;
+
+/** 採取場に置く素材ポイント（粘土の山・竹・石） */
+export const RESOURCE_POINTS = [
+  { id: 'clay', kind: 'clay', x: 92, y: 220 },
+  { id: 'bamboo', kind: 'bamboo', x: 272, y: 330 },
+  { id: 'stone', kind: 'stone', x: 104, y: 470 },
+] as const;
