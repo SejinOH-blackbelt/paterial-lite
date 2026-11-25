@@ -87,22 +87,34 @@ export const PATE = {
   shadowShrink: 0.2,
 } as const;
 
-/** リズム採取 */
+/** リズム採取（回るメーター） */
 export const RHYTHM = {
-  /** テンポ（1分間の拍の数） */
+  /** テンポ（1分間の拍の数）。メーターの針がゾーンの真ん中を通る瞬間は、この拍にそろえる */
   bpm: 100,
-  /** 「ぴったり」になるズレの幅（秒）。拍の前後どちらにもこの幅まで */
-  perfectWindow: 0.07,
-  /** 「おしい」になるズレの幅（秒）。これより外は「はずれ」 */
-  goodWindow: 0.15,
   /** 判定ごとにもらえる素材の数 */
   gain: { perfect: 2, good: 1, miss: 0 },
-  /** 採取を始めてから、何拍目から判定するか（最初の拍は心の準備用） */
-  leadInBeats: 2,
-  /** 輪が縮み始めてから拍に重なるまでの拍数 */
-  ringLeadBeats: 1,
+  /** 採取を始めてから最初に判定するまで、少なくともメーター何周ぶん待つか（心の準備用） */
+  minLeadLaps: 0.5,
   /** 音と画面のズレの手動補正（ミリ秒）。タップが早めに判定されると感じたら + にする */
   calibrationMs: 0,
+} as const;
+
+/**
+ * 素材ごとのメーター。
+ * lapBeats：針が1周する拍数（大きいほどゆっくり）
+ * perfectDeg：「ぴったり」ゾーンの広さ（角度）
+ * goodDeg：「ぴったり」ゾーンの両側に広がる「おしい」ゾーンの広さ（片側の角度）
+ */
+export const METER = {
+  clay: { lapBeats: 2, perfectDeg: 60, goodDeg: 40 }, // ゆっくり・ゾーン広め（やさしい）
+  bamboo: { lapBeats: 2, perfectDeg: 30, goodDeg: 24 }, // ゆっくり・ゾーンせまい（よく見る）
+  stone: { lapBeats: 1, perfectDeg: 60, goodDeg: 40 }, // 速い（反射神経）
+} as const;
+
+/** 素材ポイントの残りの量（素材の個数）と、空になってから元に戻るまでの秒数 */
+export const STOCK = {
+  max: { clay: 12, bamboo: 10, stone: 8 },
+  regenSeconds: 15,
 } as const;
 
 /** 素材ポイント */

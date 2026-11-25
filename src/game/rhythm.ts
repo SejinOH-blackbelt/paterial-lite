@@ -1,66 +1,106 @@
-// リズム採取の「判定」のルール。画面表示（Phaser）や音には依存しません。
-// 時間はすべて「秒」。拍は origin（0拍目の時刻）から一定の間隔で並んでいます。
+// リズム採取（回るメーター）の「判定」のルール。画面表示（Phaser）や音には依存しません。
+//
+// 針は一定の速さで回り、真上（ゾーンの真ん中）を通る瞬間が、拍にそろった「ちょうどの時刻」です。
+// k 周目にゾーンの真ん中を通る時刻 = origin + k × 1周の秒数。
+// 角度のゾーンは、時間のズレ（秒）に直して判定します。
 
-import { RHYTHM } from './config';
+import { METER, RHYTHM } from './config';
 
 export type Judgement = 'perfect' | 'good' | 'miss';
+export type MeterKind = keyof typeof METER;
 
 /** 1拍の長さ（秒） */
 export function beatInterval(bpm: number = RHYTHM.bpm): number {
   return 60 / bpm;
 }
 
-/** k 拍目の時刻 */
-export function beatTime(k: number, origin: number, bpm: number = RHYTHM.bpm): number {
-  return origin + k * beatInterval(bpm);
+/** 素材ごとのメーターの速さと判定の幅（秒） */
+export interface Meter {
+  /** 針が1周する秒数 */
+  lap: number;
+  /** 「ぴったり」になるズレの幅（秒、片側） */
+  perfectWindow: number;
+  /** 「おしい」になるズレの幅（秒、片側）。これより外は「はずれ」 */
+  goodWindow: number;
+  /** 見た目用：ゾーンの角度 */
+  perfectDeg: number;
+  goodDeg: number;
 }
 
-/** 時刻 t のあとに来る最初の拍の番号 */
-export function nextBeat(t: number, origin: number, bpm: number = RHYTHM.bpm): number {
-  return Math.floor((t - origin) / beatInterval(bpm)) + 1;
+export function meterFor(kind: MeterKind): Meter {
+  const m = METER[kind];
+  const lap = m.lapBeats * beatInterval();
+  const secPerDeg = lap / 360;
+  return {
+    lap,
+    perfectWindow: (m.perfectDeg / 2) * secPerDeg,
+    goodWindow: (m.perfectDeg / 2 + m.goodDeg) * secPerDeg,
+    perfectDeg: m.perfectDeg,
+    goodDeg: m.goodDeg,
+  };
 }
 
-/** 拍とのズレ（秒）から判定を決める */
-export function judgeOffset(offset: number): Judgement {
+/** ズレ（秒）から判定を決める */
+export function judgeOffset(offset: number, meter: Meter): Judgement {
   const a = Math.abs(offset);
-  if (a <= RHYTHM.perfectWindow) return 'perfect';
-  if (a <= RHYTHM.goodWindow) return 'good';
+  if (a <= meter.perfectWindow) return 'perfect';
+  if (a <= meter.goodWindow) return 'good';
   return 'miss';
 }
 
 /** 1つの素材ポイントでの採取の記録 */
 export interface HarvestSession {
   pointId: string;
-  /** この拍から判定する（それより前は準備の拍） */
-  firstBeat: number;
-  /** すでに判定した拍（1拍に2回たたいても2回目は「はずれ」） */
+  meter: Meter;
+  /** 0周目にゾーンの真ん中を通る時刻（拍の0拍目と同じ） */
+  origin: number;
+  /** この周から判定する（それより前は準備） */
+  firstLap: number;
+  /** すでに判定した周（1周に2回たたいても2回目は「はずれ」） */
   judged: Set<number>;
 }
 
-export function startSession(pointId: string, now: number, origin: number): HarvestSession {
-  return { pointId, firstBeat: nextBeat(now, origin) + RHYTHM.leadInBeats - 1, judged: new Set() };
+/** k 周目にゾーンの真ん中を通る時刻 */
+export function lapTime(s: Pick<HarvestSession, 'meter' | 'origin'>, k: number): number {
+  return s.origin + k * s.meter.lap;
+}
+
+/** 時刻 t のあとに、針がゾーンの真ん中を通る最初の周の番号 */
+export function nextLap(s: Pick<HarvestSession, 'meter' | 'origin'>, t: number): number {
+  return Math.floor((t - s.origin) / s.meter.lap) + 1;
+}
+
+/** 時刻 t の針の角度（0〜360度。0 がゾーンの真ん中＝真上、時計回り） */
+export function needleAngle(s: Pick<HarvestSession, 'meter' | 'origin'>, t: number): number {
+  const turns = (t - s.origin) / s.meter.lap;
+  return (turns - Math.floor(turns)) * 360;
+}
+
+/** earliest：最初の判定に使ってよい一番早い時刻（音の予約の締め切り） */
+export function startSession(pointId: string, meter: Meter, earliest: number, origin: number): HarvestSession {
+  const base = { meter, origin };
+  return { pointId, meter, origin, firstLap: nextLap(base, earliest + meter.lap * RHYTHM.minLeadLaps), judged: new Set() };
 }
 
 export interface TapResult {
   judgement: Judgement;
-  /** どの拍に対する判定か */
-  beat: number;
+  /** どの周に対する判定か */
+  lap: number;
   /** ズレ（秒）。マイナスなら早い、プラスなら遅い */
   offset: number;
-  /** もらえた素材の数 */
+  /** もらえる素材の数（残りの量で減ることがある） */
   gain: number;
 }
 
 /**
- * 時刻 t のタップを判定する。準備の拍の間なら null（判定しない）。
- * いちばん近い拍に対して判定し、その拍は「判定済み」にする（連打でかせげないように）。
+ * 時刻 t のタップを判定する。準備の間なら null（判定しない）。
+ * いちばん近い「ゾーンの真ん中を通る時刻」に対して判定し、その周は判定済みにする（連打でかせげない）。
  */
-export function tapSession(s: HarvestSession, t: number, origin: number): TapResult | null {
-  const I = beatInterval();
-  const beat = Math.round((t - origin) / I);
-  if (beat < s.firstBeat) return null;
-  const offset = t - beatTime(beat, origin);
-  const judgement = s.judged.has(beat) ? 'miss' : judgeOffset(offset);
-  s.judged.add(beat);
-  return { judgement, beat, offset, gain: RHYTHM.gain[judgement] };
+export function tapSession(s: HarvestSession, t: number): TapResult | null {
+  const lap = Math.round((t - s.origin) / s.meter.lap);
+  if (lap < s.firstLap) return null;
+  const offset = t - lapTime(s, lap);
+  const judgement = s.judged.has(lap) ? 'miss' : judgeOffset(offset, s.meter);
+  s.judged.add(lap);
+  return { judgement, lap, offset, gain: RHYTHM.gain[judgement] };
 }

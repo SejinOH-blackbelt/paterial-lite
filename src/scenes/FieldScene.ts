@@ -1,21 +1,30 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // 動きと採取のルールは src/game（movement.ts / harvest.ts / rhythm.ts）に任せます。
 import Phaser from 'phaser';
-import { COLORS, PATE, RESOURCE_POINTS, RESOURCE_REACTION, RHYTHM, SCREEN } from '../game/config';
-import { createHarvester, harvestTap, moveHarvester, updateHarvester, type Harvester } from '../game/harvest';
+import { COLORS, PATE, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, STOCK } from '../game/config';
+import {
+  createFieldState,
+  createHarvester,
+  harvestTap,
+  moveHarvester,
+  updateFieldState,
+  updateHarvester,
+  type FieldState,
+  type Harvester,
+} from '../game/harvest';
 import { createWalker, isWalking, stepWalker } from '../game/movement';
-import { beatInterval, beatTime, nextBeat, type Judgement } from '../game/rhythm';
+import { lapTime, needleAngle, nextLap, type HarvestSession, type Judgement } from '../game/rhythm';
 import { GameAudio } from './audio';
 import { PateView } from './PateView';
-import { makeResourceTextures, RES_CHIP_COLOR, RES_TEX } from './resourceTextures';
+import { makeResourceTextures, RES_CHIP_COLOR, RES_SIZE, RES_TEX } from './resourceTextures';
 import { drawGround, makeTextures, TEX } from './textures';
 
 /** 「たたく」ボタンの位置と大きさ */
 const BUTTON = { x: SCREEN.width / 2, y: 556, r: 38 } as const;
 /** 拍の音を何秒前に予約するか */
 const SCHEDULE_AHEAD = 0.2;
-/** 輪が縮み始めるときの半径 */
-const RING_START_R = 92;
+/** メーターの円の半径（ボタンのまわり） */
+const METER_R = BUTTON.r + 15;
 
 const JUDGE_TEXT: Record<Judgement, { text: string; color: string }> = {
   perfect: { text: 'ぴったり！', color: '#d9480f' },
@@ -31,14 +40,18 @@ export class FieldScene extends Phaser.Scene {
   private audio!: GameAudio;
   /** 0拍目の時刻（音の時計） */
   private origin = 0;
-  /** 次に予約する拍の番号 */
-  private scheduledBeat = 0;
+  /** 素材ポイントの残りの量（全員で共有） */
+  private field!: FieldState;
+  /** 音を予約している採取と、次に予約する周の番号 */
+  private tickSession: HarvestSession | null = null;
+  private scheduledLap = 0;
   private resources = new Map<string, { image: Phaser.GameObjects.Image; chipColor: number }>();
   private button!: Phaser.GameObjects.Container;
-  private rings!: Phaser.GameObjects.Graphics;
+  private meter!: Phaser.GameObjects.Graphics;
+  private stockBars!: Phaser.GameObjects.Graphics;
   private materialsText!: Phaser.GameObjects.Text;
   private downOnButton = false;
-  private lastFlashBeat = -1;
+  private lastFlashLap = -1;
 
   constructor() {
     super('Field');
@@ -54,7 +67,7 @@ export class FieldScene extends Phaser.Scene {
     this.audio = new GameAudio(sm.context ?? new AudioContext());
     this.audio.resume();
     this.origin = this.audio.now + 0.5;
-    this.scheduledBeat = 0;
+    this.field = createFieldState();
 
     for (const r of RESOURCE_POINTS) {
       const img = this.add.image(r.x, r.y, RES_TEX[r.kind]).setOrigin(0.5, 1).setDepth(r.y);
@@ -66,7 +79,8 @@ export class FieldScene extends Phaser.Scene {
     this.pateSprite = new PateView(this, 0, 0);
     this.marker = this.add.image(0, 0, TEX.marker).setVisible(false);
 
-    this.rings = this.add.graphics().setDepth(9000);
+    this.meter = this.add.graphics().setDepth(9200);
+    this.stockBars = this.add.graphics().setDepth(8000);
     this.button = this.makeButton();
     this.materialsText = this.add
       .text(SCREEN.width / 2, 44, '', { fontFamily: 'sans-serif', fontSize: '22px', fontStyle: 'bold', color: '#fff8e8' })
@@ -118,16 +132,20 @@ export class FieldScene extends Phaser.Scene {
     // 指が触れた瞬間の時刻（ブラウザが記録した時刻）で判定する。処理の遅れに左右されない
     const ts = p.event?.timeStamp;
     const perfMs = ts && Math.abs(ts - performance.now()) < 1000 ? ts : performance.now();
-    const res = harvestTap(this.player, this.audio.heardTime(perfMs), this.origin);
+    // 空になると採取が終わるので、どの素材をたたいたかは先に覚えておく
+    const pointId = this.player.session?.pointId;
+    const t = this.audio.heardTime(perfMs);
+    const res = harvestTap(this.player, this.field, t, t);
     // 音は判定を待たずにすぐ鳴らす（気持ちよさ優先）
     this.audio.poko(res?.judgement ?? 'good');
     this.squash(this.button, 0.9);
     this.pateSprite.playHit();
-    const point = this.player.session && this.resources.get(this.player.session.pointId);
+    const point = pointId ? this.resources.get(pointId) : undefined;
     if (point) this.reactToHit(point.image, point.chipColor);
-    if (!res) return; // 準備の拍の間は判定しない
+    if (!res) return; // 準備の間は判定しない
     this.showJudgement(res.judgement, res.gain);
     if (res.gain > 0) this.updateMaterials(true);
+    if (res.depleted) this.popText('からっぽ！', '#6f7378', 18, 40);
   }
 
   private squash(target: Phaser.GameObjects.Components.Transform & Phaser.GameObjects.GameObject, amount: number): void {
@@ -172,19 +190,19 @@ export class FieldScene extends Phaser.Scene {
   }
 
   private showJudgement(j: Judgement, gain: number): void {
-    const { x, y } = this.player.walker.pos;
     const label = JUDGE_TEXT[j];
+    this.popText(gain > 0 ? `${label.text} +${gain}` : label.text, label.color, j === 'perfect' ? 20 : 16, 0);
+  }
+
+  /** パテの頭の上に文字を出して、ふわっと消す。up は表示の高さの上乗せ */
+  private popText(text: string, color: string, size: number, up: number): void {
+    const { x, y } = this.player.walker.pos;
     const t = this.add
-      .text(x, y - 62, gain > 0 ? `${label.text} +${gain}` : label.text, {
-        fontFamily: 'sans-serif',
-        fontSize: j === 'perfect' ? '20px' : '16px',
-        fontStyle: 'bold',
-        color: label.color,
-      })
+      .text(x, y - 62 - up, text, { fontFamily: 'sans-serif', fontSize: `${size}px`, fontStyle: 'bold', color })
       .setOrigin(0.5)
       .setDepth(9600)
       .setStroke('#fff8e8', 4);
-    this.tweens.add({ targets: t, y: y - 86, alpha: 0, duration: 650, ease: 'Cubic.Out', onComplete: () => t.destroy() });
+    this.tweens.add({ targets: t, y: y - 86 - up, alpha: 0, duration: 650 + up * 10, ease: 'Cubic.Out', onComplete: () => t.destroy() });
   }
 
   private updateMaterials(pop: boolean): void {
@@ -201,53 +219,98 @@ export class FieldScene extends Phaser.Scene {
     const dt = Math.min(deltaMs, 100) / 1000;
     const heard = this.audio.heardTime();
     stepWalker(this.player.walker, dt);
-    // 最初の準備拍は、まだ音の予約が間に合う拍から選ぶ（scheduleBeats と同じ締め切り）
-    updateHarvester(this.player, this.audio.now + SCHEDULE_AHEAD, this.origin);
+    updateFieldState(this.field, heard);
+    // 最初の判定は、まだ音の予約が間に合う周から選ぶ（scheduleTicks と同じ締め切り）
+    updateHarvester(this.player, this.field, this.audio.now + SCHEDULE_AHEAD, this.origin);
     const walking = isWalking(this.player.walker);
     if (!walking && this.marker.visible && this.marker.alpha === 1) {
       this.tweens.add({ targets: this.marker, alpha: 0, duration: 200, onComplete: () => this.marker.setVisible(false) });
     }
-    this.scheduleBeats();
-    this.drawRhythm(heard);
+    this.scheduleTicks();
+    this.drawMeter(heard);
+    this.drawStock(heard);
     this.syncSprite(dt, walking);
   }
 
-  /** 採取中は、少し先の拍の音を予約しておく（予約すると、処理が重くても音がずれない） */
-  private scheduleBeats(): void {
+  /** 採取中は、針がゾーンの真ん中を通る音を少し先まで予約しておく（予約すると、処理が重くても音がずれない） */
+  private scheduleTicks(): void {
+    const s = this.player.session;
+    if (s !== this.tickSession) {
+      this.tickSession = s;
+      if (s) this.scheduledLap = nextLap(s, this.audio.now);
+    }
+    if (!s) return;
     const lookahead = this.audio.now + SCHEDULE_AHEAD;
-    // 前に予約した拍が古すぎるときは、いまの拍から数え直す
-    this.scheduledBeat = Math.max(this.scheduledBeat, nextBeat(this.audio.now, this.origin));
-    while (beatTime(this.scheduledBeat, this.origin) < lookahead) {
-      if (this.player.session) this.audio.tick(beatTime(this.scheduledBeat, this.origin), this.scheduledBeat % 4 === 0);
-      this.scheduledBeat++;
+    // 前に予約した周が古すぎるときは、いまの周から数え直す
+    this.scheduledLap = Math.max(this.scheduledLap, nextLap(s, this.audio.now));
+    while (lapTime(s, this.scheduledLap) < lookahead) {
+      this.audio.tick(lapTime(s, this.scheduledLap), this.scheduledLap >= s.firstLap);
+      this.scheduledLap++;
     }
   }
 
-  /** 縮む輪とボタンを描く。時刻は「聞こえている時刻」なので、音と輪がそろう */
-  private drawRhythm(heard: number): void {
+  /** 回るメーターを描く。時刻は「聞こえている時刻」なので、音と針がそろう */
+  private drawMeter(heard: number): void {
     const s = this.player.session;
-    this.rings.clear();
+    this.meter.clear();
     this.button.setVisible(s !== null);
     if (!s) return;
-    const I = beatInterval();
-    const lead = RHYTHM.ringLeadBeats * I;
-    const firstShown = s.firstBeat - (RHYTHM.leadInBeats - 1);
-    for (let k = Math.max(firstShown, nextBeat(heard - 0.08, this.origin) - 1); ; k++) {
-      const until = beatTime(k, this.origin) - heard; // この拍まであと何秒
-      if (until > lead) break;
-      if (until < -0.08) continue;
-      const progress = Math.max(0, until) / lead; // 1 → 0 で縮む
-      const r = BUTTON.r + (RING_START_R - BUTTON.r) * progress;
-      const prep = k < s.firstBeat; // 準備の拍は薄く
-      this.rings.lineStyle(prep ? 3 : 5, 0xd9480f, prep ? 0.35 : 0.9 * (1 - progress * 0.5));
-      this.rings.strokeCircle(BUTTON.x, BUTTON.y, r);
+    const { x, y } = BUTTON;
+    const top = -90; // ゾーンの真ん中は真上
+    const half = s.meter.perfectDeg / 2;
+    const rad = Phaser.Math.DegToRad;
+    // 円の道
+    this.meter.lineStyle(12, COLORS.ink, 0.35);
+    this.meter.strokeCircle(x, y, METER_R);
+    // 「おしい」ゾーン（ぴったりの両側）
+    this.meter.lineStyle(12, 0xffc078, 1);
+    this.meter.beginPath();
+    this.meter.arc(x, y, METER_R, rad(top - half - s.meter.goodDeg), rad(top + half + s.meter.goodDeg));
+    this.meter.strokePath();
+    // 「ぴったり」ゾーン
+    this.meter.lineStyle(12, 0xd9480f, 1);
+    this.meter.beginPath();
+    this.meter.arc(x, y, METER_R, rad(top - half), rad(top + half));
+    this.meter.strokePath();
+    // 針（準備の間はうすく）
+    const lapNow = Math.round((heard - s.origin) / s.meter.lap);
+    const ready = lapNow >= s.firstLap;
+    const a = rad(top + needleAngle(s, heard));
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    this.meter.lineStyle(4, COLORS.ink, ready ? 1 : 0.35);
+    this.meter.lineBetween(x + cos * (BUTTON.r + 2), y + sin * (BUTTON.r + 2), x + cos * (METER_R + 9), y + sin * (METER_R + 9));
+    this.meter.fillStyle(0xffd43b, ready ? 1 : 0.4);
+    this.meter.fillCircle(x + cos * METER_R, y + sin * METER_R, 7);
+    this.meter.lineStyle(2, COLORS.ink, ready ? 1 : 0.4);
+    this.meter.strokeCircle(x + cos * METER_R, y + sin * METER_R, 7);
+    // 針がゾーンの真ん中を通る瞬間に、ボタンのふちを光らせる
+    if (ready && lapNow !== this.lastFlashLap && Math.abs(heard - lapTime(s, lapNow)) < 0.03) {
+      this.lastFlashLap = lapNow;
+      const flash = this.add.circle(x, y, BUTTON.r + 2).setStrokeStyle(6, 0xffd43b).setDepth(9050);
+      this.tweens.add({ targets: flash, scale: 1.2, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
     }
-    // 拍の瞬間にボタンのふちを光らせる
-    const beatNow = Math.round((heard - this.origin) / I);
-    if (beatNow !== this.lastFlashBeat && Math.abs(heard - beatTime(beatNow, this.origin)) < 0.03 && beatNow >= firstShown) {
-      this.lastFlashBeat = beatNow;
-      const flash = this.add.circle(BUTTON.x, BUTTON.y, BUTTON.r + 2).setStrokeStyle(6, 0xffd43b).setDepth(9050);
-      this.tweens.add({ targets: flash, scale: 1.25, alpha: 0, duration: 220, onComplete: () => flash.destroy() });
+  }
+
+  /** 素材ポイントの上に残りの量のバーを出す。空のあいだは、元に戻るまでの時間を灰色で表示 */
+  private drawStock(heard: number): void {
+    const g = this.stockBars;
+    g.clear();
+    const w = 36;
+    const h = 6;
+    for (const r of RESOURCE_POINTS) {
+      const stock = this.field.stock[r.id];
+      const max = STOCK.max[r.kind];
+      const regenAt = this.field.regenAt[r.id];
+      const empty = regenAt !== null;
+      const frac = empty ? 1 - Math.max(0, regenAt - heard) / STOCK.regenSeconds : stock / max;
+      const bx = r.x - w / 2;
+      const by = r.y - RES_SIZE.h - 10;
+      g.fillStyle(COLORS.ink, 0.55);
+      g.fillRoundedRect(bx - 1, by - 1, w + 2, h + 2, 3);
+      g.fillStyle(empty ? 0xb0aca4 : 0x8fd14f, 1);
+      if (frac > 0) g.fillRoundedRect(bx, by, w * frac, h, 2);
+      this.resources.get(r.id)!.image.setAlpha(empty ? 0.35 : 1);
     }
   }
 
