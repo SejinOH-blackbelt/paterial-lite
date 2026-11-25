@@ -19,7 +19,7 @@ import { PateView } from './PateView';
 import { EMPTY_RES_TEX, makeResourceTextures, RES_CHIP_COLOR, RES_SIZE, RES_TEX } from './resourceTextures';
 import { drawGround, makeTextures, TEX } from './textures';
 
-/** 「たたく」ボタンの位置と大きさ */
+/** 「採取」ボタンの位置と大きさ */
 const BUTTON = { x: SCREEN.width / 2, y: 556, r: 38 } as const;
 /** 拍の音を何秒前に予約するか */
 const SCHEDULE_AHEAD = 0.2;
@@ -91,7 +91,7 @@ export class FieldScene extends Phaser.Scene {
       .setStroke('#2b1d14', 5);
     this.updateMaterials(false);
 
-    // タップ：採取中に「たたく」ボタンを押したら採取、それ以外はそこへ歩く
+    // タップ：採取中に「採取」ボタンを押したら採取、それ以外はそこへ歩く
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
       this.audio.resume();
       this.downOnButton = this.player.session !== null && over.includes(this.button);
@@ -109,7 +109,7 @@ export class FieldScene extends Phaser.Scene {
   private makeButton(): Phaser.GameObjects.Container {
     const bg = this.add.circle(0, 0, BUTTON.r, 0xfff3dc).setStrokeStyle(4, 0x2b1d14);
     const label = this.add
-      .text(0, 0, 'たたく', { fontFamily: 'sans-serif', fontSize: '18px', fontStyle: 'bold', color: '#2b1d14' })
+      .text(0, 0, '採取', { fontFamily: 'sans-serif', fontSize: '20px', fontStyle: 'bold', color: '#2b1d14' })
       .setOrigin(0.5);
     const c = this.add.container(BUTTON.x, BUTTON.y, [bg, label]).setDepth(9100).setVisible(false);
     c.setSize(BUTTON.r * 2, BUTTON.r * 2);
@@ -129,7 +129,7 @@ export class FieldScene extends Phaser.Scene {
     }
   }
 
-  /** 「たたく」ボタンを押したとき */
+  /** 「採取」ボタンを押したとき */
   private hit(p: Phaser.Input.Pointer): void {
     // 指が触れた瞬間の時刻（ブラウザが記録した時刻）で判定する。処理の遅れに左右されない
     const ts = p.event?.timeStamp;
