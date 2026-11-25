@@ -11,21 +11,21 @@ describe('回るメーターの判定', () => {
 
   it('ゾーンの角度が、時間の幅に直される', () => {
     const m = meterFor('clay'); // 1.2秒で360度 → 1度 = 1/300秒
-    expect(m.perfectWindow).toBeCloseTo((METER.clay.perfectDeg / 2) / 300);
-    expect(m.goodWindow).toBeCloseTo((METER.clay.perfectDeg / 2 + METER.clay.goodDeg) / 300);
+    expect(m.excellentWindow).toBeCloseTo((METER.clay.excellentDeg / 2) / 300);
+    expect(m.goodWindow).toBeCloseTo((METER.clay.excellentDeg / 2 + METER.clay.goodDeg) / 300);
   });
 
   it('素材ごとに難しさが違う：竹はゾーンがせまく、石は針が速い', () => {
-    expect(meterFor('bamboo').perfectWindow).toBeLessThan(meterFor('clay').perfectWindow);
+    expect(meterFor('bamboo').excellentWindow).toBeLessThan(meterFor('clay').excellentWindow);
     expect(meterFor('stone').lap).toBeLessThan(meterFor('clay').lap);
   });
 
-  it('ズレが小さいと「ぴったり」、少しだと「おしい」、大きいと「はずれ」', () => {
+  it('ズレが小さいと「Excellent」、少しだと「Good」、大きいと「Bad」', () => {
     const m = meterFor('clay');
-    expect(judgeOffset(0, m)).toBe('perfect');
-    expect(judgeOffset(-m.perfectWindow, m)).toBe('perfect');
-    expect(judgeOffset(m.perfectWindow + 0.01, m)).toBe('good');
-    expect(judgeOffset(-(m.goodWindow + 0.01), m)).toBe('miss');
+    expect(judgeOffset(0, m)).toBe('excellent');
+    expect(judgeOffset(-m.excellentWindow, m)).toBe('excellent');
+    expect(judgeOffset(m.excellentWindow + 0.01, m)).toBe('good');
+    expect(judgeOffset(-(m.goodWindow + 0.01), m)).toBe('bad');
   });
 
   it('針の角度：ゾーンの真ん中（0度）から時計回りに進む', () => {
@@ -46,17 +46,17 @@ describe('回るメーターの判定', () => {
     const m = meterFor('clay');
     const s = startSession('clay', m, 10, 10);
     const a = tapSession(s, lapTime(s, s.firstLap))!;
-    expect(a.judgement).toBe('perfect');
+    expect(a.judgement).toBe('excellent');
     expect(a.gain).toBe(2);
-    const b = tapSession(s, lapTime(s, s.firstLap + 1) + m.perfectWindow + 0.02)!;
+    const b = tapSession(s, lapTime(s, s.firstLap + 1) + m.excellentWindow + 0.02)!;
     expect(b.judgement).toBe('good');
     expect(b.gain).toBe(1);
   });
 
-  it('同じ周に2回たたくと、2回目は「はずれ」（連打でかせげない）', () => {
+  it('同じ周に2回たたくと、2回目は「Bad」（連打でかせげない）', () => {
     const s = startSession('clay', meterFor('clay'), 10, 10);
     const t = lapTime(s, s.firstLap);
-    expect(tapSession(s, t)!.judgement).toBe('perfect');
-    expect(tapSession(s, t + 0.01)!.judgement).toBe('miss');
+    expect(tapSession(s, t)!.judgement).toBe('excellent');
+    expect(tapSession(s, t + 0.01)!.judgement).toBe('bad');
   });
 });

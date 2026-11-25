@@ -6,7 +6,7 @@
 
 import { METER, RHYTHM } from './config';
 
-export type Judgement = 'perfect' | 'good' | 'miss';
+export type Judgement = 'excellent' | 'good' | 'bad';
 export type MeterKind = keyof typeof METER;
 
 /** 1拍の長さ（秒） */
@@ -18,12 +18,12 @@ export function beatInterval(bpm: number = RHYTHM.bpm): number {
 export interface Meter {
   /** 針が1周する秒数 */
   lap: number;
-  /** 「ぴったり」になるズレの幅（秒、片側） */
-  perfectWindow: number;
-  /** 「おしい」になるズレの幅（秒、片側）。これより外は「はずれ」 */
+  /** 「Excellent」になるズレの幅（秒、片側） */
+  excellentWindow: number;
+  /** 「Good」になるズレの幅（秒、片側）。これより外は「Bad」 */
   goodWindow: number;
   /** 見た目用：ゾーンの角度 */
-  perfectDeg: number;
+  excellentDeg: number;
   goodDeg: number;
 }
 
@@ -33,9 +33,9 @@ export function meterFor(kind: MeterKind): Meter {
   const secPerDeg = lap / 360;
   return {
     lap,
-    perfectWindow: (m.perfectDeg / 2) * secPerDeg,
-    goodWindow: (m.perfectDeg / 2 + m.goodDeg) * secPerDeg,
-    perfectDeg: m.perfectDeg,
+    excellentWindow: (m.excellentDeg / 2) * secPerDeg,
+    goodWindow: (m.excellentDeg / 2 + m.goodDeg) * secPerDeg,
+    excellentDeg: m.excellentDeg,
     goodDeg: m.goodDeg,
   };
 }
@@ -43,9 +43,9 @@ export function meterFor(kind: MeterKind): Meter {
 /** ズレ（秒）から判定を決める */
 export function judgeOffset(offset: number, meter: Meter): Judgement {
   const a = Math.abs(offset);
-  if (a <= meter.perfectWindow) return 'perfect';
+  if (a <= meter.excellentWindow) return 'excellent';
   if (a <= meter.goodWindow) return 'good';
-  return 'miss';
+  return 'bad';
 }
 
 /** 1つの素材ポイントでの採取の記録 */
@@ -56,7 +56,7 @@ export interface HarvestSession {
   origin: number;
   /** この周から判定する（それより前は準備） */
   firstLap: number;
-  /** すでに判定した周（1周に2回たたいても2回目は「はずれ」） */
+  /** すでに判定した周（1周に2回たたいても2回目は「Bad」） */
   judged: Set<number>;
 }
 
@@ -100,7 +100,7 @@ export function tapSession(s: HarvestSession, t: number): TapResult | null {
   const lap = Math.round((t - s.origin) / s.meter.lap);
   if (lap < s.firstLap) return null;
   const offset = t - lapTime(s, lap);
-  const judgement = s.judged.has(lap) ? 'miss' : judgeOffset(offset, s.meter);
+  const judgement = s.judged.has(lap) ? 'bad' : judgeOffset(offset, s.meter);
   s.judged.add(lap);
   return { judgement, lap, offset, gain: RHYTHM.gain[judgement] };
 }

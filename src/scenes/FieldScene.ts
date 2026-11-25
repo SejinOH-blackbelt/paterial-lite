@@ -27,9 +27,9 @@ const SCHEDULE_AHEAD = 0.2;
 const METER_R = BUTTON.r + 15;
 
 const JUDGE_TEXT: Record<Judgement, { text: string; color: string }> = {
-  perfect: { text: 'ぴったり！', color: '#d9480f' },
-  good: { text: 'おしい', color: '#2b1d14' },
-  miss: { text: 'はずれ', color: '#6f7378' },
+  excellent: { text: 'Excellent!', color: '#d9480f' },
+  good: { text: 'Good', color: '#2b1d14' },
+  bad: { text: 'Bad', color: '#6f7378' },
 };
 
 export class FieldScene extends Phaser.Scene {
@@ -138,8 +138,8 @@ export class FieldScene extends Phaser.Scene {
     const pointId = this.player.session?.pointId;
     const t = this.audio.heardTime(perfMs);
     const res = harvestTap(this.player, this.field, t, t);
-    // 音は判定を待たずにすぐ鳴らす（気持ちよさ優先）
-    this.audio.poko(res?.judgement ?? 'good');
+    // 判定はその場で一瞬で終わるので、判定に合った音をすぐ鳴らす
+    this.audio.harvestSound(res?.judgement ?? null);
     this.squash(this.button, 0.9);
     this.pateSprite.playHit();
     const point = pointId ? this.resources.get(pointId) : undefined;
@@ -193,7 +193,7 @@ export class FieldScene extends Phaser.Scene {
 
   private showJudgement(j: Judgement, gain: number): void {
     const label = JUDGE_TEXT[j];
-    this.popText(gain > 0 ? `${label.text} +${gain}` : label.text, label.color, j === 'perfect' ? 20 : 16, 0);
+    this.popText(gain > 0 ? `${label.text} +${gain}` : label.text, label.color, j === 'excellent' ? 20 : 16, 0);
   }
 
   /** パテの頭の上に文字を出して、ふわっと消す。up は表示の高さの上乗せ */
@@ -204,7 +204,17 @@ export class FieldScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(9600)
       .setStroke('#fff8e8', 4);
-    this.tweens.add({ targets: t, y: y - 86 - up, alpha: 0, duration: 650 + up * 10, ease: 'Cubic.Out', onComplete: () => t.destroy() });
+    // ポンと大きく出て、少し止まってから、ふわっと上に消える（すぐ薄くならないので読みやすい）
+    t.setScale(0.6);
+    this.tweens.chain({
+      targets: t,
+      tweens: [
+        { scale: 1, duration: 120, ease: 'Back.Out' },
+        { y: y - 72 - up, duration: 260 },
+        { y: y - 88 - up, alpha: 0, duration: 260, ease: 'Quad.In' },
+      ],
+      onComplete: () => t.destroy(),
+    });
   }
 
   private updateMaterials(pop: boolean): void {
@@ -265,20 +275,20 @@ export class FieldScene extends Phaser.Scene {
     if (!s) return;
     const { x, y } = BUTTON;
     const top = -90; // ゾーンの真ん中は真上
-    const half = s.meter.perfectDeg / 2;
+    const half = s.meter.excellentDeg / 2;
     const rad = Phaser.Math.DegToRad;
     // 素焼きの溝とその縁
     this.meter.lineStyle(17, COLORS.ink);
     this.meter.strokeCircle(x, y, METER_R);
     this.meter.lineStyle(12, COLORS.meterTrack);
     this.meter.strokeCircle(x, y, METER_R);
-    // 「おしい」ゾーン（中央は「ぴったり」で上塗り）
+    // 「Good」ゾーン（中央は「Excellent」で上塗り）
     this.meter.lineStyle(12, COLORS.meterGood);
     this.meter.beginPath();
     this.meter.arc(x, y, METER_R, rad(top - half - s.meter.goodDeg), rad(top + half + s.meter.goodDeg));
     this.meter.strokePath();
-    // 「ぴったり」ゾーン
-    this.meter.lineStyle(12, COLORS.meterPerfect);
+    // 「Excellent」ゾーン
+    this.meter.lineStyle(12, COLORS.meterExcellent);
     this.meter.beginPath();
     this.meter.arc(x, y, METER_R, rad(top - half), rad(top + half));
     this.meter.strokePath();

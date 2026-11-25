@@ -56,7 +56,7 @@ describe('採取の流れ', () => {
   it('採取中のタップで素材が増え、ポイントの残りが減る。歩き出すと採取をやめる', () => {
     const { f, h } = atClay();
     const r = harvestTap(h, f, lapTime(h.session!, h.session!.firstLap), 5)!;
-    expect(r.judgement).toBe('perfect');
+    expect(r.judgement).toBe('excellent');
     expect(h.materials).toBe(2);
     expect(f.stock.clay).toBe(STOCK.max.clay - 2);
     moveHarvester(h, { x: 200, y: 400 });

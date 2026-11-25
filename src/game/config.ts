@@ -28,8 +28,8 @@ export const COLORS = {
   path: 0xb9b2a3, // 石畳
   pathDark: 0x968e7f, // 石畳の目地
   meterTrack: 0x805b47, // メーターの素焼きの溝
-  meterGood: 0xe8bb89, // 「おしい」ゾーンの淡い砂色
-  meterPerfect: 0xb74224, // 「ぴったり」ゾーンの濃い橙
+  meterGood: 0xe8bb89, // 「Good」ゾーンの淡い砂色
+  meterExcellent: 0xb74224, // 「Excellent」ゾーンの濃い橙
   meterNeedle: 0xffd43b, // 針と拍の光の金色
   harvestHighlight: 0xfff3dc, // 目盛りと残量バーに当たる光
   stockTrack: 0x624638, // 残量バーのくぼみ
@@ -99,7 +99,7 @@ export const RHYTHM = {
   /** テンポ（1分間の拍の数）。メーターの針がゾーンの真ん中を通る瞬間は、この拍にそろえる */
   bpm: 100,
   /** 判定ごとにもらえる素材の数 */
-  gain: { perfect: 2, good: 1, miss: 0 },
+  gain: { excellent: 2, good: 1, bad: 0 },
   /** 採取を始めてから最初に判定するまで、少なくともメーター何周ぶん待つか（心の準備用） */
   minLeadLaps: 0.5,
   /** 音と画面のズレの手動補正（ミリ秒）。タップが早めに判定されると感じたら + にする */
@@ -109,13 +109,13 @@ export const RHYTHM = {
 /**
  * 素材ごとのメーター。
  * lapBeats：針が1周する拍数（大きいほどゆっくり）
- * perfectDeg：「ぴったり」ゾーンの広さ（角度）
- * goodDeg：「ぴったり」ゾーンの両側に広がる「おしい」ゾーンの広さ（片側の角度）
+ * excellentDeg：「Excellent」ゾーンの広さ（角度）
+ * goodDeg：「Excellent」ゾーンの両側に広がる「Good」ゾーンの広さ（片側の角度）
  */
 export const METER = {
-  clay: { lapBeats: 2, perfectDeg: 60, goodDeg: 40 }, // ゆっくり・ゾーン広め（やさしい）
-  bamboo: { lapBeats: 2, perfectDeg: 30, goodDeg: 24 }, // ゆっくり・ゾーンせまい（よく見る）
-  stone: { lapBeats: 1, perfectDeg: 60, goodDeg: 40 }, // 速い（反射神経）
+  clay: { lapBeats: 2, excellentDeg: 60, goodDeg: 40 }, // ゆっくり・ゾーン広め（やさしい）
+  bamboo: { lapBeats: 2, excellentDeg: 30, goodDeg: 24 }, // ゆっくり・ゾーンせまい（よく見る）
+  stone: { lapBeats: 1, excellentDeg: 60, goodDeg: 40 }, // 速い（反射神経）
 } as const;
 
 /** 素材ポイントの残りの量（素材の個数）と、空になってから元に戻るまでの秒数 */
