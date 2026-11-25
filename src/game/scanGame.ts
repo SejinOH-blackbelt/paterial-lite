@@ -3,7 +3,7 @@
 // ・まねっこ：名物の4か所が音と一緒に順番に光る。同じ順にタップできたら成功
 // ・1回でも間違える・時間切れになると失敗（その名物は、そのラウンドのあいだスキャンできない）
 
-import { COUNTRIES, HOME_COUNTRY, LANDMARKS, RESOURCE_NAMES, RESOURCE_POINTS, SCAN_GAME } from './config';
+import { COUNTRIES, HOME_COUNTRY, LANDMARKS, RESOURCE_NAMES, RESOURCE_POINTS, SCAN_GAME, STOCK } from './config';
 import type { Rng } from './random';
 
 export interface QuizQuestion {
@@ -68,11 +68,12 @@ export function makeQuiz(ctx: QuizContext, rng: Rng, count: number = SCAN_GAME.q
     () => choiceQuestion(rng, 'ここは どこの国？', home.name, COUNTRIES.map((c) => c.name)),
     () => choiceQuestion(rng, 'この国のパテを叩くと どんな音？', home.sound, COUNTRIES.map((c) => c.sound)),
     () => {
-      // いま、残りがいちばん多い素材（同じ数で並んでいたら、この問題は出さない）
-      const kinds = RESOURCE_POINTS.map((r) => ({ kind: r.kind, n: ctx.stock[r.id] ?? 0 })).sort((a, b) => b.n - a.n);
-      if (kinds.length < 2 || kinds[0].n === kinds[1].n) return null;
+      // いま、ゲージ（画面のバー）がいちばん多く残っている素材。
+      // 画面で見える「割合」で決める。差が小さくて見分けにくいときは、この問題は出さない
+      const kinds = RESOURCE_POINTS.map((r) => ({ kind: r.kind, f: (ctx.stock[r.id] ?? 0) / STOCK.max[r.kind] })).sort((a, b) => b.f - a.f);
+      if (kinds.length < 2 || kinds[0].f - kinds[1].f < SCAN_GAME.gaugeMargin) return null;
       const names = RESOURCE_POINTS.map((r) => RESOURCE_NAMES[r.kind]);
-      return choiceQuestion(rng, 'いま 残りがいちばん多い素材は？', RESOURCE_NAMES[kinds[0].kind], names, names.length);
+      return choiceQuestion(rng, 'いま ゲージがいちばん多く残っている素材は？', RESOURCE_NAMES[kinds[0].kind], names, names.length);
     },
     () => {
       const l = LANDMARKS.find((x) => x.id === ctx.landmarkId);
@@ -112,11 +113,17 @@ export function answerQuiz(g: QuizGame, choice: number, now: number): void {
   else g.deadline = now + SCAN_GAME.secondsPerQuestion;
 }
 
-/** まねっこのお手本で、時刻 now に光っている場所（なければ null） */
-export function mimicShowing(g: MimicGame, now: number): number | null {
+/** まねっこのお手本で、時刻 now が何番目か（お手本の前後なら null）。同じ場所が続いても番号は変わる */
+export function mimicStep(g: MimicGame, now: number): number | null {
   const step = Math.floor((now - g.startedAt) / SCAN_GAME.mimicStepSeconds) - 1; // 最初の1拍は間をあける
   if (step < 0 || step >= g.sequence.length || now >= g.showUntil) return null;
-  return g.sequence[step];
+  return step;
+}
+
+/** まねっこのお手本で、時刻 now に光っている場所（なければ null） */
+export function mimicShowing(g: MimicGame, now: number): number | null {
+  const step = mimicStep(g, now);
+  return step === null ? null : g.sequence[step];
 }
 
 /** まねっこで押す。お手本の途中は押せない（無視） */

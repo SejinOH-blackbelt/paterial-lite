@@ -299,4 +299,6 @@ export const SCAN_GAME = {
   mimicChance: 0.5,
   /** スパイBotがスキャンに失敗する確率 */
   botFailChance: 0.15,
+  /** 「ゲージがいちばん多い素材」の問題を出すのに必要な、1位と2位のゲージの差（割合） */
+  gaugeMargin: 0.15,
 } as const;

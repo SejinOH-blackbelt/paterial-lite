@@ -3,10 +3,10 @@ import { COUNTRIES, LANDMARKS, SCAN_GAME } from '../src/game/config';
 import { createHarvester } from '../src/game/harvest';
 import { createWalker } from '../src/game/movement';
 import { createRng } from '../src/game/random';
-import { answerQuiz, checkTimeout, createScanGame, makeQuiz, mimicShowing, pressMimic, type MimicGame, type QuizGame } from '../src/game/scanGame';
+import { answerQuiz, checkTimeout, createScanGame, makeQuiz, mimicShowing, mimicStep, pressMimic, type MimicGame, type QuizGame } from '../src/game/scanGame';
 import { canScan, createSpyState, newRound, startScan, updateScan } from '../src/game/spy';
 
-const stock = { clay: 12, bamboo: 3, stone: 8 };
+const stock = { clay: 12, bamboo: 3, stone: 4 }; // ゲージ：粘土 100%・木材 30%・鉱石 50%
 
 describe('スキャンのクイズ（国の状態から自動で作る）', () => {
   it('問題は3問。選択肢の中に正解がひとつある', () => {
@@ -29,14 +29,25 @@ describe('スキャンのクイズ（国の状態から自動で作る）', () =
     expect(answers.get('この国の名産は？')).toBe(wa.specialty);
     expect(answers.get('ここは どこの国？')).toBe(wa.name);
     expect(answers.get('この国のパテを叩くと どんな音？')).toBe(wa.sound);
-    expect(answers.get('いま 残りがいちばん多い素材は？')).toBe('粘土');
+    expect(answers.get('いま ゲージがいちばん多く残っている素材は？')).toBe('粘土');
     expect(answers.get('いま スキャンしている名物は？')).toBe(LANDMARKS[1].name);
   });
 
-  it('素材の残りが同じ数で並んでいたら「いちばん多い素材」は出さない', () => {
+  it('ゲージは画面のバーと同じ「割合」で比べる（個数が多くても、割合が小さければ正解ではない）', () => {
+    // 粘土 10/12 = 0.83、鉱石 8/8 = 1.0 → 画面では鉱石のバーがいちばん長い
+    const seen = new Set<string>();
+    for (let seed = 1; seed < 40; seed++) {
+      for (const q of makeQuiz({ stock: { clay: 10, bamboo: 2, stone: 8 }, landmarkId: 'kama' }, createRng(seed))) {
+        if (q.text.includes('ゲージ')) seen.add(q.choices[q.answer]);
+      }
+    }
+    expect([...seen]).toEqual(['鉱石']);
+  });
+
+  it('ゲージの差が小さくて見分けにくいときは「いちばん多い素材」は出さない', () => {
     for (let seed = 1; seed < 30; seed++) {
-      const qs = makeQuiz({ stock: { clay: 5, bamboo: 5, stone: 2 }, landmarkId: 'kama' }, createRng(seed));
-      expect(qs.some((q) => q.text.includes('いちばん多い'))).toBe(false);
+      const qs = makeQuiz({ stock: { clay: 6, bamboo: 5, stone: 2 }, landmarkId: 'kama' }, createRng(seed)); // 0.5 と 0.5
+      expect(qs.some((q) => q.text.includes('ゲージ'))).toBe(false);
     }
   });
 
@@ -69,6 +80,13 @@ describe('スキャンのまねっこ', () => {
     expect(mimicShowing(g, SCAN_GAME.mimicStepSeconds * 1.5)).toBe(g.sequence[0]);
     pressMimic(g, g.sequence[0], 0.1); // お手本の途中 → 無視
     expect(g.pos).toBe(0);
+  });
+
+  it('同じ場所が続いても、お手本の番号は1つずつ進む（毎回光らせられる）', () => {
+    const g = mimic(4);
+    g.sequence = [2, 2, 2, 1];
+    const steps = [1.5, 2.5, 3.5, 4.5].map((n) => mimicStep(g, n * SCAN_GAME.mimicStepSeconds));
+    expect(steps).toEqual([0, 1, 2, 3]);
   });
 
   it('同じ順に押せたら成功、ちがう場所を押したら失敗', () => {

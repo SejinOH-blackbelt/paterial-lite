@@ -222,6 +222,8 @@ export class FieldScene extends Phaser.Scene {
   }
 
   private goTo(p: Phaser.Input.Pointer, showMarker: boolean): void {
+    // 置物にされたら歩けない（指を押したまま置物にされて、そのまま指を動かした場合も）
+    if (this.player.frozen) return;
     const result = moveHarvester(this.player, { x: p.worldX, y: p.worldY }, this.all);
     // ほかのパテが使っているポイントなら、そばで順番を待つ（空いたら自動で採取を始める）
     if (result === 'wait' && showMarker) this.popText('じゅんばん待ち', '#2b1d14', 15, 0);

@@ -2,7 +2,7 @@
 // 判定のルールは src/game/scanGame.ts。この部品は表示とタップの受け付けだけ。
 import Phaser from 'phaser';
 import { COLORS, SCAN_GAME, SCREEN } from '../game/config';
-import { answerQuiz, mimicShowing, pressMimic, type ScanGame } from '../game/scanGame';
+import { answerQuiz, mimicStep, pressMimic, type ScanGame } from '../game/scanGame';
 
 /** パネルの位置と大きさ */
 const PANEL = { x: 12, y: 388, w: SCREEN.width - 24, h: 236 } as const;
@@ -20,7 +20,8 @@ export class ScanGameView {
   private choiceTexts: Phaser.GameObjects.Text[] = [];
   private pads: Phaser.GameObjects.Graphics[] = [];
   private shownIndex = -1;
-  private lastShowing: number | null = null;
+  /** お手本の何番目まで光らせたか（同じ場所が続いても毎回光らせるため、場所ではなく番号で見る） */
+  private lastStep: number | null = null;
 
   /** onTone：まねっこで光ったり押したりしたときに鳴らす音 */
   constructor(scene: Phaser.Scene, game: ScanGame, private readonly onTone: (pad: number) => void, private readonly now: () => number) {
@@ -167,12 +168,12 @@ export class ScanGameView {
       left = g.deadline - now;
       total = SCAN_GAME.secondsPerQuestion;
     } else {
-      const showing = mimicShowing(g, now);
-      if (showing !== null && showing !== this.lastShowing) {
-        this.flash(showing);
-        this.onTone(showing);
+      const step = mimicStep(g, now);
+      if (step !== null && step !== this.lastStep) {
+        this.flash(g.sequence[step]);
+        this.onTone(g.sequence[step]);
       }
-      this.lastShowing = showing;
+      this.lastStep = step;
       const watching = now < g.showUntil;
       this.title.setText(watching ? 'スキャン中…\n光る順番を おぼえよう' : `同じ順番に タップ！（${g.pos}/${g.sequence.length}）`);
       left = watching ? SCAN_GAME.mimicInputSeconds : g.deadline - now;
