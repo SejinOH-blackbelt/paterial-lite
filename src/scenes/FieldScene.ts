@@ -1,13 +1,13 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // 動きと採取のルールは src/game（movement.ts / harvest.ts / rhythm.ts）に任せます。
 import Phaser from 'phaser';
-import { PATE, RESOURCE_POINTS, RHYTHM, SCREEN } from '../game/config';
+import { COLORS, PATE, RESOURCE_POINTS, RESOURCE_REACTION, RHYTHM, SCREEN } from '../game/config';
 import { createHarvester, harvestTap, moveHarvester, updateHarvester, type Harvester } from '../game/harvest';
 import { createWalker, isWalking, stepWalker } from '../game/movement';
 import { beatInterval, beatTime, nextBeat, type Judgement } from '../game/rhythm';
 import { GameAudio } from './audio';
 import { PateView } from './PateView';
-import { makeResourceTextures, RES_TEX } from './resourceTextures';
+import { makeResourceTextures, RES_CHIP_COLOR, RES_TEX } from './resourceTextures';
 import { drawGround, makeTextures, TEX } from './textures';
 
 /** 「たたく」ボタンの位置と大きさ */
@@ -31,7 +31,7 @@ export class FieldScene extends Phaser.Scene {
   private origin = 0;
   /** 次に予約する拍の番号 */
   private scheduledBeat = 0;
-  private resources = new Map<string, Phaser.GameObjects.Image>();
+  private resources = new Map<string, { image: Phaser.GameObjects.Image; chipColor: number }>();
   private button!: Phaser.GameObjects.Container;
   private rings!: Phaser.GameObjects.Graphics;
   private materialsText!: Phaser.GameObjects.Text;
@@ -56,7 +56,7 @@ export class FieldScene extends Phaser.Scene {
 
     for (const r of RESOURCE_POINTS) {
       const img = this.add.image(r.x, r.y, RES_TEX[r.kind]).setOrigin(0.5, 1).setDepth(r.y);
-      this.resources.set(r.id, img);
+      this.resources.set(r.id, { image: img, chipColor: RES_CHIP_COLOR[r.kind] });
     }
 
     this.player = createHarvester(createWalker({ x: SCREEN.width / 2, y: SCREEN.height * 0.6 }));
@@ -120,9 +120,9 @@ export class FieldScene extends Phaser.Scene {
     // 音は判定を待たずにすぐ鳴らす（気持ちよさ優先）
     this.audio.poko(res?.judgement ?? 'good');
     this.squash(this.button, 0.9);
-    this.squash(this.pateSprite, 0.85);
+    this.pateSprite.playHit();
     const point = this.player.session && this.resources.get(this.player.session.pointId);
-    if (point) this.wiggle(point);
+    if (point) this.reactToHit(point.image, point.chipColor);
     if (!res) return; // 準備の拍の間は判定しない
     this.showJudgement(res.judgement, res.gain);
     if (res.gain > 0) this.updateMaterials(true);
@@ -134,11 +134,39 @@ export class FieldScene extends Phaser.Scene {
     this.tweens.add({ targets: target, scaleX: 1, scaleY: 1, duration: 140, ease: 'Back.Out' });
   }
 
-  private wiggle(img: Phaser.GameObjects.Image): void {
-    this.tweens.killTweensOf(img);
-    const r = RESOURCE_POINTS.find((q) => RES_TEX[q.kind] === img.texture.key)!;
-    img.setX(r.x).setAngle(0);
-    this.tweens.add({ targets: img, angle: { from: -6, to: 0 }, duration: 160, ease: 'Sine.Out' });
+  private reactToHit(image: Phaser.GameObjects.Image, chipColor: number): void {
+    const reaction = RESOURCE_REACTION;
+    const impactDelay = PATE.hitReachSeconds * 1000;
+    this.tweens.killTweensOf(image);
+    this.tweens.add({
+      targets: image,
+      scaleX: { from: 1 / reaction.squash, to: 1 },
+      scaleY: { from: reaction.squash, to: 1 },
+      delay: impactDelay,
+      duration: reaction.bounceMs,
+      ease: 'Back.Out',
+    });
+
+    for (let i = 0; i < reaction.chipCount; i++) {
+      const side = (2 * i - reaction.chipCount + 1) / Math.max(1, reaction.chipCount - 1);
+      const chip = this.add.triangle(image.x + side * 9, image.y - 12, 0, 4, 2, 0, 5, 3, chipColor)
+        .setStrokeStyle(0.8, COLORS.pateOutline)
+        .setDepth(image.depth + 1)
+        .setVisible(false);
+      this.tweens.add({
+        targets: chip,
+        x: chip.x + side * reaction.chipSpread,
+        y: chip.y - reaction.chipRise * (1 - Math.abs(side) * 0.35),
+        angle: side * 120,
+        alpha: 0,
+        scale: 0.45,
+        delay: impactDelay,
+        duration: reaction.chipMs,
+        ease: 'Quad.Out',
+        onStart: () => chip.setVisible(true),
+        onComplete: () => chip.destroy(),
+      });
+    }
   }
 
   private showJudgement(j: Judgement, gain: number): void {

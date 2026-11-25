@@ -16,7 +16,7 @@ export const TEX = {
 export const PATE_SIZE = { w: 40, h: 44 } as const;
 
 /** 曲線で描いた部品を、Phaser が表示できる画像にする */
-function drawPart(
+export function drawPart(
   scene: Phaser.Scene,
   key: string,
   width: number,
@@ -173,7 +173,7 @@ export function makeTextures(scene: Phaser.Scene): void {
 }
 
 /** 決まった数字から毎回同じ並びの「でたらめ」を作る（地面の模様が毎回同じになるように） */
-function seeded(seed: number): () => number {
+export function seeded(seed: number): () => number {
   let s = seed;
   return () => {
     s = (s * 1664525 + 1013904223) % 4294967296;

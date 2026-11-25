@@ -16,6 +16,10 @@ export const COLORS = {
   pateCrack: 0x572d21, // 素焼きのひびと細かな粒
   pateEyeRim: 0x926044, // 目の穴に残る土の縁
   stone: 0x6f7378, // バイキング：石のグレー
+  clayLight: 0xc8875c, // 粘土の山に光が当たる面
+  bambooLight: 0xa5b568, // 竹の節と光が当たる面
+  stoneLight: 0xa2a09a, // 石に光が当たる面
+  stoneDark: 0x505158, // 石の割れ目と影
   ink: 0x2b1d14, // 輪郭・文字・目の穴
   dirt: 0xd9b37c, // 採取場の土
   dirtDark: 0xc49a62, // 土の濃い部分
@@ -69,6 +73,16 @@ export const PATE = {
   breathAmount: 0.025,
   /** 歩きと待機の姿勢を切り替える時間（秒） */
   poseTransitionSeconds: 0.16,
+  /** タップから腕が素材に届くまでの時間（秒） */
+  hitReachSeconds: 0.055,
+  /** 打撃のあと待機の姿勢に戻る時間（秒） */
+  hitReturnSeconds: 0.19,
+  /** 打撃時に左右の腕を振り上げる角度（ラジアン） */
+  hitArmSwing: 2.05,
+  /** 打撃時に上体が素材側へせり出す距離（ピクセル） */
+  hitLean: 8,
+  /** 打撃時に上体が縦に縮む割合 */
+  hitSquash: 0.09,
   /** 胴体が一番高いときに影が縮む割合 */
   shadowShrink: 0.2,
 } as const;
@@ -96,7 +110,7 @@ export const RESOURCE = {
   /** この半径の中をタップすると「このポイントで採取する」とみなす */
   tapRadius: 34,
   /** パテが立つ位置（素材の中心からどれだけ下か） */
-  standOffsetY: 38,
+  standOffsetY: 44,
   /** 立つ位置にこれだけ近ければ採取が始まる */
   harvestRadius: 6,
 } as const;
@@ -107,3 +121,13 @@ export const RESOURCE_POINTS = [
   { id: 'bamboo', kind: 'bamboo', x: 272, y: 330 },
   { id: 'stone', kind: 'stone', x: 104, y: 470 },
 ] as const;
+
+/** 素材をたたいたときの見た目 */
+export const RESOURCE_REACTION = {
+  squash: 0.86, // 素材が一瞬縮む割合
+  bounceMs: 180, // 素材が弾んで戻る時間
+  chipMs: 230, // かけらが消えるまでの時間
+  chipCount: 3, // 1回の打撃で飛ぶかけらの数
+  chipSpread: 21, // 左右に飛ぶ距離（ピクセル）
+  chipRise: 18, // 上に飛ぶ距離（ピクセル）
+} as const;

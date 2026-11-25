@@ -30,6 +30,9 @@ export class PateView extends Phaser.GameObjects.Container {
   private breathPhase = 0;
   private walkWeight = 0;
   private stepBounce = 0;
+  private hitElapsed = PATE.hitReachSeconds + PATE.hitReturnSeconds;
+  private hitStart = 0;
+  private hitPose = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y);
@@ -70,6 +73,13 @@ export class PateView extends Phaser.GameObjects.Container {
     this.legR.setX(legX).setFlipX(mirror);
   }
 
+  /** 背中を向けた姿勢から、両腕を素材に振り上げる。 */
+  playHit(): void {
+    if (this.facing !== 'up') return;
+    this.hitStart = this.hitPose;
+    this.hitElapsed = 0;
+  }
+
   update(dtSeconds: number, isWalking: boolean): void {
     const turn = 2 * Math.PI;
     const weightChange = dtSeconds / PATE.poseTransitionSeconds;
@@ -102,7 +112,25 @@ export class PateView extends Phaser.GameObjects.Container {
     const squash = (this.walkWeight - this.stepBounce) * PATE.landingSquash;
     const breath = Math.sin(this.breathPhase) * PATE.breathAmount * (1 - this.walkWeight);
     const stretch = 1 - squash + breath;
-    this.torso.setScale(1 / stretch, stretch);
+    this.hitElapsed += dtSeconds;
+    if (isWalking || this.facing !== 'up') {
+      this.hitElapsed = PATE.hitReachSeconds + PATE.hitReturnSeconds;
+    }
+    if (this.hitElapsed < PATE.hitReachSeconds) {
+      const reach = Phaser.Math.Easing.Sine.Out(this.hitElapsed / PATE.hitReachSeconds);
+      this.hitPose = Phaser.Math.Linear(this.hitStart, 1, reach);
+    } else {
+      const recovery = Phaser.Math.Clamp((this.hitElapsed - PATE.hitReachSeconds) / PATE.hitReturnSeconds, 0, 1);
+      this.hitPose = 1 - Phaser.Math.Easing.Sine.InOut(recovery);
+    }
+
+    // 足元を支点に、両腕を外から振り上げながら上体を素材側に乗り出す。
+    const swing = this.hitPose * PATE.hitArmSwing;
+    this.armL.rotation += swing;
+    this.armR.rotation -= swing;
+    this.upperBody.y -= this.hitPose * PATE.hitLean;
+    const torsoStretch = stretch - this.hitPose * PATE.hitSquash;
+    this.torso.setScale(1 / torsoStretch, torsoStretch);
   }
 
   /** 見た目の高さ（重なり順の計算などに使う） */
