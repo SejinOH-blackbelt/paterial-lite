@@ -118,19 +118,23 @@ export const RHYTHM = {
 
 /**
  * 素材ごとのメーター。
- * lapBeats：針が1周する拍数（大きいほどゆっくり）
+ * lapBeats：針が1周する拍数の候補。1回タップするたびに、次の1周の速さをこの中から選び直す
+ *          （大きいほどゆっくり。0.5拍きざみにすると、針がゾーンの真ん中を通る瞬間が拍か半拍にそろう）
+ * firstLapBeats：採取を始めたときの1周の拍数
  * excellentDeg：「Excellent」ゾーンの広さ（角度）
  * goodDeg：「Excellent」ゾーンの両側に広がる「Good」ゾーンの広さ（片側の角度）
  */
 export const METER = {
-  clay: { lapBeats: 2, excellentDeg: 60, goodDeg: 40 }, // ゆっくり・ゾーン広め（やさしい）
-  bamboo: { lapBeats: 2, excellentDeg: 30, goodDeg: 24 }, // ゆっくり・ゾーンせまい（よく見る）
-  stone: { lapBeats: 1, excellentDeg: 60, goodDeg: 40 }, // 速い（反射神経）
+  clay: { lapBeats: [1.5, 2, 2.5, 3], firstLapBeats: 2, excellentDeg: 60, goodDeg: 40 }, // ゆっくりめ・ゾーン広め（やさしい）
+  bamboo: { lapBeats: [1.5, 2, 2.5], firstLapBeats: 2, excellentDeg: 30, goodDeg: 24 }, // ゾーンせまい（よく見る）
+  stone: { lapBeats: [1, 1.5, 2], firstLapBeats: 1, excellentDeg: 60, goodDeg: 40 }, // 速め（反射神経）
 } as const;
 
 /** 素材ポイントの残りの量（素材の個数）と、空になってから元に戻るまでの秒数 */
 export const STOCK = {
   max: { clay: 12, bamboo: 10, stone: 8 },
+  /** 1回叩くと、素材ポイントの残りがいくつ減るか。Bad でも減るので、雑に叩くと素材が無駄になる */
+  cost: { excellent: 2, good: 1, bad: 1 },
   regenSeconds: 15,
 } as const;
 

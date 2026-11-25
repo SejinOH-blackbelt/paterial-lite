@@ -15,7 +15,7 @@ import {
 } from '../game/harvest';
 import { createWalker, isWalking, stepWalker } from '../game/movement';
 import { createRng, type Rng } from '../game/random';
-import { lapTime, needleAngle, nextLap, type HarvestSession, type Judgement } from '../game/rhythm';
+import { nearestPass, needleAngle, nextPass, passTime, type HarvestSession, type Judgement } from '../game/rhythm';
 import { GameAudio } from './audio';
 import { makePartTextures, type HeadPart } from './partTextures';
 import { PateView } from './PateView';
@@ -180,7 +180,9 @@ export class FieldScene extends Phaser.Scene {
     // 空になると採取が終わるので、どの素材をたたいたかは先に覚えておく
     const pointId = this.player.session?.pointId;
     const t = this.audio.heardTime(perfMs);
-    const res = harvestTap(this.player, this.field, t, t);
+    const res = harvestTap(this.player, this.field, t, t, this.rng);
+    // タップで次の1周の速さが変わるので、予約していた拍の音を取り直す
+    if (res) this.resetTicks();
     // 判定はその場で一瞬で終わるので、判定に合った音をすぐ鳴らす
     this.audio.harvestSound(res?.judgement ?? null);
     this.squash(this.button, 0.9);
@@ -292,25 +294,31 @@ export class FieldScene extends Phaser.Scene {
     for (const e of this.pates) this.syncPate(e, dt);
   }
 
+  /** 予約済みでまだ鳴っていない拍の音を取り消し、予約をやり直す */
+  private resetTicks(): void {
+    for (const t of this.pendingTicks) t.cancel();
+    this.pendingTicks = [];
+    const s = this.player.session;
+    if (s) this.scheduledLap = nextPass(s, this.audio.now);
+  }
+
   /** 採取中は、針がゾーンの真ん中を通る音を少し先まで予約しておく（予約すると、処理が重くても音がずれない） */
   private scheduleTicks(): void {
     const s = this.player.session;
     if (s !== this.tickSession) {
       // 採取が変わったら、前の採取で予約した音を取り消し、点滅の記録も消す（音の二重や光り忘れを防ぐ）
-      for (const t of this.pendingTicks) t.cancel();
-      this.pendingTicks = [];
-      this.lastFlashLap = -1;
       this.tickSession = s;
-      if (s) this.scheduledLap = nextLap(s, this.audio.now);
+      this.lastFlashLap = -1;
+      this.resetTicks();
     }
     this.pendingTicks = this.pendingTicks.filter((t) => t.when > this.audio.now);
     if (!s) return;
     const lookahead = this.audio.now + SCHEDULE_AHEAD;
-    // 前に予約した周が古すぎるときは、いまの周から数え直す
-    this.scheduledLap = Math.max(this.scheduledLap, nextLap(s, this.audio.now));
-    while (lapTime(s, this.scheduledLap) < lookahead) {
-      const when = lapTime(s, this.scheduledLap);
-      this.pendingTicks.push({ when, cancel: this.audio.tick(when, this.scheduledLap >= s.firstLap) });
+    // 前に予約した通過が古すぎるときは、いまの通過から数え直す
+    this.scheduledLap = Math.max(this.scheduledLap, nextPass(s, this.audio.now));
+    while (passTime(s, this.scheduledLap) < lookahead) {
+      const when = passTime(s, this.scheduledLap);
+      this.pendingTicks.push({ when, cancel: this.audio.tick(when, this.scheduledLap >= s.firstPass) });
       this.scheduledLap++;
     }
   }
@@ -323,7 +331,7 @@ export class FieldScene extends Phaser.Scene {
     if (!s) return;
     const { x, y } = BUTTON;
     const top = -90; // ゾーンの真ん中は真上
-    const half = s.meter.excellentDeg / 2;
+    const half = s.excellentDeg / 2;
     const rad = Phaser.Math.DegToRad;
     // 素焼きの溝とその縁
     this.meter.lineStyle(17, COLORS.ink);
@@ -333,7 +341,7 @@ export class FieldScene extends Phaser.Scene {
     // 「Good」ゾーン（中央は「Excellent」で上塗り）
     this.meter.lineStyle(12, COLORS.meterGood);
     this.meter.beginPath();
-    this.meter.arc(x, y, METER_R, rad(top - half - s.meter.goodDeg), rad(top + half + s.meter.goodDeg));
+    this.meter.arc(x, y, METER_R, rad(top - half - s.goodDeg), rad(top + half + s.goodDeg));
     this.meter.strokePath();
     // 「Excellent」ゾーン
     this.meter.lineStyle(12, COLORS.meterExcellent);
@@ -344,8 +352,8 @@ export class FieldScene extends Phaser.Scene {
     this.meter.lineStyle(2, COLORS.harvestHighlight);
     this.meter.lineBetween(x, y - METER_R - 4, x, y - METER_R + 4);
     // 針（準備の間はうすく）
-    const lapNow = Math.round((heard - s.origin) / s.meter.lap);
-    const ready = lapNow >= s.firstLap;
+    const lapNow = nearestPass(s, heard);
+    const ready = lapNow >= s.firstPass;
     const a = rad(top + needleAngle(s, heard));
     const cos = Math.cos(a);
     const sin = Math.sin(a);
@@ -364,7 +372,7 @@ export class FieldScene extends Phaser.Scene {
     this.meter.fillPath();
     this.meter.strokePath();
     // 針がゾーンの真ん中を通る瞬間に、ボタンのふちを光らせる
-    if (ready && lapNow !== this.lastFlashLap && Math.abs(heard - lapTime(s, lapNow)) < 0.03) {
+    if (ready && lapNow !== this.lastFlashLap && Math.abs(heard - passTime(s, lapNow)) < 0.03) {
       this.lastFlashLap = lapNow;
       const flash = this.add.circle(x, y, BUTTON.r + 2).setStrokeStyle(6, COLORS.meterNeedle).setDepth(9050);
       this.tweens.add({ targets: flash, scale: 1.2, alpha: 0, duration: 200, onComplete: () => flash.destroy() });

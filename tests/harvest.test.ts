@@ -12,7 +12,8 @@ import {
   waitSpot,
 } from '../src/game/harvest';
 import { createWalker, stepWalker } from '../src/game/movement';
-import { lapTime } from '../src/game/rhythm';
+import { createRng } from '../src/game/random';
+import { passTime } from '../src/game/rhythm';
 
 const clay = RESOURCE_POINTS[0];
 
@@ -56,21 +57,35 @@ describe('採取の流れ', () => {
 
   it('採取中のタップで素材が増え、ポイントの残りが減る。歩き出すと採取をやめる', () => {
     const { f, h } = atClay();
-    const r = harvestTap(h, f, lapTime(h.session!, h.session!.firstLap), 5)!;
+    const r = harvestTap(h, f, passTime(h.session!, h.session!.firstPass), 5, createRng(1))!;
     expect(r.judgement).toBe('excellent');
     expect(h.materials).toBe(2);
     expect(f.stock.clay).toBe(STOCK.max.clay - 2);
     moveHarvester(h, { x: 200, y: 400 }, [h]);
     expect(h.session).toBeNull();
-    expect(harvestTap(h, f, 100, 100)).toBeNull();
+    expect(harvestTap(h, f, 100, 100, createRng(1))).toBeNull();
   });
 });
 
 describe('素材がなくなる', () => {
+  it('Bad でもポイントの残りは減る（素材は増えない）', () => {
+    const { f, h } = atClay();
+    const s = h.session!;
+    // 通過と通過のちょうど真ん中（針が真下）でタップ → Bad
+    const t = passTime(s, s.firstPass) - (passTime(s, s.firstPass) - passTime(s, s.firstPass - 1)) / 2;
+    const before = f.stock.clay;
+    const r = harvestTap(h, f, t + 0.0001, 5, createRng(1))!;
+    expect(r.judgement).toBe('bad');
+    expect(r.gain).toBe(0);
+    expect(r.used).toBe(STOCK.cost.bad);
+    expect(f.stock.clay).toBe(before - STOCK.cost.bad);
+    expect(h.materials).toBe(0);
+  });
+
   it('残りより多くはもらえず、空になると採取が終わる', () => {
     const { f, h } = atClay();
     f.stock.clay = 1;
-    const r = harvestTap(h, f, lapTime(h.session!, h.session!.firstLap), 7)!;
+    const r = harvestTap(h, f, passTime(h.session!, h.session!.firstPass), 7, createRng(1))!;
     expect(r.gain).toBe(1);
     expect(r.depleted).toBe(true);
     expect(f.stock.clay).toBe(0);

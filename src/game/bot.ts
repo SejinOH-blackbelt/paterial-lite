@@ -5,7 +5,7 @@ import { BOT, FIELD, RESOURCE, RESOURCE_POINTS } from './config';
 import { harvestTap, moveHarvester, claimedByOther, type FieldState, type Harvester, type HarvestResult } from './harvest';
 import { createWalker, setTarget, type Point } from './movement';
 import { between, gaussian, intBetween, type Rng } from './random';
-import { lapTime, nextLap } from './rhythm';
+import { beatInterval, nextPass, passTime } from './rhythm';
 
 export interface BotProfile {
   id: string;
@@ -81,12 +81,12 @@ export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[]
     if (!bot.nextTap) {
       // 叩いた周の次以降から選ぶ（拍より早めに叩いたときに、同じ周をもう一度選ばないように）
       const after = h.session === bot.lastSession ? bot.lastLap + 1 : -Infinity;
-      let lap = Math.max(s.firstLap, nextLap(s, now), after);
+      let lap = Math.max(s.firstPass, nextPass(s, now), after);
       while (rng() < BOT.skipLapChance) lap++;
       // ズレは半周より小さくおさえる（大きすぎると隣の周を叩いたことになってしまうため）
-      const limit = s.meter.lap / 2 - 0.02;
+      const limit = (s.lapBeats * beatInterval()) / 2 - 0.02;
       const error = Math.max(-limit, Math.min(limit, gaussian(rng, bot.profile.timingError)));
-      let time = lapTime(s, lap) + error;
+      let time = passTime(s, lap) + error;
       if (time < now) time = now;
       bot.nextTap = { lap, time };
     }
@@ -95,10 +95,10 @@ export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[]
     const time = bot.nextTap.time;
     bot.lastLap = bot.nextTap.lap;
     bot.lastSession = s;
-    const result = harvestTap(h, field, time, now);
+    const result = harvestTap(h, field, time, now, rng);
     bot.nextTap = null;
     if (!result) return [];
-    bot.lastLap = Math.max(bot.lastLap, result.lap); // 実際に判定された周
+    bot.lastLap = Math.max(bot.lastLap, result.pass); // 実際に判定された通過
     bot.tapsLeft--;
     if (bot.tapsLeft <= 0 && h.session) {
       // じゅうぶん採ったので、別の場所へ

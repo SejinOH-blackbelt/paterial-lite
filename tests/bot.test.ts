@@ -128,7 +128,7 @@ describe('住民Bot', () => {
       stepWalker(b.h.walker, 1 / 60);
       updateHarvester(b.h, f, all, t + 0.2, 0);
       for (const e of updateBot(b, f, all, t, rng)) {
-        const key = `${String(b.lastSession && (b.lastSession as { firstLap: number }).firstLap)}-${e.pointId}-${e.result.lap}`;
+        const key = `${String(b.lastSession && (b.lastSession as { seg: { start: number } }).seg.start)}-${e.pointId}-${e.result.pass}`;
         expect(seen.has(key)).toBe(false);
         seen.add(key);
       }

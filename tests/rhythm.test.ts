@@ -1,62 +1,101 @@
 import { describe, expect, it } from 'vitest';
 import { METER } from '../src/game/config';
-import { beatInterval, judgeOffset, lapTime, meterFor, needleAngle, startSession, tapSession } from '../src/game/rhythm';
+import { createRng } from '../src/game/random';
+import { beatInterval, judgeAngle, nearestPass, needleAngle, nextPass, passTime, startSession, tapSession } from '../src/game/rhythm';
+
+const beat = beatInterval();
+/** 拍か半拍にそろっているか */
+const onHalfBeat = (t: number, origin: number) => {
+  const n = (t - origin) / (beat / 2);
+  return Math.abs(n - Math.round(n)) < 1e-6;
+};
+const circ = (a: number) => Math.min(a, 360 - a);
 
 describe('回るメーターの判定', () => {
-  it('テンポ100なら1拍は0.6秒、粘土の針は2拍（1.2秒）で1周', () => {
-    expect(beatInterval()).toBeCloseTo(0.6);
-    expect(meterFor('clay').lap).toBeCloseTo(1.2);
-    expect(meterFor('stone').lap).toBeCloseTo(0.6);
+  it('テンポ100なら1拍は0.6秒', () => {
+    expect(beat).toBeCloseTo(0.6);
   });
 
-  it('ゾーンの角度が、時間の幅に直される', () => {
-    const m = meterFor('clay'); // 1.2秒で360度 → 1度 = 1/300秒
-    expect(m.excellentWindow).toBeCloseTo((METER.clay.excellentDeg / 2) / 300);
-    expect(m.goodWindow).toBeCloseTo((METER.clay.excellentDeg / 2 + METER.clay.goodDeg) / 300);
+  it('ゾーンの真ん中からの角度で判定する', () => {
+    const { excellentDeg: e, goodDeg: g } = METER.clay;
+    expect(judgeAngle(0, e, g)).toBe('excellent');
+    expect(judgeAngle(e / 2, e, g)).toBe('excellent');
+    expect(judgeAngle(e / 2 + 1, e, g)).toBe('good');
+    expect(judgeAngle(e / 2 + g + 1, e, g)).toBe('bad');
   });
 
-  it('素材ごとに難しさが違う：竹はゾーンがせまく、石は針が速い', () => {
-    expect(meterFor('bamboo').excellentWindow).toBeLessThan(meterFor('clay').excellentWindow);
-    expect(meterFor('stone').lap).toBeLessThan(meterFor('clay').lap);
+  it('始めた直後（半周より前）は判定しない。最初の通過は拍か半拍にそろう', () => {
+    const s = startSession('clay', 'clay', 10.1, 10);
+    expect(passTime(s, s.firstPass) - 10.1).toBeGreaterThanOrEqual(METER.clay.firstLapBeats * beat * 0.5);
+    expect(onHalfBeat(passTime(s, s.firstPass), 10)).toBe(true);
+    expect(tapSession(s, passTime(s, s.firstPass) - METER.clay.firstLapBeats * beat * 0.75, createRng(1))).toBeNull();
   });
 
-  it('ズレが小さいと「Excellent」、少しだと「Good」、大きいと「Bad」', () => {
-    const m = meterFor('clay');
-    expect(judgeOffset(0, m)).toBe('excellent');
-    expect(judgeOffset(-m.excellentWindow, m)).toBe('excellent');
-    expect(judgeOffset(m.excellentWindow + 0.01, m)).toBe('good');
-    expect(judgeOffset(-(m.goodWindow + 0.01), m)).toBe('bad');
+  it('通過の瞬間は針が真上（0度）、半周で180度', () => {
+    const s = startSession('clay', 'clay', 10, 10);
+    const p = passTime(s, s.firstPass);
+    expect(circ(needleAngle(s, p))).toBeCloseTo(0);
+    expect(needleAngle(s, p - (METER.clay.firstLapBeats * beat) / 2)).toBeCloseTo(180);
   });
 
-  it('針の角度：ゾーンの真ん中（0度）から時計回りに進む', () => {
-    const s = startSession('clay', meterFor('clay'), 10, 10);
-    expect(needleAngle(s, 10)).toBeCloseTo(0);
-    expect(needleAngle(s, 10.3)).toBeCloseTo(90);
-    const a = needleAngle(s, 11.2); // 1周して真上に戻る（359.99…度も0度と同じ位置）
-    expect(Math.min(a, 360 - a)).toBeCloseTo(0);
-  });
-
-  it('始めた直後（半周より前）は判定しない', () => {
-    const s = startSession('clay', meterFor('clay'), 10.1, 10);
-    expect(lapTime(s, s.firstLap) - 10.1).toBeGreaterThanOrEqual(0.6);
-    expect(tapSession(s, lapTime(s, s.firstLap - 1))).toBeNull();
-  });
-
-  it('ゾーンの真ん中でタップすると2個、少し外れると1個', () => {
-    const m = meterFor('clay');
-    const s = startSession('clay', m, 10, 10);
-    const a = tapSession(s, lapTime(s, s.firstLap))!;
+  it('ゾーンの真ん中でタップすると Excellent（2個）、少し外れると Good（1個）', () => {
+    const s = startSession('clay', 'clay', 10, 10);
+    const rng = createRng(1);
+    const a = tapSession(s, passTime(s, s.firstPass), rng)!;
     expect(a.judgement).toBe('excellent');
     expect(a.gain).toBe(2);
-    const b = tapSession(s, lapTime(s, s.firstLap + 1) + m.excellentWindow + 0.02)!;
+    // 次の通過の少し後（Excellent ゾーンの外、Good ゾーンの中）
+    const p2 = passTime(s, s.firstPass + 1);
+    const degPerSec = 360 / (s.lapBeats * beat);
+    const b = tapSession(s, p2 + (METER.clay.excellentDeg / 2 + 10) / degPerSec, rng)!;
     expect(b.judgement).toBe('good');
     expect(b.gain).toBe(1);
   });
 
   it('同じ周に2回たたくと、2回目は「Bad」（連打でかせげない）', () => {
-    const s = startSession('clay', meterFor('clay'), 10, 10);
-    const t = lapTime(s, s.firstLap);
-    expect(tapSession(s, t)!.judgement).toBe('excellent');
-    expect(tapSession(s, t + 0.01)!.judgement).toBe('bad');
+    const s = startSession('clay', 'clay', 10, 10);
+    const rng = createRng(2);
+    const t = passTime(s, s.firstPass);
+    expect(tapSession(s, t, rng)!.judgement).toBe('excellent');
+    expect(tapSession(s, t + 0.01, rng)!.judgement).toBe('bad');
+  });
+
+  it('タップするたびに次の1周の速さが変わり、通過はいつも拍か半拍にそろう', () => {
+    const s = startSession('clay', 'clay', 10, 10);
+    const rng = createRng(3);
+    const speeds = new Set<number>();
+    let t = passTime(s, s.firstPass);
+    for (let i = 0; i < 12; i++) {
+      const before = s.lapBeats;
+      const r = tapSession(s, t, rng)!;
+      expect(r.judgement).toBe('excellent');
+      expect(s.lapBeats).not.toBe(before);
+      expect((METER.clay.lapBeats as readonly number[]).includes(s.lapBeats)).toBe(true);
+      speeds.add(s.lapBeats);
+      t = passTime(s, nextPass(s, t + 0.001));
+      expect(onHalfBeat(t, 10)).toBe(true);
+    }
+    expect(speeds.size).toBeGreaterThan(2);
+  });
+
+  it('遅めにタップして速さが変わっても、針はワープしない', () => {
+    const s = startSession('clay', 'clay', 10, 10);
+    const rng = createRng(4);
+    const t = passTime(s, s.firstPass) + 0.08; // 少し遅め
+    const before = needleAngle(s, t);
+    tapSession(s, t, rng);
+    expect(needleAngle(s, t)).toBeCloseTo(before);
+    expect(nearestPass(s, t)).toBe(s.firstPass);
+  });
+
+  it('早めにタップしても、通過の瞬間までは今の速さのまま', () => {
+    const s = startSession('clay', 'clay', 10, 10);
+    const rng = createRng(5);
+    const p = passTime(s, s.firstPass);
+    const mid = p - 0.05;
+    const before = needleAngle(s, mid);
+    tapSession(s, p - 0.08, rng);
+    expect(needleAngle(s, mid)).toBeCloseTo(before);
+    expect(passTime(s, s.firstPass)).toBeCloseTo(p);
   });
 });

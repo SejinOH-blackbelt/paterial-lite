@@ -1,10 +1,12 @@
 // リズム採取（回るメーター）の「判定」のルール。画面表示（Phaser）や音には依存しません。
 //
-// 針は一定の速さで回り、真上（ゾーンの真ん中）を通る瞬間が、拍にそろった「ちょうどの時刻」です。
-// k 周目にゾーンの真ん中を通る時刻 = origin + k × 1周の秒数。
-// 角度のゾーンは、時間のズレ（秒）に直して判定します。
+// ・針はボタンのまわりを回り、真上（0度）がゾーンの真ん中。針が真上を通る瞬間を「通過」と呼びます。
+// ・通過の時刻は、いつも拍（または半拍）にそろえます。BGMに合わせて叩けるようにするためです。
+// ・1回タップするたびに、次の1周の速さが変わります（素材ごとの候補からランダムに選ぶ）。
+// ・判定は「タップした瞬間の針の角度」で決めます。見えている針の位置と判定が一致します。
 
 import { METER, RHYTHM } from './config';
+import type { Rng } from './random';
 
 export type Judgement = 'excellent' | 'good' | 'bad';
 export type MeterKind = keyof typeof METER;
@@ -14,93 +16,157 @@ export function beatInterval(bpm: number = RHYTHM.bpm): number {
   return 60 / bpm;
 }
 
-/** 素材ごとのメーターの速さと判定の幅（秒） */
-export interface Meter {
-  /** 針が1周する秒数 */
-  lap: number;
-  /** 「Excellent」になるズレの幅（秒、片側） */
-  excellentWindow: number;
-  /** 「Good」になるズレの幅（秒、片側）。これより外は「Bad」 */
-  goodWindow: number;
-  /** 見た目用：ゾーンの角度 */
-  excellentDeg: number;
-  goodDeg: number;
-}
-
-export function meterFor(kind: MeterKind): Meter {
-  const m = METER[kind];
-  const lap = m.lapBeats * beatInterval();
-  const secPerDeg = lap / 360;
-  return {
-    lap,
-    excellentWindow: (m.excellentDeg / 2) * secPerDeg,
-    goodWindow: (m.excellentDeg / 2 + m.goodDeg) * secPerDeg,
-    excellentDeg: m.excellentDeg,
-    goodDeg: m.goodDeg,
-  };
-}
-
-/** ズレ（秒）から判定を決める */
-export function judgeOffset(offset: number, meter: Meter): Judgement {
-  const a = Math.abs(offset);
-  if (a <= meter.excellentWindow) return 'excellent';
-  if (a <= meter.goodWindow) return 'good';
+/** 角度（ゾーンの真ん中からのずれ、0〜180度）から判定を決める */
+export function judgeAngle(deg: number, excellentDeg: number, goodDeg: number): Judgement {
+  if (deg <= excellentDeg / 2) return 'excellent';
+  if (deg <= excellentDeg / 2 + goodDeg) return 'good';
   return 'bad';
+}
+
+/**
+ * 針の動きの一区間。時刻 start に針が startFrac（0〜1、1で1周）の位置にいて、
+ * 時刻 end にちょうど1周（＝通過、番号 endIndex）に着く。end を過ぎたら dur 秒で1周ずつ回り続ける。
+ */
+export interface Segment {
+  start: number;
+  startFrac: number;
+  end: number;
+  endIndex: number;
+  dur: number;
 }
 
 /** 1つの素材ポイントでの採取の記録 */
 export interface HarvestSession {
   pointId: string;
-  meter: Meter;
-  /** 0周目にゾーンの真ん中を通る時刻（拍の0拍目と同じ） */
+  kind: MeterKind;
+  excellentDeg: number;
+  goodDeg: number;
+  /** 拍の0拍目の時刻（通過の時刻をそろえる基準） */
   origin: number;
-  /** この周から判定する（それより前は準備） */
-  firstLap: number;
-  /** すでに判定した周（1周に2回たたいても2回目は「Bad」） */
+  /** いまの1周の拍数 */
+  lapBeats: number;
+  /** いまの区間と、その前の区間（タップで速さが変わる前の針の動きを表示するため） */
+  seg: Segment;
+  prevSeg: Segment | null;
+  /** この番号の通過から判定する（それより前は準備） */
+  firstPass: number;
+  /** すでに判定した通過（1周に2回たたいても2回目は「Bad」） */
   judged: Set<number>;
 }
 
-/** k 周目にゾーンの真ん中を通る時刻 */
-export function lapTime(s: Pick<HarvestSession, 'meter' | 'origin'>, k: number): number {
-  return s.origin + k * s.meter.lap;
+/** 時刻を半拍のきざみにそろえる */
+function snapToHalfBeat(t: number, origin: number): number {
+  const half = beatInterval() / 2;
+  return origin + Math.round((t - origin) / half) * half;
 }
 
-/** 時刻 t のあとに、針がゾーンの真ん中を通る最初の周の番号 */
-export function nextLap(s: Pick<HarvestSession, 'meter' | 'origin'>, t: number): number {
-  return Math.floor((t - s.origin) / s.meter.lap) + 1;
+/** 時刻 t の針の動きを表す区間 */
+function segAt(s: HarvestSession, t: number): Segment {
+  return t < s.seg.start && s.prevSeg ? s.prevSeg : s.seg;
+}
+
+/** 時刻 t の針の位置（0〜1。0 と 1 が真上） */
+function fracAt(s: HarvestSession, t: number): number {
+  const g = segAt(s, t);
+  // ちょうど通過の瞬間（t = end）は「1周」ではなく「0（通過したばかり）」として扱う
+  if (t < g.end) {
+    const p = (t - g.start) / (g.end - g.start);
+    return g.startFrac + Math.max(0, p) * (1 - g.startFrac);
+  }
+  const turns = (t - g.end) / g.dur;
+  return turns - Math.floor(turns);
 }
 
 /** 時刻 t の針の角度（0〜360度。0 がゾーンの真ん中＝真上、時計回り） */
-export function needleAngle(s: Pick<HarvestSession, 'meter' | 'origin'>, t: number): number {
-  const turns = (t - s.origin) / s.meter.lap;
-  return (turns - Math.floor(turns)) * 360;
+export function needleAngle(s: HarvestSession, t: number): number {
+  return (fracAt(s, t) * 360) % 360;
 }
 
-/** earliest：最初の判定に使ってよい一番早い時刻（音の予約の締め切り） */
-export function startSession(pointId: string, meter: Meter, earliest: number, origin: number): HarvestSession {
-  const base = { meter, origin };
-  return { pointId, meter, origin, firstLap: nextLap(base, earliest + meter.lap * RHYTHM.minLeadLaps), judged: new Set() };
+/** 番号 i の通過の時刻 */
+export function passTime(s: HarvestSession, i: number): number {
+  const g = i >= s.seg.endIndex || !s.prevSeg ? s.seg : s.prevSeg;
+  return g.end + (i - g.endIndex) * g.dur;
+}
+
+/** 時刻 t の直後に来る通過の番号 */
+export function nextPass(s: HarvestSession, t: number): number {
+  const g = segAt(s, t);
+  if (t < g.end) {
+    // 区間の途中：区間の終わりが次の通過（前の区間なら、今の区間の start までに通過があるか確かめる）
+    return g.endIndex;
+  }
+  return g.endIndex + Math.floor((t - g.end) / g.dur) + 1;
+}
+
+/** 時刻 t にいちばん近い通過の番号（針が真上より手前なら次の通過、過ぎたばかりなら前の通過） */
+export function nearestPass(s: HarvestSession, t: number): number {
+  const next = nextPass(s, t);
+  return fracAt(s, t) >= 0.5 ? next : next - 1;
+}
+
+/**
+ * 採取を始める。最初の通過は earliest より、少なくとも半周あとの拍にする（心の準備用）。
+ * earliest：最初の判定に使ってよい一番早い時刻（音の予約の締め切り）
+ */
+export function startSession(pointId: string, kind: MeterKind, earliest: number, origin: number): HarvestSession {
+  const m = METER[kind];
+  const dur = m.firstLapBeats * beatInterval();
+  let first = snapToHalfBeat(earliest + dur * RHYTHM.minLeadLaps, origin);
+  if (first < earliest + dur * RHYTHM.minLeadLaps) first += beatInterval() / 2;
+  const seg: Segment = { start: first - dur, startFrac: 0, end: first, endIndex: 1, dur };
+  return {
+    pointId,
+    kind,
+    excellentDeg: m.excellentDeg,
+    goodDeg: m.goodDeg,
+    origin,
+    lapBeats: m.firstLapBeats,
+    seg,
+    prevSeg: null,
+    firstPass: 1,
+    judged: new Set(),
+  };
 }
 
 export interface TapResult {
   judgement: Judgement;
-  /** どの周に対する判定か */
-  lap: number;
-  /** ズレ（秒）。マイナスなら早い、プラスなら遅い */
-  offset: number;
+  /** どの通過に対する判定か */
+  pass: number;
+  /** ゾーンの真ん中からの角度のずれ（0〜180度） */
+  offsetDeg: number;
   /** もらえる素材の数（残りの量で減ることがある） */
   gain: number;
 }
 
 /**
  * 時刻 t のタップを判定する。準備の間なら null（判定しない）。
- * いちばん近い「ゾーンの真ん中を通る時刻」に対して判定し、その周は判定済みにする（連打でかせげない）。
+ * 判定のあと、次の1周の速さを選び直す（通過の時刻は拍か半拍にそろえる）。
  */
-export function tapSession(s: HarvestSession, t: number): TapResult | null {
-  const lap = Math.round((t - s.origin) / s.meter.lap);
-  if (lap < s.firstLap) return null;
-  const offset = t - lapTime(s, lap);
-  const judgement = s.judged.has(lap) ? 'bad' : judgeOffset(offset, s.meter);
-  s.judged.add(lap);
-  return { judgement, lap, offset, gain: RHYTHM.gain[judgement] };
+export function tapSession(s: HarvestSession, t: number, rng: Rng): TapResult | null {
+  const pass = nearestPass(s, t);
+  if (pass < s.firstPass) return null;
+  const angle = needleAngle(s, t);
+  const offsetDeg = Math.min(angle, 360 - angle);
+  const judgement = s.judged.has(pass) ? 'bad' : judgeAngle(offsetDeg, s.excellentDeg, s.goodDeg);
+  s.judged.add(pass);
+  changeSpeed(s, t, pass, rng);
+  return { judgement, pass, offsetDeg, gain: RHYTHM.gain[judgement] };
+}
+
+/** タップのあと、次の1周の速さを変える。針は途中でワープしない */
+function changeSpeed(s: HarvestSession, t: number, pass: number, rng: Rng): void {
+  const choices = METER[s.kind].lapBeats.filter((b) => b !== s.lapBeats);
+  if (choices.length === 0) return;
+  const beats = choices[Math.floor(rng() * choices.length)];
+  const dur = beats * beatInterval();
+  const pt = passTime(s, pass);
+  // 早めのタップなら通過の瞬間から、遅めのタップならタップした瞬間から、新しい速さにする
+  const base = Math.max(t, pt);
+  const f = base > pt ? fracAt(s, base) : 0;
+  let end = snapToHalfBeat(base + (1 - f) * dur, s.origin);
+  if (end <= base + 0.15) end += beatInterval() / 2;
+  // それまでの針の動きは prevSeg に残す（base より前の時刻の表示と判定に使う）
+  s.prevSeg = { ...s.seg };
+  s.seg = { start: base, startFrac: f, end, endIndex: pass + 1, dur };
+  s.lapBeats = beats;
 }

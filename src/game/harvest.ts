@@ -2,7 +2,8 @@
 
 import { FIELD, RESOURCE, RESOURCE_POINTS, STOCK } from './config';
 import { setTarget, type Point, type Walker } from './movement';
-import { meterFor, startSession, tapSession, type HarvestSession, type TapResult } from './rhythm';
+import type { Rng } from './random';
+import { startSession, tapSession, type HarvestSession, type TapResult } from './rhythm';
 
 export type ResourceKind = (typeof RESOURCE_POINTS)[number]['kind'];
 export type ResourcePoint = (typeof RESOURCE_POINTS)[number];
@@ -143,32 +144,36 @@ export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harve
     return;
   }
   h.claim = r.id;
-  h.session = startSession(r.id, meterFor(r.kind), earliest, origin);
+  h.session = startSession(r.id, r.kind, earliest, origin);
   h.walker.facing = 'up'; // 素材のほうを向く
 }
 
 export interface HarvestResult extends TapResult {
+  /** ポイントの残りがいくつ減ったか（Bad でも減る） */
+  used: number;
   /** このタップでポイントが空になった */
   depleted: boolean;
 }
 
 /**
  * 採取中のタップ。判定して素材を増やし、ポイントの残りを減らす。採取中でなければ null。
- * now：空になったポイントが元に戻る時刻を決めるための「いま」。
+ * Bad でも残りは減る（STOCK.cost）ので、雑に叩くと素材が無駄になる。
+ * now：空になったポイントが元に戻る時刻を決めるための「いま」。rng：次の1周の速さを選ぶため。
  */
-export function harvestTap(h: Harvester, f: FieldState, t: number, now: number): HarvestResult | null {
+export function harvestTap(h: Harvester, f: FieldState, t: number, now: number, rng: Rng): HarvestResult | null {
   if (!h.session) return null;
   const id = h.session.pointId;
-  const r = tapSession(h.session, t);
+  const r = tapSession(h.session, t, rng);
   if (!r) return null;
-  const gain = Math.min(r.gain, f.stock[id]);
-  f.stock[id] -= gain;
+  const used = Math.min(STOCK.cost[r.judgement], f.stock[id]);
+  const gain = Math.min(r.gain, used);
+  f.stock[id] -= used;
   h.materials += gain;
-  const depleted = gain > 0 && f.stock[id] <= 0;
+  const depleted = used > 0 && f.stock[id] <= 0;
   if (depleted) {
     f.regenAt[id] = now + STOCK.regenSeconds;
     h.session = null;
     h.claim = null;
   }
-  return { ...r, gain, depleted };
+  return { ...r, gain, used, depleted };
 }
