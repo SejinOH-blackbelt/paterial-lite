@@ -19,6 +19,8 @@ export interface Harvester {
   claim: string | null;
   /** 使用中のポイントのそばで、空くのを待っているならそのポイント */
   waitingFor: string | null;
+  /** スパイのイタズラで「土の置物」にされた（試合が終わるまで動けない） */
+  frozen: boolean;
 }
 
 /** 採取場の素材ポイントの残りの量（全員で共有する） */
@@ -29,7 +31,7 @@ export interface FieldState {
 }
 
 export function createHarvester(walker: Walker): Harvester {
-  return { walker, materials: 0, session: null, claim: null, waitingFor: null };
+  return { walker, materials: 0, session: null, claim: null, waitingFor: null, frozen: false };
 }
 
 export function createFieldState(): FieldState {
@@ -95,6 +97,7 @@ export type MoveResult = 'walk' | 'harvest' | 'wait';
  * all：採取場にいる全員（プレイヤーとBot）
  */
 export function moveHarvester(h: Harvester, p: Point, all: readonly Harvester[]): MoveResult {
+  if (h.frozen) return 'walk'; // 置物は動けない
   h.session = null;
   h.claim = null;
   h.waitingFor = null;
@@ -121,6 +124,7 @@ export function moveHarvester(h: Harvester, p: Point, all: readonly Harvester[])
  * earliest：最初の判定に使ってよい一番早い時刻（画面側の音の予約の締め切り）。
  */
 export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harvester[], earliest: number, origin: number): void {
+  if (h.frozen) return; // 置物は採取しない
   if (h.session) {
     if (f.stock[h.session.pointId] <= 0) {
       h.session = null;

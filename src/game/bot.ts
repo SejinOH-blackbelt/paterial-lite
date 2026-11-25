@@ -44,7 +44,7 @@ export function createBot(profile: BotProfile, pos: Point): Bot {
 }
 
 function createHarvesterLike(pos: Point): Harvester {
-  return { walker: createWalker(pos), materials: 0, session: null, claim: null, waitingFor: null };
+  return { walker: createWalker(pos), materials: 0, session: null, claim: null, waitingFor: null, frozen: false };
 }
 
 /** いまの場所から少し離れた場所へ歩く（着いたらひと休み） */
@@ -72,6 +72,7 @@ export function freePoints(bot: Bot, field: FieldState, all: readonly Harvester[
  */
 export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[], now: number, rng: Rng): BotTapEvent[] {
   const h = bot.h;
+  if (h.frozen) return []; // 置物は何もしない
   const s = h.session;
   if (s) {
     bot.mode = 'idle';

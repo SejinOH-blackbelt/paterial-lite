@@ -203,3 +203,50 @@ export const BOT_PROFILES = [
   { id: 'sprout', part: 'sprout', timingError: 0.09 },
   { id: 'feather', part: 'feather', timingError: 0.12 }, // のんびり屋
 ] as const;
+
+/** 名物（スパイがスキャンして設計図のカケラを集める、和の国の設備） */
+export const LANDMARKS = [
+  { id: 'karakuri', name: 'からくり歯車の櫓', x: 272, y: 168 },
+  { id: 'torii', name: '鳥居', x: 166, y: 300 },
+  { id: 'kama', name: '茶釜', x: 254, y: 548 },
+] as const;
+
+/** スパイ */
+export const SPY = {
+  /** 名物のそばで、じっとしていればスキャンできる距離（名物の足元から） */
+  scanRadius: 40,
+  /** スキャンにかかる秒数（そのあいだ動くと中断） */
+  scanSeconds: 3,
+  /** 1ラウンドにスキャンできる数 */
+  scansPerRound: 2,
+  /** 集めれば勝ちになるカケラの数 */
+  fragmentsToWin: 3,
+  /** 1ラウンドにイタズラ（置物にする）できる回数 */
+  pranksPerRound: 1,
+  /** イタズラが届く距離 */
+  prankRange: 52,
+  /** イタズラやスキャンを見られてしまう距離（このなかにいるパテが目撃者になる） */
+  witnessRadius: 120,
+  /** 塗りムラの大きさ（ピクセル）：はじめの大きさと、1分あたりに大きくなる量、いちばん大きいとき */
+  patchStart: 2,
+  patchGrowPerMinute: 2,
+  patchMax: 7,
+} as const;
+
+/** スパイBotのふるまい */
+export const SPY_BOT = {
+  /** ひと休みのあと、採取ではなく名物のスキャンに向かう確率 */
+  scanChance: 0.45,
+  /** イタズラを考え始めるまでの秒数（試合が始まってすぐはしない） */
+  prankAfterSeconds: 20,
+  /** 近くにパテがいて、目撃者がいないとき、1秒あたりにイタズラする確率 */
+  prankChancePerSecond: 0.15,
+} as const;
+
+/** 見える範囲（自分のパテのまわりだけ見える） */
+export const VISION = {
+  /** 見える半径 */
+  radius: 130,
+  /** 見えない場所の暗さ（0〜1） */
+  fogAlpha: 0.82,
+} as const;

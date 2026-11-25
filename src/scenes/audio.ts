@@ -75,7 +75,7 @@ export class GameAudio {
    * - Good：ふつうの「ポコッ」
    * - Bad：低くこもった「ぽすっ」（失敗もコミカルに）
    */
-  harvestSound(judgement: 'excellent' | 'good' | 'bad' | null, volume = 1, when?: number): void {
+  harvestSound(judgement: 'excellent' | 'good' | 'bad' | null, volume = 1, when?: number, stone = false): void {
     // when を渡すと、その時刻（音の時計）に鳴るよう予約する。過ぎていればすぐ鳴らす
     const t = Math.max(this.ctx.currentTime, when ?? 0);
     // 音の大きさ（遠くのパテの音は小さく）
@@ -86,7 +86,9 @@ export class GameAudio {
       this.thud(t, out);
       return;
     }
-    this.poko(t, judgement === 'excellent' ? 0.85 : 0.6, judgement === 'excellent' ? 560 : 520, out);
+    // スパイ（中身はバイキングの石）は、素焼きの「ポコッ」ではなく石の「コツッ」になる
+    if (stone) this.kotsu(t, judgement === 'excellent' ? 0.8 : 0.6, out);
+    else this.poko(t, judgement === 'excellent' ? 0.85 : 0.6, judgement === 'excellent' ? 560 : 520, out);
     if (judgement === 'excellent') {
       this.chime(t + 0.04, 1318.5, 0.16, out); // ミ
       this.chime(t + 0.1, 1975.5, 0.13, out); // シ（上がって明るく）
@@ -109,6 +111,42 @@ export class GameAudio {
     body.stop(t + 0.18);
     // 当たった瞬間の「コ」：ごく短いノイズを共鳴させる
     this.noise(t, 0.02, 'bandpass', 1800, 3, vol * 0.5, out);
+  }
+
+  /** 石をたたく「コツッ」。硬くて短い、響かない音 */
+  private kotsu(t: number, vol: number, out: AudioNode): void {
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(1500, t);
+    o.frequency.exponentialRampToValueAtTime(900, t + 0.03);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol * 0.7, t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 0.08);
+    this.noise(t, 0.015, 'highpass', 2500, 0.8, vol * 0.6, out);
+  }
+
+  /** スキャン完了の「ピロン」 */
+  piron(volume = 1, when?: number): void {
+    const t = Math.max(this.ctx.currentTime, when ?? 0);
+    const out = this.ctx.createGain();
+    out.gain.value = volume;
+    out.connect(this.master);
+    this.chime(t, 1046.5, 0.18, out);
+    this.chime(t + 0.08, 1568, 0.16, out);
+  }
+
+  /** 置物にされたときの「ぽふっ」（ホコリが舞う、気の抜けた音） */
+  pofu(volume = 1): void {
+    const t = this.ctx.currentTime;
+    const out = this.ctx.createGain();
+    out.gain.value = volume;
+    out.connect(this.master);
+    this.noise(t, 0.25, 'lowpass', 900, 0.6, 0.5, out);
+    this.thud(t, out);
   }
 
   /** 低くこもった「ぽすっ」 */

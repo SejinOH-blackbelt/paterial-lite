@@ -1,9 +1,10 @@
 // パテ1体の「見た目」。胴体・腕・足を別々の部品にして、動き（アニメーション）を付けやすくしています。
 // 位置の計算はしません。src/game 側で決めた位置をもらって表示するだけです。
 import Phaser from 'phaser';
-import { PATE } from '../game/config';
+import { COLORS, PATE } from '../game/config';
 import type { Facing } from '../game/movement';
 import { PART_ORIGIN_Y, partKey, type HeadPart } from './partTextures';
+import { STATUE_SIZE, STATUE_TEX } from './spyTextures';
 import { PATE_SIZE, TEX } from './textures';
 
 /** 部品の置き場所（足元の中心を 0,0 とする） */
@@ -68,6 +69,7 @@ export class PateView extends Phaser.GameObjects.Container {
   }
 
   private placeHeadPart(): void {
+    if (this.isStatue) return; // 置物になったら、パーツは置物のてっぺんに固定
     const x = this.facing === 'left' ? PATE_LAYOUT.headSideX
       : this.facing === 'right' ? -PATE_LAYOUT.headSideX : 0;
     // 胴体の伸び縮みに合わせ、差し込み位置を頭の表面に固定する。
@@ -77,8 +79,43 @@ export class PateView extends Phaser.GameObjects.Container {
     ).setFlipX(this.facing === 'right');
   }
 
+  /** 置物（スパイのイタズラ）。手足のないドーム型のハニワに変わり、もう動かない */
+  private statue: Phaser.GameObjects.Image | null = null;
+  /** 塗りムラ（スパイだけ）：胴体のどこかに元のグレーが見える */
+  private patch: Phaser.GameObjects.Rectangle | null = null;
+
+  get isStatue(): boolean {
+    return this.statue !== null;
+  }
+
+  setStatue(on: boolean): void {
+    if (on === this.isStatue) return;
+    for (const o of [this.legL, this.legR, this.upperBody]) o.setVisible(!on);
+    if (on) {
+      this.statue = this.scene.add.image(0, 0, STATUE_TEX).setOrigin(0.5, 1);
+      this.add(this.statue);
+      // 誰が置物にされたか分かるように、頭のパーツは置物のてっぺんに残す
+      if (this.headPart) {
+        this.upperBody.remove(this.headPart);
+        this.headPart.setPosition(0, -STATUE_SIZE.h + 4).setFlipX(false);
+        this.add(this.headPart);
+      }
+    }
+  }
+
+  /** 塗りムラを表示する（u, v：胴体の中の位置 0〜1、size：大きさのピクセル） */
+  setPatch(u: number, v: number, size: number): void {
+    if (!this.patch) {
+      this.patch = this.scene.add.rectangle(0, 0, size, size, COLORS.stone).setOrigin(0.5);
+      this.upperBody.addAt(this.patch, this.upperBody.getIndex(this.torso) + 1);
+    }
+    const x = (u - 0.5) * (PATE_SIZE.w - 14);
+    const y = PATE_LAYOUT.bodyBottom - PATE_SIZE.h * (1 - v) + 4;
+    this.patch.setPosition(x, y).setSize(size, size);
+  }
+
   setFacing(facing: Facing): void {
-    if (this.facing === facing) return;
+    if (this.isStatue || this.facing === facing) return;
     this.facing = facing;
     const side = facing === 'left' || facing === 'right';
     const mirror = facing === 'right';
@@ -101,12 +138,13 @@ export class PateView extends Phaser.GameObjects.Container {
 
   /** 背中を向けた姿勢から、両腕を素材に振り上げる。 */
   playHit(): void {
-    if (this.facing !== 'up') return;
+    if (this.isStatue || this.facing !== 'up') return;
     this.hitStart = this.hitPose;
     this.hitElapsed = 0;
   }
 
   update(dtSeconds: number, isWalking: boolean): void {
+    if (this.isStatue) return; // 置物は動かない
     const turn = 2 * Math.PI;
     const weightChange = dtSeconds / PATE.poseTransitionSeconds;
     this.walkWeight = Phaser.Math.Clamp(this.walkWeight + (isWalking ? weightChange : -weightChange), 0, 1);

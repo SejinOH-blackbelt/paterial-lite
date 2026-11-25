@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // 動きと採取のルールは src/game（movement.ts / harvest.ts / rhythm.ts）に任せます。
 import Phaser from 'phaser';
-import { BOT, BOT_PROFILES, COLORS, PATE, PLAYER_PART, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, STOCK } from '../game/config';
+import { BOT, BOT_PROFILES, COLORS, LANDMARKS, PATE, PLAYER_PART, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   createFieldState,
@@ -15,10 +15,25 @@ import {
 } from '../game/harvest';
 import { createWalker, isWalking, stepWalker } from '../game/movement';
 import { createRng, type Rng } from '../game/random';
+import {
+  canScan,
+  chooseSpy,
+  createSpyState,
+  patchSize,
+  prank,
+  prankTarget,
+  scanProgress,
+  startScan,
+  updateScan,
+  type SpyEvent,
+  type SpyState,
+} from '../game/spy';
+import { createSpyBotMind, updateSpyBot, type SpyBotMind } from '../game/spyBot';
 import { nearestPass, needleAngle, nextPass, passTime, type HarvestSession, type Judgement } from '../game/rhythm';
 import { GameAudio } from './audio';
 import { makePartTextures, type HeadPart } from './partTextures';
 import { PateView } from './PateView';
+import { LANDMARK_TEX, makeSpyTextures } from './spyTextures';
 import { EMPTY_RES_TEX, makeResourceTextures, RES_CHIP_COLOR, RES_SIZE, RES_TEX } from './resourceTextures';
 import { drawGround, makeTextures, TEX } from './textures';
 
@@ -61,6 +76,20 @@ export class FieldScene extends Phaser.Scene {
   /** 採取場にいる全員の状態（取り合いの判定に使う） */
   private all: Harvester[] = [];
   private rng!: Rng;
+  /** スパイ（6体のうち1体）。プレイヤーがスパイなら isPlayerSpy */
+  private spy!: SpyState;
+  private spyEntity!: PateEntity;
+  private spyMind: SpyBotMind | null = null;
+  private isPlayerSpy = false;
+  private landmarks = new Map<string, Phaser.GameObjects.Image>();
+  /** 見える範囲の外を暗くする霧と、その穴（自分のまわり） */
+  private fog!: Phaser.GameObjects.Graphics;
+  private fogHole!: Phaser.GameObjects.Graphics;
+  /** スパイ用のボタン（プレイヤーがスパイのときだけ） */
+  private scanButton: Phaser.GameObjects.Container | null = null;
+  private prankButton: Phaser.GameObjects.Container | null = null;
+  private spyUi!: Phaser.GameObjects.Graphics;
+  private fragmentsText: Phaser.GameObjects.Text | null = null;
   private marker!: Phaser.GameObjects.Image;
   private audio!: GameAudio;
   /** 0拍目の時刻（音の時計） */
@@ -88,6 +117,7 @@ export class FieldScene extends Phaser.Scene {
     makeTextures(this);
     makeResourceTextures(this);
     makePartTextures(this);
+    makeSpyTextures(this);
     drawGround(this, SCREEN.width, SCREEN.height);
 
     // 音の時計。Phaser が用意した AudioContext を使う（なければ自分で作る）
@@ -102,6 +132,10 @@ export class FieldScene extends Phaser.Scene {
       this.resources.set(r.id, { image: img, chipColor: RES_CHIP_COLOR[r.kind] });
     }
 
+    for (const l of LANDMARKS) {
+      this.landmarks.set(l.id, this.add.image(l.x, l.y, LANDMARK_TEX[l.id]).setOrigin(0.5, 1).setDepth(l.y));
+    }
+
     // パテ6体：プレイヤー1体 + 住民Bot 5体
     this.rng = createRng(Date.now());
     this.pates = [];
@@ -113,6 +147,7 @@ export class FieldScene extends Phaser.Scene {
     this.player = this.pates[0].h;
     this.pateSprite = this.pates[0].view;
     this.all = this.pates.map((e) => e.h);
+    this.setupSpy();
     this.marker = this.add.image(0, 0, TEX.marker).setVisible(false);
 
     this.meter = this.add.graphics().setDepth(9200);
@@ -124,10 +159,29 @@ export class FieldScene extends Phaser.Scene {
       .setDepth(9500)
       .setStroke('#2b1d14', 5);
     this.updateMaterials(false);
+    this.setupFog();
+    this.spyUi = this.add.graphics().setDepth(9150);
+    if (this.isPlayerSpy) this.setupSpyButtons();
+    this.showRoleBanner();
 
     // タップ：採取中に「採取」ボタンを押したら採取、それ以外はそこへ歩く
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
       this.audio.resume();
+      if (this.player.frozen) return; // 置物にされたら、もう動けない
+      if (this.scanButton && over.includes(this.scanButton)) {
+        this.downOnButton = true;
+        if (startScan(this.spy, this.audio.heardTime())) this.squash(this.scanButton, 0.9);
+        return;
+      }
+      if (this.prankButton && over.includes(this.prankButton)) {
+        this.downOnButton = true;
+        const ev = prank(this.spy, this.all, this.audio.heardTime());
+        if (ev) {
+          this.squash(this.prankButton, 0.9);
+          this.onSpyEvent(ev, this.audio.heardTime());
+        }
+        return;
+      }
       this.downOnButton = this.player.session !== null && over.includes(this.button);
       if (this.downOnButton) this.hit(p);
       else this.goTo(p, true);
@@ -184,7 +238,7 @@ export class FieldScene extends Phaser.Scene {
     // タップで次の1周の速さが変わるので、時刻が変わった拍の音だけ予約を取り直す
     if (res) this.refreshTicks();
     // 判定はその場で一瞬で終わるので、判定に合った音をすぐ鳴らす
-    this.audio.harvestSound(res?.judgement ?? null);
+    this.audio.harvestSound(res?.judgement ?? null, 1, undefined, this.isPlayerSpy);
     this.squash(this.button, 0.9);
     this.pateSprite.playHit();
     const point = pointId ? this.resources.get(pointId) : undefined;
@@ -282,7 +336,19 @@ export class FieldScene extends Phaser.Scene {
       updateHarvester(e.h, this.field, this.all, this.audio.now + SCHEDULE_AHEAD, this.origin);
       // Botは少し先の時刻で判断する。そうすると採取音を、プレイヤーの拍の音と同じように先に予約でき、
       // 端末の音の遅れがあっても、聞こえる時刻と判定の時刻がそろう
-      if (e.bot) for (const ev of updateBot(e.bot, this.field, this.all, this.audio.now + SCHEDULE_AHEAD, this.rng)) this.onBotTap(e, ev, heard);
+      const ahead = this.audio.now + SCHEDULE_AHEAD;
+      if (e.bot && e === this.spyEntity && this.spyMind) {
+        // スパイBot：市民のふりをして採取しながら、すきを見てスキャンやイタズラをする
+        const r = updateSpyBot(e.bot, this.spyMind, this.spy, this.field, this.all, ahead, this.rng);
+        for (const ev of r.taps) this.onBotTap(e, ev, heard);
+        for (const ev of r.spyEvents) this.onSpyEvent(ev, heard);
+      } else if (e.bot) {
+        for (const ev of updateBot(e.bot, this.field, this.all, ahead, this.rng)) this.onBotTap(e, ev, heard);
+      }
+    }
+    if (this.isPlayerSpy) {
+      const ev = updateScan(this.spy, this.all, heard);
+      if (ev) this.onSpyEvent(ev, heard);
     }
     const walking = isWalking(this.player.walker);
     if (!walking && this.marker.visible && this.marker.alpha === 1) {
@@ -292,6 +358,9 @@ export class FieldScene extends Phaser.Scene {
     this.drawMeter(heard);
     this.drawStock(heard);
     for (const e of this.pates) this.syncPate(e, dt);
+    this.spyEntity.view.setPatch(this.spy.patch.u, this.spy.patch.v, patchSize(this.spy, heard));
+    this.updateFog();
+    this.drawSpyUi(heard);
   }
 
   /** 予約済みでまだ鳴っていない拍の音を取り消し、予約をやり直す */
@@ -435,7 +504,7 @@ export class FieldScene extends Phaser.Scene {
     const d = Math.hypot(e.h.walker.pos.x - me.x, e.h.walker.pos.y - me.y);
     const volume = Math.max(0, 1 - d / BOT.hearRadius) ** 2;
     // 音は叩いた時刻に予約する。動きも、その音が聞こえる瞬間に合わせて出す
-    if (volume > 0.02) this.audio.harvestSound(ev.result.judgement, volume, ev.time);
+    if (volume > 0.02) this.audio.harvestSound(ev.result.judgement, volume, ev.time, e === this.spyEntity);
     const delayMs = Math.max(0, ev.time - heard) * 1000 - PATE.hitReachSeconds * 1000;
     this.time.delayedCall(Math.max(0, delayMs), () => {
       e.view.playHit();
@@ -444,9 +513,143 @@ export class FieldScene extends Phaser.Scene {
     });
   }
 
+  /** 試合の最初に、6体のうち1体をスパイにする。URL の最後が #spy ならプレイヤー、#citizen なら Bot がスパイ */
+  private setupSpy(): void {
+    const hash = typeof location !== 'undefined' ? location.hash : '';
+    const index =
+      hash === '#spy' ? 0 : hash === '#citizen' ? 1 + Math.floor(this.rng() * (this.pates.length - 1)) : chooseSpy(this.pates.length, this.rng);
+    this.spyEntity = this.pates[index];
+    this.isPlayerSpy = index === 0;
+    this.spy = createSpyState(this.spyEntity.h, this.audio.heardTime(), this.rng);
+    this.spyMind = this.isPlayerSpy ? null : createSpyBotMind();
+  }
+
+  /** 見える範囲の外を暗くする（自分のまわりだけ穴をあけた霧） */
+  private setupFog(): void {
+    this.fog = this.add.graphics().setDepth(8800);
+    this.fog.fillStyle(0x10100c, VISION.fogAlpha);
+    this.fog.fillRect(0, 0, SCREEN.width, SCREEN.height);
+    this.fogHole = this.make.graphics({}, false);
+    this.fogHole.fillStyle(0xffffff, 1);
+    this.fogHole.fillCircle(0, 0, VISION.radius);
+    const mask = this.fogHole.createGeometryMask();
+    mask.setInvertAlpha(true);
+    this.fog.setMask(mask);
+    this.updateFog();
+  }
+
+  private updateFog(): void {
+    const { x, y } = this.player.walker.pos;
+    this.fogHole.setPosition(x, y - 20); // パテの体の真ん中あたりを中心に見る
+  }
+
+  /** 役の発表（M5 で本番の画面にします） */
+  private showRoleBanner(): void {
+    const text = this.isPlayerSpy
+      ? 'きみは スパイ\n名物をスキャンして カケラを集めよう'
+      : 'きみは 市民\nスパイを 見つけよう';
+    const t = this.add
+      .text(SCREEN.width / 2, 150, text, {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        fontStyle: 'bold',
+        color: this.isPlayerSpy ? '#ffd43b' : '#fff8e8',
+        align: 'center',
+        backgroundColor: '#2b1d14cc',
+        padding: { x: 14, y: 10 },
+      })
+      .setOrigin(0.5)
+      .setDepth(9800);
+    this.tweens.add({ targets: t, alpha: 0, delay: 2600, duration: 500, onComplete: () => t.destroy() });
+  }
+
+  /** スパイ用のボタン：スキャン（左下）とイタズラ（右下） */
+  private setupSpyButtons(): void {
+    const make = (x: number, label: string, color: number) => {
+      const r = 30;
+      const bg = this.add.circle(0, 0, r, color).setStrokeStyle(4, 0x2b1d14);
+      const t = this.add
+        .text(0, 0, label, { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#2b1d14', align: 'center' })
+        .setOrigin(0.5);
+      const c = this.add.container(x, 596, [bg, t]).setDepth(9100);
+      c.setSize(r * 2, r * 2);
+      c.setInteractive(new Phaser.Geom.Circle(r, r, r + 6), Phaser.Geom.Circle.Contains);
+      return c;
+    };
+    this.scanButton = make(48, 'スキャン', 0x9fd3e6);
+    this.prankButton = make(SCREEN.width - 48, 'イタズラ', 0xf2a7a0);
+    this.fragmentsText = this.add
+      .text(SCREEN.width / 2, 72, '', { fontFamily: 'sans-serif', fontSize: '15px', fontStyle: 'bold', color: '#ffd43b' })
+      .setOrigin(0.5)
+      .setDepth(9500)
+      .setStroke('#2b1d14', 4);
+  }
+
+  /** スパイ用の表示：ボタンの使える・使えない、スキャンの進み具合、イタズラできる相手の印 */
+  private drawSpyUi(heard: number): void {
+    const g = this.spyUi;
+    g.clear();
+    if (!this.isPlayerSpy || !this.scanButton || !this.prankButton) return;
+    const scanning = this.spy.scan !== null;
+    this.scanButton.setAlpha(canScan(this.spy) || scanning ? 1 : 0.4);
+    const target = prankTarget(this.spy, this.all);
+    this.prankButton.setAlpha(target ? 1 : 0.4);
+    this.fragmentsText?.setText(`設計図のカケラ ${this.spy.fragments} / ${SPY.fragmentsToWin}`);
+    if (scanning) {
+      // スキャン中：パテの頭の上に進み具合の輪
+      const p = scanProgress(this.spy, heard);
+      const { x, y } = this.player.walker.pos;
+      g.lineStyle(5, 0x2b1d14, 0.5);
+      g.strokeCircle(x, y - 62, 10);
+      g.lineStyle(5, 0x4dabf7, 1);
+      g.beginPath();
+      g.arc(x, y - 62, 10, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2);
+      g.strokePath();
+    }
+    if (target) {
+      // イタズラできる相手の足元に印
+      const { x, y } = target.walker.pos;
+      g.lineStyle(3, 0xe03131, 0.8);
+      g.strokeEllipse(x, y, 34, 12);
+    }
+  }
+
+  /** スパイがスキャンやイタズラをしたとき（見える範囲・聞こえる範囲にいれば分かる） */
+  private onSpyEvent(ev: SpyEvent, heard: number): void {
+    const me = this.player.walker.pos;
+    const d = Math.hypot(ev.at.x - me.x, ev.at.y - me.y);
+    const volume = this.isPlayerSpy ? 1 : Math.max(0, 1 - d / BOT.hearRadius) ** 2;
+    const delayMs = Math.max(0, ev.time - heard) * 1000;
+    this.time.delayedCall(delayMs, () => {
+      if (ev.kind === 'scan') {
+        // スキャン完了の瞬間、名物が一瞬光る（霧の外なら見えない）
+        const img = this.landmarks.get(ev.landmarkId!);
+        if (img) {
+          img.setTintFill(0xfff3bf);
+          this.time.delayedCall(140, () => img.clearTint());
+          const glow = this.add.circle(img.x, img.y - 30, 30, 0xfff3bf, 0.8).setDepth(img.depth + 1);
+          this.tweens.add({ targets: glow, scale: 1.8, alpha: 0, duration: 380, onComplete: () => glow.destroy() });
+        }
+        if (volume > 0.02) this.audio.piron(volume);
+        if (this.isPlayerSpy) this.popText('カケラ +1', '#1971c2', 18, 0);
+      } else {
+        const victim = this.pates.find((e) => e.h === ev.target);
+        if (victim) {
+          // ホコリが舞って、置物になる
+          const puff = this.add.circle(victim.h.walker.pos.x, victim.h.walker.pos.y - 20, 22, 0xe8e0d0, 0.9).setDepth(victim.view.depth + 1);
+          this.tweens.add({ targets: puff, scale: 1.9, alpha: 0, duration: 520, onComplete: () => puff.destroy() });
+        }
+        if (volume > 0.02) this.audio.pofu(volume);
+        if (ev.target === this.player) this.popText('置物にされた…', '#6f7378', 20, 10);
+        else if (ev.witnesses.includes(this.player)) this.popText('見た…！', '#e03131', 20, 10);
+      }
+    });
+  }
+
   /** 計算した位置と歩行状態を絵に反映する */
   private syncPate(e: PateEntity, dt: number): void {
     const { x, y } = e.h.walker.pos;
+    if (e.h.frozen && !e.view.isStatue) e.view.setStatue(true);
     e.view.setPosition(x, y);
     e.view.setFacing(e.h.walker.facing);
     e.view.update(dt, isWalking(e.h.walker));
