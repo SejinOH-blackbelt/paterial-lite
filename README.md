@@ -16,10 +16,16 @@ npm test        # 自動テスト
 ## 進み具合
 
 - [x] M0 準備
-- [ ] M1 歩くパテ
+- [x] M1 歩くパテ
 - [ ] M2 リズム採取
 - [ ] M3 市民Bot
 - [ ] M4 スパイ
 - [ ] M5 会議と勝敗
 - [ ] M6 見た目と音
 - [ ] M7 公開
+
+## スマホで試す
+
+開発中の最新版：https://claude.ai/artifact/Hv597q4v4gRFtxJahYabMv （claude.ai にログインして開く）
+
+![試遊ページのQR](docs/qr-preview.png)
