@@ -172,6 +172,53 @@ export class GameAudio {
     }
   }
 
+  /** 呼び出しの鐘「カンカンカン」 */
+  bell(): void {
+    const t = this.ctx.currentTime;
+    const out = this.ctx.createGain();
+    out.gain.value = 0.9;
+    out.connect(this.master);
+    for (let i = 0; i < 3; i++) {
+      this.chime(t + i * 0.18, 1318.5, 0.22, out);
+      this.chime(t + i * 0.18, 1760, 0.1, out);
+    }
+  }
+
+  /** 投票の「ポン」 */
+  pon(): void {
+    const t = this.ctx.currentTime;
+    const out = this.ctx.createGain();
+    out.gain.value = 0.8;
+    out.connect(this.master);
+    this.poko(t, 0.7, 700, out);
+  }
+
+  /** 正解のクラッカー「パーン！」 */
+  cracker(): void {
+    const t = this.ctx.currentTime;
+    const out = this.ctx.createGain();
+    out.gain.value = 0.9;
+    out.connect(this.master);
+    this.noise(t, 0.25, 'bandpass', 2500, 0.8, 0.9, out);
+    [1046.5, 1318.5, 1568, 2093].forEach((f, i) => this.chime(t + 0.12 + i * 0.07, f, 0.16, out));
+  }
+
+  /** はずれの「ズコー」（音がずり落ちる） */
+  zukoo(): void {
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(520, t);
+    o.frequency.exponentialRampToValueAtTime(90, t + 0.6);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.4, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.72);
+  }
+
   /** 置物にされたときの「ぽふっ」（ホコリが舞う、気の抜けた音） */
   pofu(volume = 1): void {
     const t = this.ctx.currentTime;

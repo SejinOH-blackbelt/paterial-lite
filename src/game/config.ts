@@ -348,4 +348,18 @@ export const SUSPICION = {
   voteThreshold: 12,
   /** 置物を見つけてから呼び出すまでの秒数 */
   reportDelay: 1.2,
+  /** 会議で「みてた！」とスタンプされた相手を、ほかのBotがどれだけ怪しむか */
+  trustSaw: 14,
+  /** 会議で「あやしい！」とスタンプされた相手を、ほかのBotがどれだけ怪しむか */
+  trustSus: 7,
+} as const;
+
+/** 頭のパーツの呼び名（会議やリザルトで「○○のパテ」と呼ぶ） */
+export const PART_NAMES = {
+  flower: '花',
+  kasa: '笠',
+  horn: '角',
+  flag: '旗',
+  sprout: '若葉',
+  feather: '羽根',
 } as const;

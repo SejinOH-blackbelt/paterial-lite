@@ -11,6 +11,7 @@ import {
   createMatch,
   everyoneVoted,
   gauge,
+  hearStamp,
   missionsDone,
   observeSpyEvent,
   reportableBody,
@@ -88,6 +89,13 @@ describe('スパイの勝ち', () => {
     const { m, pawns } = setup();
     pawns.filter((p) => !p.isSpy).forEach((p) => (p.h.frozen = true));
     expect(checkOutcome(m, 10)).toMatchObject({ winner: 'spy', reason: 'frozen' });
+  });
+
+  it('会議の時間は、制限時間に数えない', () => {
+    const { m } = setup();
+    m.pausedSeconds = 30;
+    expect(checkOutcome(m, MATCH.timeLimit + 10)).toBeNull();
+    expect(checkOutcome(m, MATCH.timeLimit + 30)).toMatchObject({ winner: 'spy', reason: 'timeout' });
   });
 
   it('時間切れはスパイの勝ち', () => {
@@ -191,5 +199,19 @@ describe('Botの疑い度', () => {
     startMeeting(m, pawns[0], 'emergency', null, 5);
     expect(botVote(m, pawns[3], createRng(1))).toBeNull();
     expect(SUSPICION.voteThreshold).toBeGreaterThan(0);
+  });
+
+  it('目撃したBotが会議で「みてた！」と言うと、ほかのBotもスパイを怪しみ、票が集まる', () => {
+    const { m, pawns, spy } = setup();
+    spy.h.walker.pos = { x: 200, y: 300 };
+    pawns[1].h.walker.pos = { x: 230, y: 300 };
+    pawns[2].h.walker.pos = { x: 200, y: 360 };
+    const ev = prank(m.spy, m.pawns.map((p) => p.h), SPY.prankStartDelay)!;
+    observeSpyEvent(m, ev);
+    startMeeting(m, pawns[2], 'report', pawns[1].h, 21);
+    expect(botVote(m, pawns[3], createRng(1))).toBeNull(); // まだ何も聞いていない
+    hearStamp(m, pawns[2], spy, 'saw');
+    expect(botVote(m, pawns[3], createRng(1))).toBe(spy);
+    expect(botVote(m, pawns[4], createRng(1))).toBe(spy);
   });
 });

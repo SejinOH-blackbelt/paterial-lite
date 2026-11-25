@@ -1,10 +1,9 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
-// 動きと採取のルールは src/game（movement.ts / harvest.ts / rhythm.ts）に任せます。
+// ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { BOT, BOT_PROFILES, COLORS, LANDMARKS, PATE, PLAYER_PART, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION } from '../game/config';
+import { BOT, BOT_PROFILES, COLORS, LANDMARKS, MATCH, MISSIONS, PATE, PLAYER_PART, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
-  createFieldState,
   createHarvester,
   harvestTap,
   moveHarvester,
@@ -13,15 +12,30 @@ import {
   type FieldState,
   type Harvester,
 } from '../game/harvest';
-import { createWalker, isWalking, stepWalker } from '../game/movement';
+import {
+  botWantsToReport,
+  canEmergency,
+  checkOutcome,
+  createMatch,
+  gauge,
+  missionProgress,
+  observeKotsu,
+  observePatch,
+  observeSpyEvent,
+  reportableBody,
+  startMeeting,
+  timeLeft,
+  type MatchState,
+  type Pawn,
+} from '../game/match';
+import { createWalker, isWalking, setTarget, stepWalker, type Walker } from '../game/movement';
 import { createRng, type Rng } from '../game/random';
 import {
   canScan,
-  chooseSpy,
-  createSpyState,
   patchSize,
   prank,
   prankTarget,
+  prankWait,
   scanProgress,
   startScan,
   updateScan,
@@ -31,6 +45,10 @@ import {
 import { createSpyBotMind, updateSpyBot, type SpyBotMind } from '../game/spyBot';
 import { nearestPass, needleAngle, nextPass, passTime, type HarvestSession, type Judgement } from '../game/rhythm';
 import { GameAudio } from './audio';
+import type { MeetingData } from './MeetingScene';
+import type { ResultData } from './ResultScene';
+import type { RoleData } from './RoleScene';
+import { mmss } from './ui';
 import { makePartTextures, type HeadPart } from './partTextures';
 import { PateView } from './PateView';
 import { LANDMARK_TEX, makeSpyTextures } from './spyTextures';
@@ -38,8 +56,8 @@ import { PAD_TONES, ScanGameView } from './ScanGameView';
 import { EMPTY_RES_TEX, makeResourceTextures, RES_CHIP_COLOR, RES_SIZE, RES_TEX } from './resourceTextures';
 import { drawGround, drawPart, makeTextures, TEX } from './textures';
 
-/** 「採取」ボタンの位置と大きさ */
-const BUTTON = { x: SCREEN.width / 2, y: 556, r: 38 } as const;
+/** 「採取」ボタンの大きさ（r）と、採取中に画面の真ん中で大きく出す位置（x, y）と拡大率（scale） */
+const BUTTON = { x: SCREEN.width / 2, y: 400, r: 38, scale: 1.9 } as const;
 /** 拍の音を何秒前に予約するか */
 const SCHEDULE_AHEAD = 0.2;
 /** メーターの円の半径（ボタンのまわり） */
@@ -58,6 +76,8 @@ interface PateEntity {
   shadow: Phaser.GameObjects.Image;
   /** 住民Botなら、その頭脳。プレイヤーなら null */
   bot: Bot | null;
+  /** 試合の中でのこのパテ（スパイかどうか、緊急の呼び出しの残りなど） */
+  pawn: Pawn;
 }
 
 /** 住民Botの最初の位置（採取場にばらけて立つ） */
@@ -77,6 +97,20 @@ export class FieldScene extends Phaser.Scene {
   /** 採取場にいる全員の状態（取り合いの判定に使う） */
   private all: Harvester[] = [];
   private rng!: Rng;
+  /** 1試合のルールの状態 */
+  private match!: MatchState;
+  private playerPawn!: Pawn;
+  /** 役の発表で決まったスパイの番号 */
+  private spyIndex = 0;
+  /** 画面上のゲージ・時間・ミッション */
+  private hud!: Phaser.GameObjects.Graphics;
+  private timeText!: Phaser.GameObjects.Text;
+  private missionText!: Phaser.GameObjects.Text;
+  /** 呼び出しボタン（置物のそば・鳥居のそばでだけ出る） */
+  private callButton!: Phaser.GameObjects.Container;
+  private callLabel!: Phaser.GameObjects.Text;
+  /** 置物にされたプレイヤーの「土の精」（ほかのパテからは見えない） */
+  private spirit: { walker: Walker; view: PateView } | null = null;
   /** スパイ（6体のうち1体）。プレイヤーがスパイなら isPlayerSpy */
   private spy!: SpyState;
   private spyEntity!: PateEntity;
@@ -110,9 +144,21 @@ export class FieldScene extends Phaser.Scene {
   private materialsText!: Phaser.GameObjects.Text;
   private downOnButton = false;
   private lastFlashLap = -1;
+  /** 採取中に画面を暗くする幕 */
+  private focusCover!: Phaser.GameObjects.Rectangle;
 
   constructor() {
     super('Field');
+  }
+
+  init(data: RoleData): void {
+    this.spyIndex = data?.spyIndex ?? 0;
+    this.spirit = null;
+    this.scanView = null;
+    this.landmarks.clear();
+    this.resources.clear();
+    this.pendingTicks = [];
+    this.tickSession = null;
   }
 
   create(): void {
@@ -127,7 +173,6 @@ export class FieldScene extends Phaser.Scene {
     this.audio = new GameAudio(sm.context ?? new AudioContext());
     this.audio.resume();
     this.origin = this.audio.now + 0.5;
-    this.field = createFieldState();
 
     for (const r of RESOURCE_POINTS) {
       const img = this.add.image(r.x, r.y, RES_TEX[r.kind]).setOrigin(0.5, 1).setDepth(r.y);
@@ -141,35 +186,48 @@ export class FieldScene extends Phaser.Scene {
     // パテ6体：プレイヤー1体 + 住民Bot 5体
     this.rng = createRng(Date.now());
     this.pates = [];
-    this.addPate(createHarvester(createWalker({ x: SCREEN.width / 2, y: SCREEN.height * 0.6 })), PLAYER_PART, null);
+    this.addPate(createHarvester(createWalker({ x: SCREEN.width / 2, y: SCREEN.height * 0.6 })), PLAYER_PART, null, 'player');
     BOT_PROFILES.forEach((profile, i) => {
       const bot = createBot(profile, BOT_STARTS[i]);
-      this.addPate(bot.h, profile.part, bot);
+      this.addPate(bot.h, profile.part, bot, profile.id);
     });
     this.player = this.pates[0].h;
     this.pateSprite = this.pates[0].view;
     this.all = this.pates.map((e) => e.h);
-    this.setupSpy();
+    this.setupMatch();
     this.marker = this.add.image(0, 0, TEX.marker).setVisible(false);
 
-    this.meter = this.add.graphics().setDepth(9200);
+    // 採取中は、画面を暗くして、メーターとボタンを真ん中に大きく出す（まわりが見えにくくなる）
+    this.focusCover = this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, 0x1a120c, 0.82).setOrigin(0).setDepth(9040).setVisible(false);
+    this.meter = this.add.graphics().setDepth(9200).setPosition(BUTTON.x, BUTTON.y).setScale(BUTTON.scale);
     this.stockBars = this.add.graphics().setDepth(8000);
     this.button = this.makeButton();
     this.materialsText = this.add
-      .text(SCREEN.width / 2, 44, '', { fontFamily: 'sans-serif', fontSize: '22px', fontStyle: 'bold', color: '#fff8e8' })
-      .setOrigin(0.5)
+      .text(SCREEN.width - 12, 40, '', { fontFamily: 'sans-serif', fontSize: '15px', fontStyle: 'bold', color: '#fff8e8' })
+      .setOrigin(1, 0.5)
       .setDepth(9500)
-      .setStroke('#2b1d14', 5);
+      .setStroke('#2b1d14', 4);
     this.updateMaterials(false);
     this.setupFog();
+    this.setupHud();
     this.spyUi = this.add.graphics().setDepth(9150);
     if (this.isPlayerSpy) this.setupSpyButtons();
-    this.showRoleBanner();
+    this.callButton = this.makeCallButton();
 
     // タップ：採取中に「採取」ボタンを押したら採取、それ以外はそこへ歩く
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
       this.audio.resume();
-      if (this.player.frozen) return; // 置物にされたら、もう動けない
+      if (this.match.phase !== 'play') return;
+      if (this.player.frozen) {
+        // 置物にされたら、土の精として動き回って見るだけ
+        if (this.spirit) setTarget(this.spirit.walker, { x: p.worldX, y: p.worldY });
+        return;
+      }
+      if (this.callButton.visible && over.includes(this.callButton)) {
+        this.downOnButton = true;
+        this.playerCalls();
+        return;
+      }
       if (this.scanView?.owns(over)) {
         this.downOnButton = true; // ミニゲームのパネルの上は、歩くタップにしない
         return;
@@ -203,11 +261,12 @@ export class FieldScene extends Phaser.Scene {
     for (const e of this.pates) this.syncPate(e, 0);
   }
 
-  private addPate(h: Harvester, part: HeadPart, bot: Bot | null): void {
+  private addPate(h: Harvester, part: HeadPart, bot: Bot | null, id: string): void {
     const shadow = this.add.image(0, 0, TEX.shadow);
     const view = new PateView(this, 0, 0);
     view.setHeadPart(part);
-    this.pates.push({ h, view, shadow, bot });
+    const pawn: Pawn = { id, part, h, isSpy: false, isPlayer: bot === null, emergencyLeft: MATCH.emergencyPerPawn };
+    this.pates.push({ h, view, shadow, bot, pawn });
   }
 
   private makeButton(): Phaser.GameObjects.Container {
@@ -215,7 +274,7 @@ export class FieldScene extends Phaser.Scene {
     const label = this.add
       .text(0, 0, '採取', { fontFamily: 'sans-serif', fontSize: '20px', fontStyle: 'bold', color: '#2b1d14' })
       .setOrigin(0.5);
-    const c = this.add.container(BUTTON.x, BUTTON.y, [bg, label]).setDepth(9100).setVisible(false);
+    const c = this.add.container(BUTTON.x, BUTTON.y, [bg, label]).setDepth(9100).setVisible(false).setScale(BUTTON.scale);
     c.setSize(BUTTON.r * 2, BUTTON.r * 2);
     c.setInteractive(new Phaser.Geom.Circle(BUTTON.r, BUTTON.r, BUTTON.r + 8), Phaser.Geom.Circle.Contains);
     return c;
@@ -250,7 +309,8 @@ export class FieldScene extends Phaser.Scene {
     if (res) this.refreshTicks();
     // 判定はその場で一瞬で終わるので、判定に合った音をすぐ鳴らす
     this.audio.harvestSound(res?.judgement ?? null, 1, undefined, this.isPlayerSpy);
-    this.squash(this.button, 0.9);
+    if (this.isPlayerSpy) observeKotsu(this.match); // 近くのBotに「コツッ」が聞こえる
+    this.squashTo(this.button, 0.9, BUTTON.scale);
     this.pateSprite.playHit();
     const point = pointId ? this.resources.get(pointId) : undefined;
     if (point) this.reactToHit(point.image, point.chipColor);
@@ -261,9 +321,14 @@ export class FieldScene extends Phaser.Scene {
   }
 
   private squash(target: Phaser.GameObjects.Components.Transform & Phaser.GameObjects.GameObject, amount: number): void {
+    this.squashTo(target, amount, 1);
+  }
+
+  /** 一瞬つぶれて、元の大きさ（base）に戻る */
+  private squashTo(target: Phaser.GameObjects.Components.Transform & Phaser.GameObjects.GameObject, amount: number, base: number): void {
     this.tweens.killTweensOf(target);
-    target.setScale(1 / amount, amount);
-    this.tweens.add({ targets: target, scaleX: 1, scaleY: 1, duration: 140, ease: 'Back.Out' });
+    target.setScale(base / amount, base * amount);
+    this.tweens.add({ targets: target, scaleX: base, scaleY: base, duration: 140, ease: 'Back.Out' });
   }
 
   private reactToHit(image: Phaser.GameObjects.Image, chipColor: number): void {
@@ -303,12 +368,14 @@ export class FieldScene extends Phaser.Scene {
 
   private showJudgement(j: Judgement, gain: number): void {
     const label = JUDGE_TEXT[j];
-    this.popText(gain > 0 ? `${label.text} +${gain}` : label.text, label.color, j === 'excellent' ? 20 : 16, 0);
+    // 採取中は画面が暗いので、大きなメーターの上に出す
+    const at = { x: BUTTON.x, y: BUTTON.y - (BUTTON.r + 30) * BUTTON.scale + 62 };
+    this.popText(gain > 0 ? `${label.text} +${gain}` : label.text, label.color, j === 'excellent' ? 26 : 20, 0, at);
   }
 
   /** パテの頭の上に文字を出して、ふわっと消す。up は表示の高さの上乗せ */
-  private popText(text: string, color: string, size: number, up: number): void {
-    const { x, y } = this.player.walker.pos;
+  private popText(text: string, color: string, size: number, up: number, at?: { x: number; y: number }): void {
+    const { x, y } = at ?? this.player.walker.pos;
     const t = this.add
       .text(x, y - 62 - up, text, { fontFamily: 'sans-serif', fontSize: `${size}px`, fontStyle: 'bold', color })
       .setOrigin(0.5)
@@ -328,7 +395,7 @@ export class FieldScene extends Phaser.Scene {
   }
 
   private updateMaterials(pop: boolean): void {
-    this.materialsText.setText(`素材 × ${this.player.materials}`);
+    this.materialsText.setText(`素材 ${this.player.materials}`);
     if (pop) {
       this.tweens.killTweensOf(this.materialsText);
       this.materialsText.setScale(1.25);
@@ -340,6 +407,7 @@ export class FieldScene extends Phaser.Scene {
     // スマホがもたついて1コマが長くなっても、ワープしないように上限をつける
     const dt = Math.min(deltaMs, 100) / 1000;
     const heard = this.audio.heardTime();
+    if (this.match.phase !== 'play') return;
     updateFieldState(this.field, heard);
     for (const e of this.pates) {
       stepWalker(e.h.walker, dt);
@@ -363,6 +431,8 @@ export class FieldScene extends Phaser.Scene {
       if (ev) this.onSpyEvent(ev, heard);
       if (!this.spy.scan) this.syncScanView(heard);
     }
+    observePatch(this.match, heard, dt);
+    this.updateSpirit(dt);
     const walking = isWalking(this.player.walker);
     if (!walking && this.marker.visible && this.marker.alpha === 1) {
       this.tweens.add({ targets: this.marker, alpha: 0, duration: 200, onComplete: () => this.marker.setVisible(false) });
@@ -374,6 +444,16 @@ export class FieldScene extends Phaser.Scene {
     this.spyEntity.view.setPatch(this.spy.patch.u, this.spy.patch.v, patchSize(this.spy, heard));
     this.updateFog();
     this.drawSpyUi(heard);
+    this.drawHud(heard);
+    this.updateCallButton();
+    // Botの呼び出し（イタズラを目撃した・置物を見つけた）
+    const call = botWantsToReport(this.match, heard, VISION.radius);
+    if (call) {
+      this.beginMeeting(call.caller, 'report', call.body);
+      return;
+    }
+    // 勝ち負けが決まったら、リザルトへ
+    if (checkOutcome(this.match, heard)) this.endMatch();
   }
 
   /** 予約済みでまだ鳴っていない拍の音を取り消し、予約をやり直す */
@@ -424,8 +504,11 @@ export class FieldScene extends Phaser.Scene {
     const s = this.player.session;
     this.meter.clear();
     this.button.setVisible(s !== null);
+    this.focusCover.setVisible(s !== null);
     if (!s) return;
-    const { x, y } = BUTTON;
+    // メーターは (0,0) を中心に描き、グラフィック全体を画面の真ん中に大きく置く
+    const x = 0;
+    const y = 0;
     const top = -90; // ゾーンの真ん中は真上
     const half = s.excellentDeg / 2;
     const rad = Phaser.Math.DegToRad;
@@ -470,7 +553,7 @@ export class FieldScene extends Phaser.Scene {
     // 針がゾーンの真ん中を通る瞬間に、ボタンのふちを光らせる
     if (ready && lapNow !== this.lastFlashLap && Math.abs(heard - passTime(s, lapNow)) < 0.03) {
       this.lastFlashLap = lapNow;
-      const flash = this.add.circle(x, y, BUTTON.r + 2).setStrokeStyle(6, COLORS.meterNeedle).setDepth(9050);
+      const flash = this.add.circle(BUTTON.x, BUTTON.y, (BUTTON.r + 2) * BUTTON.scale).setStrokeStyle(8, COLORS.meterNeedle).setDepth(9150);
       this.tweens.add({ targets: flash, scale: 1.2, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
     }
   }
@@ -518,6 +601,7 @@ export class FieldScene extends Phaser.Scene {
     const volume = Math.max(0, 1 - d / BOT.hearRadius) ** 2;
     // 音は叩いた時刻に予約する。動きも、その音が聞こえる瞬間に合わせて出す
     if (volume > 0.02) this.audio.harvestSound(ev.result.judgement, volume, ev.time, e === this.spyEntity);
+    if (e === this.spyEntity) observeKotsu(this.match); // 近くのBotにも「コツッ」が聞こえる
     const delayMs = Math.max(0, ev.time - heard) * 1000 - PATE.hitReachSeconds * 1000;
     this.time.delayedCall(Math.max(0, delayMs), () => {
       e.view.playHit();
@@ -526,15 +610,130 @@ export class FieldScene extends Phaser.Scene {
     });
   }
 
-  /** 試合の最初に、6体のうち1体をスパイにする。URL の最後が #spy ならプレイヤー、#citizen なら Bot がスパイ */
-  private setupSpy(): void {
-    const hash = typeof location !== 'undefined' ? location.hash : '';
-    const index =
-      hash === '#spy' ? 0 : hash === '#citizen' ? 1 + Math.floor(this.rng() * (this.pates.length - 1)) : chooseSpy(this.pates.length, this.rng);
+  /** 試合を始める。スパイは役の発表で決まった番号のパテ */
+  private setupMatch(): void {
+    const index = Math.min(this.spyIndex, this.pates.length - 1);
+    this.pates.forEach((e, i) => (e.pawn.isSpy = i === index));
     this.spyEntity = this.pates[index];
     this.isPlayerSpy = index === 0;
-    this.spy = createSpyState(this.spyEntity.h, this.audio.heardTime(), this.rng);
+    this.playerPawn = this.pates[0].pawn;
+    this.match = createMatch(
+      this.pates.map((e) => e.pawn),
+      this.audio.heardTime(),
+      this.rng,
+    );
+    this.field = this.match.field;
+    this.spy = this.match.spy;
     this.spyMind = this.isPlayerSpy ? null : createSpyBotMind();
+  }
+
+  /** 画面の上：国の仕事ゲージ・残り時間・自分のミッション */
+  private setupHud(): void {
+    this.hud = this.add.graphics().setDepth(9450);
+    const style = { fontFamily: 'sans-serif', fontStyle: 'bold', color: '#fff8e8' };
+    this.add.text(12, 14, '国の仕事', { ...style, fontSize: '12px' }).setDepth(9500).setStroke('#2b1d14', 3);
+    this.timeText = this.add.text(SCREEN.width - 12, 16, '', { ...style, fontSize: '16px' }).setOrigin(1, 0.5).setDepth(9500).setStroke('#2b1d14', 4);
+    this.missionText = this.add.text(12, 56, '', { ...style, fontSize: '12px', lineSpacing: 2 }).setDepth(9500).setStroke('#2b1d14', 3);
+  }
+
+  private drawHud(heard: number): void {
+    const g = this.hud;
+    g.clear();
+    const x = 66;
+    const w = SCREEN.width - 66 - 70;
+    g.fillStyle(0x2b1d14, 0.7).fillRoundedRect(x, 14, w, 12, 5);
+    g.fillStyle(0x8fd14f, 1).fillRoundedRect(x + 2, 16, Math.max(0, (w - 4) * gauge(this.match)), 8, 3);
+    this.timeText.setText(mmss(timeLeft(this.match, heard)));
+    const me = this.player;
+    const lines = MISSIONS.map((m, i) => {
+      const prog = missionProgress(me, i);
+      return `${prog >= m.need ? '✔' : '・'}${RESOURCE_NAMES[m.kind]} ${prog}/${m.need}`;
+    });
+    this.missionText.setText(`ミッション  ${lines.join('  ')}`);
+    if (this.player.frozen) this.missionText.setText('きみは 置物にされた… 土の精になって 見守ろう');
+  }
+
+  /** 呼び出しボタン（左下・スキャンの上） */
+  private makeCallButton(): Phaser.GameObjects.Container {
+    const r = 30;
+    const bg = this.add.circle(0, 0, r, 0xff8787).setStrokeStyle(4, 0x2b1d14);
+    this.callLabel = this.add
+      .text(0, 0, '呼び出し', { fontFamily: 'sans-serif', fontSize: '12px', fontStyle: 'bold', color: '#2b1d14', align: 'center' })
+      .setOrigin(0.5);
+    const c = this.add.container(48, 524, [bg, this.callLabel]).setDepth(9100).setVisible(false);
+    c.setSize(r * 2, r * 2);
+    c.setInteractive(new Phaser.Geom.Circle(r, r, r + 6), Phaser.Geom.Circle.Contains);
+    return c;
+  }
+
+  private updateCallButton(): void {
+    const body = reportableBody(this.match, this.playerPawn);
+    const emergency = canEmergency(this.match, this.playerPawn);
+    this.callButton.setVisible(!!body || emergency);
+    this.callLabel.setText(body ? '呼び出し' : '緊急の\n呼び出し');
+  }
+
+  /** プレイヤーが呼び出しボタンを押した */
+  private playerCalls(): void {
+    const body = reportableBody(this.match, this.playerPawn);
+    if (body) this.beginMeeting(this.playerPawn, 'report', body);
+    else if (canEmergency(this.match, this.playerPawn)) this.beginMeeting(this.playerPawn, 'emergency', null);
+  }
+
+  /** 会議を始める：採取場を止めて、会議の画面を重ねる */
+  private beginMeeting(caller: Pawn, reason: 'report' | 'emergency', body: Harvester | null): void {
+    const started = this.audio.heardTime();
+    startMeeting(this.match, caller, reason, body, started);
+    this.syncScanView(started);
+    for (const t of this.pendingTicks) t.cancel();
+    this.pendingTicks = [];
+    this.marker.setVisible(false);
+    const data: MeetingData = {
+      match: this.match,
+      player: this.playerPawn,
+      audio: this.audio,
+      rng: this.rng,
+      onDone: () => {
+        this.scene.stop('Meeting');
+        // 会議のあいだは制限時間を進めない
+        this.match.pausedSeconds += this.audio.heardTime() - started;
+        if (this.match.phase === 'over') {
+          this.endMatch();
+          return;
+        }
+        this.scene.resume();
+        for (const e of this.pates) this.syncPate(e, 0);
+      },
+    };
+    this.scene.pause();
+    this.scene.launch('Meeting', data);
+  }
+
+  /** 試合終了：リザルトへ */
+  private endMatch(): void {
+    for (const t of this.pendingTicks) t.cancel();
+    this.pendingTicks = [];
+    this.scene.start('Result', { match: this.match, player: this.playerPawn } satisfies ResultData);
+  }
+
+  /** 置物にされたプレイヤーは「土の精」になって、ふわふわ動き回れる（ほかのパテからは見えない） */
+  private updateSpirit(dt: number): void {
+    if (!this.player.frozen) return;
+    if (!this.spirit) {
+      const view = new PateView(this, 0, 0);
+      view.setHeadPart(PLAYER_PART);
+      view.setAlpha(0.45).setDepth(9000);
+      const walker = createWalker({ ...this.player.walker.pos, y: this.player.walker.pos.y - 10 });
+      this.spirit = { walker, view };
+      this.button.setVisible(false);
+      this.scanButton?.setVisible(false);
+      this.prankButton?.setVisible(false);
+    }
+    stepWalker(this.spirit.walker, dt, PATE.speed * 1.3);
+    const { x, y } = this.spirit.walker.pos;
+    this.spirit.view.setPosition(x, y - 10 - Math.sin(this.time.now / 300) * 4);
+    this.spirit.view.setFacing(this.spirit.walker.facing);
+    this.spirit.view.update(dt, isWalking(this.spirit.walker));
   }
 
   /** 見える範囲の外を暗くする（自分のまわりだけ穴をあけた霧） */
@@ -562,28 +761,9 @@ export class FieldScene extends Phaser.Scene {
   }
 
   private updateFog(): void {
-    const { x, y } = this.player.walker.pos;
+    // 土の精になったら、土の精のまわりが見える
+    const { x, y } = this.spirit ? this.spirit.walker.pos : this.player.walker.pos;
     this.fog.setPosition(x, y - 20); // パテの体の真ん中あたりを中心に見る
-  }
-
-  /** 役の発表（M5 で本番の画面にします） */
-  private showRoleBanner(): void {
-    const text = this.isPlayerSpy
-      ? 'きみは スパイ\n名物をスキャンして カケラを集めよう'
-      : 'きみは 市民\nスパイを 見つけよう';
-    const t = this.add
-      .text(SCREEN.width / 2, 150, text, {
-        fontFamily: 'sans-serif',
-        fontSize: '20px',
-        fontStyle: 'bold',
-        color: this.isPlayerSpy ? '#ffd43b' : '#fff8e8',
-        align: 'center',
-        backgroundColor: '#2b1d14cc',
-        padding: { x: 14, y: 10 },
-      })
-      .setOrigin(0.5)
-      .setDepth(9800);
-    this.tweens.add({ targets: t, alpha: 0, delay: 2600, duration: 500, onComplete: () => t.destroy() });
   }
 
   /** スパイ用のボタン：スキャン（左下）とイタズラ（右下） */
@@ -602,7 +782,7 @@ export class FieldScene extends Phaser.Scene {
     this.scanButton = make(48, 'スキャン', 0x9fd3e6);
     this.prankButton = make(SCREEN.width - 48, 'イタズラ', 0xf2a7a0);
     this.fragmentsText = this.add
-      .text(SCREEN.width / 2, 72, '', { fontFamily: 'sans-serif', fontSize: '15px', fontStyle: 'bold', color: '#ffd43b' })
+      .text(SCREEN.width / 2, 80, '', { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#ffd43b' })
       .setOrigin(0.5)
       .setDepth(9500)
       .setStroke('#2b1d14', 4);
@@ -617,6 +797,9 @@ export class FieldScene extends Phaser.Scene {
     this.scanButton.setAlpha(canScan(this.spy, heard) || scanning ? 1 : 0.4);
     const target = prankTarget(this.spy, this.all, heard);
     this.prankButton.setAlpha(target ? 1 : 0.4);
+    // イタズラが使えるまでの秒数をボタンに出す
+    const wait = prankWait(this.spy, heard);
+    (this.prankButton.list[1] as Phaser.GameObjects.Text).setText(wait > 0 ? `イタズラ\n${Math.ceil(wait)}` : 'イタズラ');
     this.fragmentsText?.setText(`設計図のカケラ ${this.spy.fragments} / ${SPY.fragmentsToWin}`);
     if (scanning) {
       // スキャン中：パテの頭の上に進み具合の輪
@@ -654,6 +837,7 @@ export class FieldScene extends Phaser.Scene {
 
   /** スパイがスキャンやイタズラをしたとき（見える範囲・聞こえる範囲にいれば分かる） */
   private onSpyEvent(ev: SpyEvent, heard: number): void {
+    observeSpyEvent(this.match, ev); // 見た・聞いたBotの疑いが上がる
     const me = this.player.walker.pos;
     const d = Math.hypot(ev.at.x - me.x, ev.at.y - me.y);
     const volume = this.isPlayerSpy ? 1 : Math.max(0, 1 - d / BOT.hearRadius) ** 2;
@@ -664,7 +848,7 @@ export class FieldScene extends Phaser.Scene {
         if (volume > 0.02) this.audio.bubu(volume);
         const img = this.landmarks.get(ev.landmarkId!);
         if (img) this.squash(img, 0.9);
-        if (this.isPlayerSpy) this.popText('スキャン失敗…（次のラウンドまで無理）', '#e03131', 14, 10);
+        if (this.isPlayerSpy) this.popText(`スキャン失敗…（${SPY.scanFailLockSeconds}秒は無理）`, '#e03131', 14, 10);
       } else if (ev.kind === 'scan') {
         // スキャン完了の瞬間、名物が一瞬光る（霧の外なら見えない）
         const img = this.landmarks.get(ev.landmarkId!);

@@ -54,6 +54,8 @@ export interface MatchState {
   field: FieldState;
   spy: SpyState;
   startedAt: number;
+  /** 会議で止まっていた時間の合計（秒）。制限時間はこの分を数えない */
+  pausedSeconds: number;
   phase: 'play' | 'meeting' | 'over';
   meeting: Meeting | null;
   /** これまでの会議の結果（リザルトの振り返りに使う） */
@@ -74,6 +76,7 @@ export function createMatch(pawns: Pawn[], now: number, rng: Rng): MatchState {
     field: createFieldState(),
     spy: createSpyState(spyPawn.h, now, rng),
     startedAt: now,
+    pausedSeconds: 0,
     phase: 'play',
     meeting: null,
     history: [],
@@ -133,7 +136,7 @@ export function checkOutcome(m: MatchState, now: number): Outcome | null {
   if (citizens.length > 0 && citizens.every((p) => p.h.frozen)) o = { winner: 'spy', reason: 'frozen', time: now };
   else if (allScanned(m.spy) && allMissionsDone(spyPawn.h)) o = { winner: 'spy', reason: 'scanned', time: now };
   else if (gauge(m) >= 1) o = { winner: 'citizens', reason: 'gauge', time: now };
-  else if (now - m.startedAt >= MATCH.timeLimit) o = { winner: 'spy', reason: 'timeout', time: now };
+  else if (playedSeconds(m, now) >= MATCH.timeLimit) o = { winner: 'spy', reason: 'timeout', time: now };
   if (o) {
     m.outcome = o;
     m.phase = 'over';
@@ -141,9 +144,14 @@ export function checkOutcome(m: MatchState, now: number): Outcome | null {
   return o;
 }
 
+/** 試合が始まってから、会議の時間を除いて何秒たったか */
+export function playedSeconds(m: MatchState, now: number): number {
+  return now - m.startedAt - m.pausedSeconds;
+}
+
 /** 残り時間（秒） */
 export function timeLeft(m: MatchState, now: number): number {
-  return Math.max(0, MATCH.timeLimit - (now - m.startedAt));
+  return Math.max(0, MATCH.timeLimit - playedSeconds(m, now));
 }
 
 // ---------- 呼び出し ----------
@@ -210,6 +218,18 @@ function addSuspicion(m: MatchState, observer: Pawn, target: Pawn, amount: numbe
   if (observer === target || observer.isPlayer) return;
   const row = m.suspicion.get(observer)!;
   row.set(target, (row.get(target) ?? 0) + amount);
+}
+
+/**
+ * 会議のスタンプ：speaker が target を「みてた！」「あやしい！」と言ったら、ほかのBotも target を少し怪しむ。
+ * （スパイBotは聞き流す。言われた本人も変わらない）
+ */
+export function hearStamp(m: MatchState, speaker: Pawn, target: Pawn, stamp: 'saw' | 'sus'): void {
+  const amount = stamp === 'saw' ? SUSPICION.trustSaw : SUSPICION.trustSus;
+  for (const p of m.pawns) {
+    if (p === speaker || p === target || p.isSpy || p.h.frozen) continue;
+    addSuspicion(m, p, target, amount);
+  }
 }
 
 /** Bot の投票：いちばん怪しいパテに投票。怪しさが足りなければスキップ。スパイBotは市民に票を集める */
