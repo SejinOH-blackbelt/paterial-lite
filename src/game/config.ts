@@ -36,8 +36,24 @@ export const PATE = {
   speed: 110,
   /** 目的地にこれだけ近づいたら「着いた」とみなす距離 */
   arriveDistance: 2,
-  /** 歩くときにぴょこぴょこ跳ねる高さ */
-  hopHeight: 4,
-  /** 1秒あたりの跳ねる回数 */
-  hopsPerSecond: 4,
+  /** 1秒あたりの歩数（左右の足を合わせた回数） */
+  stepsPerSecond: 4,
+  /** 足を持ち上げる高さ（ピクセル） */
+  legLift: 4,
+  /** 胴体が弾む高さ（ピクセル） */
+  bodyBobHeight: 2,
+  /** 着地で胴体が縮む割合 */
+  landingSquash: 0.06,
+  /** 腕を振る角度（ラジアン） */
+  armSwing: 0.22,
+  /** 胴体が左右に傾く角度（ラジアン） */
+  bodyTilt: 0.08,
+  /** 待機中に1秒あたり呼吸する回数 */
+  breathsPerSecond: 0.8,
+  /** 呼吸で胴体が伸び縮みする割合 */
+  breathAmount: 0.025,
+  /** 歩きと待機の姿勢を切り替える時間（秒） */
+  poseTransitionSeconds: 0.16,
+  /** 胴体が一番高いときに影が縮む割合 */
+  shadowShrink: 0.2,
 } as const;

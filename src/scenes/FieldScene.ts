@@ -10,7 +10,6 @@ export class FieldScene extends Phaser.Scene {
   private pateSprite!: PateView;
   private shadow!: Phaser.GameObjects.Image;
   private marker!: Phaser.GameObjects.Image;
-  private walkTime = 0;
 
   constructor() {
     super('Field');
@@ -31,7 +30,7 @@ export class FieldScene extends Phaser.Scene {
       if (p.isDown) this.goTo(p, false);
     });
 
-    this.syncSprite();
+    this.syncSprite(0, false);
   }
 
   private goTo(p: Phaser.Input.Pointer, showMarker: boolean): void {
@@ -50,27 +49,19 @@ export class FieldScene extends Phaser.Scene {
     // スマホがもたついて1コマが長くなっても、ワープしないように上限をつける
     const dt = Math.min(deltaMs, 100) / 1000;
     stepWalker(this.player, dt);
-    if (isWalking(this.player)) {
-      this.walkTime += dt;
-    } else {
-      this.walkTime = 0;
-      if (this.marker.visible && this.marker.alpha === 1) {
-        this.tweens.add({ targets: this.marker, alpha: 0, duration: 200, onComplete: () => this.marker.setVisible(false) });
-      }
+    const walking = isWalking(this.player);
+    if (!walking && this.marker.visible && this.marker.alpha === 1) {
+      this.tweens.add({ targets: this.marker, alpha: 0, duration: 200, onComplete: () => this.marker.setVisible(false) });
     }
-    this.syncSprite();
+    this.syncSprite(dt, walking);
   }
 
-  /** 計算した位置を絵に反映する（歩いている間はぴょこぴょこ跳ねる） */
-  private syncSprite(): void {
+  /** 計算した位置と歩行状態を絵に反映する */
+  private syncSprite(dt: number, walking: boolean): void {
     const { x, y } = this.player.pos;
-    const phase = this.walkTime * PATE.hopsPerSecond * Math.PI;
-    const hop = Math.abs(Math.sin(phase));
-    const lift = hop * PATE.hopHeight;
-    // 着地の瞬間に少しつぶれる
-    const squash = this.walkTime > 0 ? 1 - (1 - hop) * 0.08 : 1;
-    this.pateSprite.setPosition(x, y - lift).setScale(1 / squash, squash);
-    this.shadow.setPosition(x, y - 1).setScale(1 - hop * 0.2);
+    this.pateSprite.setPosition(x, y);
+    this.pateSprite.update(dt, walking);
+    this.shadow.setPosition(x, y - 1).setScale(1 - this.pateSprite.bounce * PATE.shadowShrink);
     // 下にいるものほど手前に表示する（あとでパテが6体になったときのため）
     this.pateSprite.setDepth(y);
     this.shadow.setDepth(y - PateView.height);
