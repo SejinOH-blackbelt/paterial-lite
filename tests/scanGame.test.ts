@@ -7,12 +7,12 @@ import { answerQuiz, checkTimeout, createScanGame, makeQuiz, mimicShowing, mimic
 import { SPY } from '../src/game/config';
 import { canScan, createSpyState, startScan, updateScan } from '../src/game/spy';
 
-const stock = { clay: 12, bamboo: 3, stone: 4 }; // ゲージ：粘土 100%・木材 30%・鉱石 50%
+const ctx = { gauge: 0.6 }; // 国の仕事ゲージ 60%
 
 describe('スキャンのクイズ（国の状態から自動で作る）', () => {
   it('問題は3問。選択肢の中に正解がひとつある', () => {
     for (let seed = 1; seed < 20; seed++) {
-      const qs = makeQuiz({ stock, landmarkId: 'torii' }, createRng(seed));
+      const qs = makeQuiz({ ...ctx, landmarkId: 'torii' }, createRng(seed));
       expect(qs.length).toBe(SCAN_GAME.quizQuestions);
       for (const q of qs) {
         expect(q.answer).toBeGreaterThanOrEqual(0);
@@ -21,53 +21,44 @@ describe('スキャンのクイズ（国の状態から自動で作る）', () =
     }
   });
 
-  it('答えはその国の状態に合っている（名産・国・音・いちばん多い素材・名物）', () => {
+  it('答えはその国の状態に合っている（名産・国・音・国の仕事ゲージ・名物）', () => {
     const answers = new Map<string, string>();
     for (let seed = 1; seed < 40; seed++) {
-      for (const q of makeQuiz({ stock, landmarkId: 'torii' }, createRng(seed))) answers.set(q.text, q.choices[q.answer]);
+      for (const q of makeQuiz({ ...ctx, landmarkId: 'torii' }, createRng(seed))) answers.set(q.text, q.choices[q.answer]);
     }
     const wa = COUNTRIES[0];
     expect(answers.get('この国の名産は？')).toBe(wa.specialty);
     expect(answers.get('ここは どこの国？')).toBe(wa.name);
     expect(answers.get('この国のパテを叩くと どんな音？')).toBe(wa.sound);
-    expect(answers.get('いま ゲージがいちばん多く残っている素材は？')).toBe('粘土');
+    expect(answers.get('いま 国の仕事ゲージは どのくらい？')).toBe('50〜75%');
     expect(answers.get('いま スキャンしている名物は？')).toBe(LANDMARKS[1].name);
   });
 
-  it('ゲージは画面のバーと同じ「割合」で比べる（個数が多くても、割合が小さければ正解ではない）', () => {
-    // 粘土 10/12 = 0.83、鉱石 8/8 = 1.0 → 画面では鉱石のバーがいちばん長い
-    const seen = new Set<string>();
-    for (let seed = 1; seed < 40; seed++) {
-      for (const q of makeQuiz({ stock: { clay: 10, bamboo: 2, stone: 8, clay2: 10, bamboo2: 2, stone2: 8 }, landmarkId: 'kama' }, createRng(seed))) {
-        if (q.text.includes('ゲージ')) seen.add(q.choices[q.answer]);
-      }
-    }
-    expect([...seen]).toEqual(['鉱石']);
-  });
-
-  it('同じ素材のポイントが2か所あるときは、2か所を合わせた割合で比べる', () => {
-    // 粘土 (12+0)/24 = 0.5、竹 (10+10)/20 = 1.0 → 粘土の1か所が満タンでも、正解は竹
-    const seen = new Set<string>();
-    for (let seed = 1; seed < 40; seed++) {
-      for (const q of makeQuiz({ stock: { clay: 12, bamboo: 10, stone: 0, clay2: 0, bamboo2: 10, stone2: 0 }, landmarkId: 'kama' }, createRng(seed))) {
-        if (q.text.includes('ゲージ')) {
-          seen.add(q.choices[q.answer]);
-          expect(q.choices.length).toBe(3); // 素材は3種類（同じ素材の選択肢が重ならない）
+  it('国の仕事ゲージの問題：0%も100%も、いちばん近い区切りの答えになる', () => {
+    const seen = new Map<number, Set<string>>();
+    for (const g of [0, 1]) {
+      seen.set(g, new Set());
+      for (let seed = 1; seed < 40; seed++) {
+        for (const q of makeQuiz({ gauge: g, landmarkId: 'kama' }, createRng(seed))) {
+          if (q.text.includes('ゲージ')) seen.get(g)!.add(q.choices[q.answer]);
         }
       }
     }
-    expect([...seen]).toEqual(['木材']);
+    expect([...seen.get(0)!]).toEqual(['0〜25%']);
+    expect([...seen.get(1)!]).toEqual(['75〜100%']);
   });
 
-  it('ゲージの差が小さくて見分けにくいときは「いちばん多い素材」は出さない', () => {
-    for (let seed = 1; seed < 30; seed++) {
-      const qs = makeQuiz({ stock: { clay: 6, bamboo: 5, stone: 2, clay2: 6, bamboo2: 5, stone2: 2 }, landmarkId: 'kama' }, createRng(seed)); // 0.5 と 0.5
-      expect(qs.some((q) => q.text.includes('ゲージ'))).toBe(false);
+  it('ゲージが区切り（25%・50%・75%）のすぐそばのときは、ゲージの問題は出さない', () => {
+    for (const g of [0.24, 0.5, 0.77]) {
+      for (let seed = 1; seed < 30; seed++) {
+        const qs = makeQuiz({ gauge: g, landmarkId: 'kama' }, createRng(seed));
+        expect(qs.some((q) => q.text.includes('ゲージ'))).toBe(false);
+      }
     }
   });
 
   it('全問正解で成功、1問でも間違えると失敗、時間切れも失敗', () => {
-    const ok = { kind: 'quiz', questions: makeQuiz({ stock, landmarkId: 'kama' }, createRng(1)), index: 0, deadline: 6, result: 'playing' } as QuizGame;
+    const ok = { kind: 'quiz', questions: makeQuiz({ ...ctx, landmarkId: 'kama' }, createRng(1)), index: 0, deadline: 6, result: 'playing' } as QuizGame;
     for (const q of [...ok.questions]) answerQuiz(ok, q.answer, 1);
     expect(ok.result).toBe('success');
 
@@ -84,7 +75,7 @@ describe('スキャンのクイズ（国の状態から自動で作る）', () =
 describe('スキャンのまねっこ', () => {
   const mimic = (seed: number): MimicGame => {
     for (let s = seed; ; s++) {
-      const g = createScanGame({ stock, landmarkId: 'kama' }, 0, createRng(s));
+      const g = createScanGame({ ...ctx, landmarkId: 'kama' }, 0, createRng(s));
       if (g.kind === 'mimic') return g;
     }
   };
@@ -119,7 +110,7 @@ describe('スキャンの失敗', () => {
     const torii = LANDMARKS[1];
     const spy = createHarvester(createWalker({ x: torii.x, y: torii.y + 20 }));
     const s = createSpyState(spy, 0, createRng(1));
-    expect(startScan(s, 0, { ctx: { stock }, rng: createRng(5) })).toBe(true);
+    expect(startScan(s, 0, { ctx, rng: createRng(5) })).toBe(true);
     s.scan!.game!.result = 'fail';
     const ev = updateScan(s, [spy], 1)!;
     expect(ev.kind).toBe('scanFail');
@@ -132,7 +123,7 @@ describe('スキャンの失敗', () => {
     const torii = LANDMARKS[1];
     const spy = createHarvester(createWalker({ x: torii.x, y: torii.y + 20 }));
     const s = createSpyState(spy, 0, createRng(1));
-    startScan(s, 0, { ctx: { stock }, rng: createRng(5) });
+    startScan(s, 0, { ctx, rng: createRng(5) });
     s.scan!.game!.result = 'success';
     expect(updateScan(s, [spy], 1)!.kind).toBe('scan');
     expect(s.fragments).toBe(1);

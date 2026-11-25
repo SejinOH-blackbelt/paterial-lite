@@ -1,9 +1,9 @@
 // スキャンのミニゲーム（クイズ・まねっこ）のルール。画面表示（Phaser）には依存しません。
-// ・クイズ：その国の状態から問題を自動で作る（名産・国・叩く音・いちばん多い素材・名物の名前）。全問正解でスキャン成功
+// ・クイズ：その国の状態から問題を自動で作る（名産・国・叩く音・国の仕事ゲージ・名物の名前）。全問正解でスキャン成功
 // ・まねっこ：名物の4か所が音と一緒に順番に光る。同じ順にタップできたら成功
 // ・1回でも間違える・時間切れになると失敗（その名物は、そのラウンドのあいだスキャンできない）
 
-import { COUNTRIES, HOME_COUNTRY, LANDMARKS, RESOURCE_NAMES, RESOURCE_POINTS, SCAN_GAME, STOCK } from './config';
+import { COUNTRIES, HOME_COUNTRY, LANDMARKS, SCAN_GAME } from './config';
 import type { Rng } from './random';
 
 export interface QuizQuestion {
@@ -38,8 +38,8 @@ export type ScanGame = QuizGame | MimicGame;
 
 /** クイズを作るのに使う、その場の状態 */
 export interface QuizContext {
-  /** 素材ポイントの残りの量 */
-  stock: Record<string, number>;
+  /** 国の仕事ゲージ（0〜1。画面の上にいつも出ている） */
+  gauge: number;
   /** スキャンしている名物 */
   landmarkId: string;
 }
@@ -68,20 +68,13 @@ export function makeQuiz(ctx: QuizContext, rng: Rng, count: number = SCAN_GAME.q
     () => choiceQuestion(rng, 'ここは どこの国？', home.name, COUNTRIES.map((c) => c.name)),
     () => choiceQuestion(rng, 'この国のパテを叩くと どんな音？', home.sound, COUNTRIES.map((c) => c.sound)),
     () => {
-      // いま、ゲージ（画面のバー）がいちばん多く残っている素材。
-      // 同じ素材のポイントが何か所あっても、素材ごとにまとめた「割合」で決める。
-      // 差が小さくて見分けにくいときは、この問題は出さない
-      const kindList = [...new Set(RESOURCE_POINTS.map((r) => r.kind))];
-      const kinds = kindList
-        .map((kind) => {
-          const points = RESOURCE_POINTS.filter((r) => r.kind === kind);
-          const left = points.reduce((n, r) => n + (ctx.stock[r.id] ?? 0), 0);
-          return { kind, f: left / (STOCK.max[kind] * points.length) };
-        })
-        .sort((a, b) => b.f - a.f);
-      if (kinds.length < 2 || kinds[0].f - kinds[1].f < SCAN_GAME.gaugeMargin) return null;
-      const names = kindList.map((k) => RESOURCE_NAMES[k]);
-      return choiceQuestion(rng, 'いま ゲージがいちばん多く残っている素材は？', RESOURCE_NAMES[kinds[0].kind], names, names.length);
+      // いま、国の仕事ゲージ（画面の上にいつも出ている％）はどのくらいか。
+      // 区切りのすぐそばだと、答えているあいだに変わって見分けにくいので、この問題は出さない
+      const g = Math.min(1, Math.max(0, ctx.gauge));
+      const bands = ['0〜25%', '25〜50%', '50〜75%', '75〜100%'];
+      if ([0.25, 0.5, 0.75].some((edge) => Math.abs(g - edge) < SCAN_GAME.gaugeMargin)) return null;
+      const band = Math.min(3, Math.floor(g * 4));
+      return choiceQuestion(rng, 'いま 国の仕事ゲージは どのくらい？', bands[band], bands);
     },
     () => {
       const l = LANDMARKS.find((x) => x.id === ctx.landmarkId);

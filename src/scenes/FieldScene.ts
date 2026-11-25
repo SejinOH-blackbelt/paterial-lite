@@ -251,7 +251,7 @@ export class FieldScene extends Phaser.Scene {
       if (this.scanButton && over.includes(this.scanButton)) {
         this.downOnButton = true;
         // スキャン：その国の状態からクイズを作る（または、まねっこ）
-        if (startScan(this.spy, this.audio.heardTime(), { ctx: { stock: this.field.stock }, rng: this.rng })) {
+        if (startScan(this.spy, this.audio.heardTime(), { ctx: { gauge: gauge(this.match) }, rng: this.rng })) {
           this.squash(this.scanButton, 0.9);
         }
         return;
@@ -955,7 +955,7 @@ export class FieldScene extends Phaser.Scene {
     // 下にいるものほど手前に表示する
     e.view.setDepth(y);
     e.shadow.setDepth(y - PateView.height);
-    // 見える範囲の外にいるほかのパテ（置物も）は見えない。ふちでは、ふわっと消える
+    // 見える範囲の外にいるほかのパテ（置物も）は見えない。ふちの少し内側から、ふわっと消える
     const seen = e.h === this.player && !this.spirit ? 1 : this.visibility(x, y);
     e.view.setAlpha(seen).setVisible(seen > 0);
     e.shadow.setAlpha(seen).setVisible(seen > 0);
@@ -965,6 +965,6 @@ export class FieldScene extends Phaser.Scene {
   private visibility(x: number, y: number): number {
     const me = this.listenerPos();
     const d = Math.hypot(x - me.x, y - me.y);
-    return Phaser.Math.Clamp((VISION.radius - d) / VISION.pateFade + 1, 0, 1);
+    return Phaser.Math.Clamp((VISION.radius - d) / VISION.pateFade, 0, 1);
   }
 }
