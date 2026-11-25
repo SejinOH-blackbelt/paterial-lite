@@ -1,7 +1,7 @@
 // 採取場の画面。見た目とタッチ操作だけを担当し、動きの計算は src/game/movement.ts に任せます。
 import Phaser from 'phaser';
 import { PATE, SCREEN } from '../game/config';
-import { isWalking, setTarget, stepWalker, type Walker } from '../game/movement';
+import { createWalker, isWalking, setTarget, stepWalker, type Walker } from '../game/movement';
 import { PateView } from './PateView';
 import { drawGround, makeTextures, TEX } from './textures';
 
@@ -19,7 +19,7 @@ export class FieldScene extends Phaser.Scene {
     makeTextures(this);
     drawGround(this, SCREEN.width, SCREEN.height);
 
-    this.player = { pos: { x: SCREEN.width / 2, y: SCREEN.height * 0.6 }, target: null };
+    this.player = createWalker({ x: SCREEN.width / 2, y: SCREEN.height * 0.6 });
     this.shadow = this.add.image(0, 0, TEX.shadow);
     this.pateSprite = new PateView(this, 0, 0);
     this.marker = this.add.image(0, 0, TEX.marker).setVisible(false);

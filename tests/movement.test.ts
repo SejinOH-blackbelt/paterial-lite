@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FIELD, PATE } from '../src/game/config';
-import { clampToField, isWalking, setTarget, stepWalker, type Walker } from '../src/game/movement';
+import { clampToField, createWalker, facingFor, isWalking, setTarget, stepWalker } from '../src/game/movement';
 
-const walker = (x: number, y: number): Walker => ({ pos: { x, y }, target: null });
+const walker = (x: number, y: number) => createWalker({ x, y });
 
 describe('パテの動き', () => {
   it('目的地がなければ動かない', () => {
@@ -31,5 +31,32 @@ describe('パテの動き', () => {
 
   it('採取場の外をタッチしても、採取場の端までしか行かない', () => {
     expect(clampToField({ x: -50, y: 9999 })).toEqual({ x: FIELD.left, y: FIELD.bottom });
+  });
+});
+
+describe('パテの向き', () => {
+  it('最初は手前（下）を向いている', () => {
+    expect(walker(100, 200).facing).toBe('down');
+  });
+
+  it('歩く方向に体を向ける（上下左右）', () => {
+    expect(facingFor(10, 0, 'down')).toBe('right');
+    expect(facingFor(-10, 0, 'down')).toBe('left');
+    expect(facingFor(0, -10, 'left')).toBe('up');
+    expect(facingFor(0, 10, 'left')).toBe('down');
+  });
+
+  it('ほぼ斜めのときは、今の向きのまま（チラチラしない）', () => {
+    expect(facingFor(10, 11, 'right')).toBe('right');
+    expect(facingFor(11, 10, 'down')).toBe('down');
+  });
+
+  it('目的地を決めた瞬間にそちらを向き、止まっても向きを保つ', () => {
+    const w = walker(100, 200);
+    setTarget(w, { x: 100, y: 120 });
+    expect(w.facing).toBe('up');
+    stepWalker(w, 10);
+    expect(isWalking(w)).toBe(false);
+    expect(w.facing).toBe('up');
   });
 });
