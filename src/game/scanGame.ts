@@ -69,10 +69,18 @@ export function makeQuiz(ctx: QuizContext, rng: Rng, count: number = SCAN_GAME.q
     () => choiceQuestion(rng, 'この国のパテを叩くと どんな音？', home.sound, COUNTRIES.map((c) => c.sound)),
     () => {
       // いま、ゲージ（画面のバー）がいちばん多く残っている素材。
-      // 画面で見える「割合」で決める。差が小さくて見分けにくいときは、この問題は出さない
-      const kinds = RESOURCE_POINTS.map((r) => ({ kind: r.kind, f: (ctx.stock[r.id] ?? 0) / STOCK.max[r.kind] })).sort((a, b) => b.f - a.f);
+      // 同じ素材のポイントが何か所あっても、素材ごとにまとめた「割合」で決める。
+      // 差が小さくて見分けにくいときは、この問題は出さない
+      const kindList = [...new Set(RESOURCE_POINTS.map((r) => r.kind))];
+      const kinds = kindList
+        .map((kind) => {
+          const points = RESOURCE_POINTS.filter((r) => r.kind === kind);
+          const left = points.reduce((n, r) => n + (ctx.stock[r.id] ?? 0), 0);
+          return { kind, f: left / (STOCK.max[kind] * points.length) };
+        })
+        .sort((a, b) => b.f - a.f);
       if (kinds.length < 2 || kinds[0].f - kinds[1].f < SCAN_GAME.gaugeMargin) return null;
-      const names = RESOURCE_POINTS.map((r) => RESOURCE_NAMES[r.kind]);
+      const names = kindList.map((k) => RESOURCE_NAMES[k]);
       return choiceQuestion(rng, 'いま ゲージがいちばん多く残っている素材は？', RESOURCE_NAMES[kinds[0].kind], names, names.length);
     },
     () => {

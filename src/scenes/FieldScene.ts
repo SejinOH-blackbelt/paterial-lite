@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { BOT, BOT_PROFILES, COLORS, LANDMARKS, MATCH, MISSIONS, PATE, PLAYER_PART, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION } from '../game/config';
+import { BOT, BOT_PROFILES, COLORS, LANDMARKS, MATCH, MISSIONS, PATE, PLAYER_PART, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   createHarvester,
@@ -48,7 +48,7 @@ import { GameAudio } from './audio';
 import type { MeetingData } from './MeetingScene';
 import type { ResultData } from './ResultScene';
 import type { RoleData } from './RoleScene';
-import { FONT, INK, cssColor, label, mmss, panel } from './ui';
+import { FONT, INK, cssColor, label, mmss, panel, pinToScreen } from './ui';
 import { makePartTextures, type HeadPart } from './partTextures';
 import { PateView } from './PateView';
 import { LANDMARK_TEX, makeSpyTextures } from './spyTextures';
@@ -82,12 +82,14 @@ interface PateEntity {
 
 /** 住民Botの最初の位置（採取場にばらけて立つ） */
 const BOT_STARTS = [
-  { x: 60, y: 140 },
-  { x: 300, y: 150 },
-  { x: 200, y: 260 },
-  { x: 300, y: 470 },
-  { x: 60, y: 580 },
+  { x: 120, y: 470 },
+  { x: 560, y: 380 },
+  { x: 440, y: 760 },
+  { x: 250, y: 900 },
+  { x: 600, y: 1100 },
 ] as const;
+/** プレイヤーの最初の位置（鳥居の少し下） */
+const PLAYER_START = { x: 350, y: 720 } as const;
 
 export class FieldScene extends Phaser.Scene {
   /** プレイヤーのパテ（pates[0]） */
@@ -152,6 +154,8 @@ export class FieldScene extends Phaser.Scene {
   private lastFlashLap = -1;
   /** 採取中に画面を暗くする幕 */
   private focusCover!: Phaser.GameObjects.Rectangle;
+  /** カメラが追いかける目印（自分のパテ、土の精になったら土の精） */
+  private camTarget!: Phaser.GameObjects.Zone;
 
   constructor() {
     super('Field');
@@ -172,7 +176,7 @@ export class FieldScene extends Phaser.Scene {
     makeResourceTextures(this);
     makePartTextures(this);
     makeSpyTextures(this);
-    drawGround(this, SCREEN.width, SCREEN.height);
+    drawGround(this, WORLD.width, WORLD.height);
 
     // 音の時計。Phaser が用意した AudioContext を使う（なければ自分で作る）
     const sm = this.sound as Phaser.Sound.BaseSoundManager & { context?: AudioContext };
@@ -192,7 +196,7 @@ export class FieldScene extends Phaser.Scene {
     // パテ6体：プレイヤー1体 + 住民Bot 5体
     this.rng = createRng(Date.now());
     this.pates = [];
-    this.addPate(createHarvester(createWalker({ x: SCREEN.width / 2, y: SCREEN.height * 0.6 })), PLAYER_PART, null, 'player');
+    this.addPate(createHarvester(createWalker({ ...PLAYER_START })), PLAYER_PART, null, 'player');
     BOT_PROFILES.forEach((profile, i) => {
       const bot = createBot(profile, BOT_STARTS[i]);
       this.addPate(bot.h, profile.part, bot, profile.id);
@@ -204,21 +208,27 @@ export class FieldScene extends Phaser.Scene {
     this.marker = this.add.image(0, 0, TEX.marker).setVisible(false);
 
     // 採取中は、画面を暗くして、メーターとボタンを真ん中に大きく出す（まわりが見えにくくなる）
-    this.focusCover = this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, 0x1a120c, 0.82).setOrigin(0).setDepth(9040).setVisible(false);
-    this.meter = this.add.graphics().setDepth(9200).setPosition(BUTTON.x, BUTTON.y).setScale(BUTTON.scale);
+    this.focusCover = this.hud(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, 0x1a120c, 0.82).setOrigin(0).setDepth(9040).setVisible(false));
+    this.meter = this.hud(this.add.graphics().setDepth(9200).setPosition(BUTTON.x, BUTTON.y).setScale(BUTTON.scale));
     this.stockBars = this.add.graphics().setDepth(8000);
-    this.button = this.makeButton();
+    this.button = this.hud(this.makeButton());
     this.materialsText = this.add
       .text(SCREEN.width - 12, 40, '', { fontFamily: 'sans-serif', fontSize: '15px', fontStyle: 'bold', color: '#fff8e8' })
       .setOrigin(1, 0.5)
       .setDepth(9500)
-      .setStroke('#2b1d14', 4);
+      .setStroke('#2b1d14', 4)
+      .setScrollFactor(0);
     this.updateMaterials(false);
+    // 採取場は画面より広いので、カメラが自分のパテを追いかける（採取場の端より外は映さない）
+    this.camTarget = this.add.zone(PLAYER_START.x, PLAYER_START.y, 1, 1);
+    this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height);
+    this.cameras.main.startFollow(this.camTarget, false, 0.2, 0.2);
     this.setupFog();
     this.setupHud();
     this.spyUi = this.add.graphics().setDepth(9150);
     if (this.isPlayerSpy) this.setupSpyButtons();
-    this.callButton = this.makeCallButton();
+    this.callButton = this.hud(this.makeCallButton());
+
 
     // タップ：採取中に「採取」ボタンを押したら採取、それ以外はそこへ歩く
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
@@ -273,6 +283,11 @@ export class FieldScene extends Phaser.Scene {
     view.setHeadPart(part);
     const pawn: Pawn = { id, part, h, isSpy: false, isPlayer: bot === null, emergencyLeft: MATCH.emergencyPerPawn };
     this.pates.push({ h, view, shadow, bot, pawn });
+  }
+
+  /** 画面に貼りつける表示（カメラが動いても、画面の同じ場所に出る） */
+  private hud<T extends Phaser.GameObjects.GameObject>(obj: T): T {
+    return pinToScreen(obj);
   }
 
   private makeButton(): Phaser.GameObjects.Container {
@@ -387,6 +402,7 @@ export class FieldScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(9600)
       .setStroke('#fff8e8', 4);
+    if (at) this.hud(t); // 位置を指定したとき（大きなメーターの上）は画面に貼りつける
     // ポンと大きく出て、少し止まってから、ふわっと上に消える（すぐ薄くならないので読みやすい）
     t.setScale(0.6);
     this.tweens.chain({
@@ -559,7 +575,7 @@ export class FieldScene extends Phaser.Scene {
     // 針がゾーンの真ん中を通る瞬間に、ボタンのふちを光らせる
     if (ready && lapNow !== this.lastFlashLap && Math.abs(heard - passTime(s, lapNow)) < 0.03) {
       this.lastFlashLap = lapNow;
-      const flash = this.add.circle(BUTTON.x, BUTTON.y, (BUTTON.r + 2) * BUTTON.scale).setStrokeStyle(8, COLORS.meterNeedle).setDepth(9150);
+      const flash = this.hud(this.add.circle(BUTTON.x, BUTTON.y, (BUTTON.r + 2) * BUTTON.scale).setStrokeStyle(8, COLORS.meterNeedle).setDepth(9150));
       this.tweens.add({ targets: flash, scale: 1.2, alpha: 0, duration: 200, onComplete: () => flash.destroy() });
     }
   }
@@ -638,17 +654,17 @@ export class FieldScene extends Phaser.Scene {
     this.hudPercent = -1;
     this.hudSeconds = -1;
     this.hudMissionKey = -1;
-    panel(this, 180, 24, 336, 32, COLORS.uiPaper).setDepth(9450);
-    panel(this, 180, 63, 336, 27, COLORS.uiPaper).setDepth(9450);
-    panel(this, 306, 23, 71, 24, COLORS.uiWood).setDepth(9451);
-    this.add.graphics().setDepth(9451)
+    this.hud(panel(this, 180, 24, 336, 32, COLORS.uiPaper).setDepth(9450));
+    this.hud(panel(this, 180, 63, 336, 27, COLORS.uiPaper).setDepth(9450));
+    this.hud(panel(this, 306, 23, 71, 24, COLORS.uiWood).setDepth(9451));
+    this.hud(this.add.graphics().setDepth(9451)
       .fillStyle(COLORS.ink).fillRoundedRect(82, 15, 142, 16, 5)
-      .fillStyle(COLORS.uiPaperEdge).fillRect(85, 18, 136, 10);
-    this.gaugeFill = this.add.rectangle(85, 18, 136, 10, COLORS.uiMoss).setOrigin(0).setDepth(9452);
-    label(this, 46, 22, '国の仕事', 13, INK).setStroke(INK, 0).setDepth(9500);
-    this.gaugeText = label(this, 246, 22, '', 13, INK).setStroke(INK, 0).setDepth(9500);
-    this.timeText = label(this, 306, 21, '', 17).setDepth(9500);
-    this.missionText = label(this, 180, 61, '', 13, INK).setStroke(INK, 0).setDepth(9500);
+      .fillStyle(COLORS.uiPaperEdge).fillRect(85, 18, 136, 10));
+    this.gaugeFill = this.hud(this.add.rectangle(85, 18, 136, 10, COLORS.uiMoss).setOrigin(0).setDepth(9452));
+    this.hud(label(this, 46, 22, '国の仕事', 13, INK).setStroke(INK, 0).setDepth(9500));
+    this.gaugeText = this.hud(label(this, 246, 22, '', 13, INK).setStroke(INK, 0).setDepth(9500));
+    this.timeText = this.hud(label(this, 306, 21, '', 17).setDepth(9500));
+    this.missionText = this.hud(label(this, 180, 61, '', 13, INK).setStroke(INK, 0).setDepth(9500));
   }
 
   private drawHud(heard: number): void {
@@ -782,8 +798,9 @@ export class FieldScene extends Phaser.Scene {
     const key = 'field-vision-fog';
     if (!this.textures.exists(key)) {
       // 画面の端まで届く霧を一度だけ描く。毎コマ行うのは画像の移動だけ。
-      const width = SCREEN.width * 2;
-      const height = SCREEN.height * 2;
+      // 採取場の端ではカメラが止まり、パテが画面の端に寄るので、そのぶん大きめに描く
+      const width = SCREEN.width * 2 + 120;
+      const height = SCREEN.height * 2 + 120;
       drawPart(this, key, width, height, (ctx) => {
         const x = width / 2;
         const y = height / 2;
@@ -803,8 +820,9 @@ export class FieldScene extends Phaser.Scene {
 
   private updateFog(): void {
     // 土の精になったら、土の精のまわりが見える
-    const { x, y } = this.spirit ? this.spirit.walker.pos : this.player.walker.pos;
+    const { x, y } = this.listenerPos();
     this.fog.setPosition(x, y - 20); // パテの体の真ん中あたりを中心に見る
+    this.camTarget.setPosition(x, y - 20);
   }
 
   /** スパイ用のボタン：スキャン（左下）とイタズラ（右下） */
@@ -815,7 +833,7 @@ export class FieldScene extends Phaser.Scene {
       const t = this.add
         .text(0, 0, label, { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#2b1d14', align: 'center' })
         .setOrigin(0.5);
-      const c = this.add.container(x, 596, [bg, t]).setDepth(9100);
+      const c = this.hud(this.add.container(x, 596, [bg, t]).setDepth(9100));
       c.setSize(r * 2, r * 2);
       c.setInteractive(new Phaser.Geom.Circle(r, r, r + 6), Phaser.Geom.Circle.Contains);
       return c;
@@ -826,7 +844,8 @@ export class FieldScene extends Phaser.Scene {
       .text(SCREEN.width / 2, 80, '', { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#ffd43b' })
       .setOrigin(0.5)
       .setDepth(9500)
-      .setStroke('#2b1d14', 4);
+      .setStroke('#2b1d14', 4)
+      .setScrollFactor(0);
   }
 
   /** スパイ用の表示：ボタンの使える・使えない、スキャンの進み具合、イタズラできる相手の印 */
@@ -936,5 +955,16 @@ export class FieldScene extends Phaser.Scene {
     // 下にいるものほど手前に表示する
     e.view.setDepth(y);
     e.shadow.setDepth(y - PateView.height);
+    // 見える範囲の外にいるほかのパテ（置物も）は見えない。ふちでは、ふわっと消える
+    const seen = e.h === this.player && !this.spirit ? 1 : this.visibility(x, y);
+    e.view.setAlpha(seen).setVisible(seen > 0);
+    e.shadow.setAlpha(seen).setVisible(seen > 0);
+  }
+
+  /** その場所が、いま見える範囲にどれだけ入っているか（1 = はっきり見える、0 = 見えない） */
+  private visibility(x: number, y: number): number {
+    const me = this.listenerPos();
+    const d = Math.hypot(x - me.x, y - me.y);
+    return Phaser.Math.Clamp((VISION.radius - d) / VISION.pateFade + 1, 0, 1);
   }
 }

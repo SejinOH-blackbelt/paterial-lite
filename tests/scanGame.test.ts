@@ -38,16 +38,30 @@ describe('スキャンのクイズ（国の状態から自動で作る）', () =
     // 粘土 10/12 = 0.83、鉱石 8/8 = 1.0 → 画面では鉱石のバーがいちばん長い
     const seen = new Set<string>();
     for (let seed = 1; seed < 40; seed++) {
-      for (const q of makeQuiz({ stock: { clay: 10, bamboo: 2, stone: 8 }, landmarkId: 'kama' }, createRng(seed))) {
+      for (const q of makeQuiz({ stock: { clay: 10, bamboo: 2, stone: 8, clay2: 10, bamboo2: 2, stone2: 8 }, landmarkId: 'kama' }, createRng(seed))) {
         if (q.text.includes('ゲージ')) seen.add(q.choices[q.answer]);
       }
     }
     expect([...seen]).toEqual(['鉱石']);
   });
 
+  it('同じ素材のポイントが2か所あるときは、2か所を合わせた割合で比べる', () => {
+    // 粘土 (12+0)/24 = 0.5、竹 (10+10)/20 = 1.0 → 粘土の1か所が満タンでも、正解は竹
+    const seen = new Set<string>();
+    for (let seed = 1; seed < 40; seed++) {
+      for (const q of makeQuiz({ stock: { clay: 12, bamboo: 10, stone: 0, clay2: 0, bamboo2: 10, stone2: 0 }, landmarkId: 'kama' }, createRng(seed))) {
+        if (q.text.includes('ゲージ')) {
+          seen.add(q.choices[q.answer]);
+          expect(q.choices.length).toBe(3); // 素材は3種類（同じ素材の選択肢が重ならない）
+        }
+      }
+    }
+    expect([...seen]).toEqual(['木材']);
+  });
+
   it('ゲージの差が小さくて見分けにくいときは「いちばん多い素材」は出さない', () => {
     for (let seed = 1; seed < 30; seed++) {
-      const qs = makeQuiz({ stock: { clay: 6, bamboo: 5, stone: 2 }, landmarkId: 'kama' }, createRng(seed)); // 0.5 と 0.5
+      const qs = makeQuiz({ stock: { clay: 6, bamboo: 5, stone: 2, clay2: 6, bamboo2: 5, stone2: 2 }, landmarkId: 'kama' }, createRng(seed)); // 0.5 と 0.5
       expect(qs.some((q) => q.text.includes('ゲージ'))).toBe(false);
     }
   });

@@ -72,10 +72,16 @@ export const COLORS = {
 
 /** 採取場（パテが歩ける範囲）。上下は、あとで時間やノルマの表示を置くために空けておきます */
 export const FIELD = {
-  left: 20,
-  right: 340,
-  top: 90,
-  bottom: 610,
+  left: 30,
+  right: 690,
+  top: 70,
+  bottom: 1200,
+} as const;
+
+/** 採取場ぜんたいの広さ（画面の約2倍×2倍。カメラが自分のパテを追いかける） */
+export const WORLD = {
+  width: 720,
+  height: 1240,
 } as const;
 
 /** パテの動き */
@@ -178,9 +184,13 @@ export const RESOURCE = {
 
 /** 採取場に置く素材ポイント（粘土の山・竹・石） */
 export const RESOURCE_POINTS = [
-  { id: 'clay', kind: 'clay', x: 92, y: 220 },
-  { id: 'bamboo', kind: 'bamboo', x: 272, y: 330 },
-  { id: 'stone', kind: 'stone', x: 104, y: 470 },
+  // 広い採取場なので、同じ素材を2か所ずつ置く（遠くまで歩かずにすむように）
+  { id: 'clay', kind: 'clay', x: 140, y: 330 },
+  { id: 'bamboo', kind: 'bamboo', x: 600, y: 520 },
+  { id: 'stone', kind: 'stone', x: 330, y: 1110 },
+  { id: 'clay2', kind: 'clay', x: 580, y: 960 },
+  { id: 'bamboo2', kind: 'bamboo', x: 130, y: 760 },
+  { id: 'stone2', kind: 'stone', x: 260, y: 190 },
 ] as const;
 
 /** 素材をたたいたときの見た目 */
@@ -230,9 +240,9 @@ export const BOT_PROFILES = [
 
 /** 名物（スパイがスキャンして設計図のカケラを集める、和の国の設備） */
 export const LANDMARKS = [
-  { id: 'karakuri', name: 'からくり歯車の櫓', x: 272, y: 168 },
-  { id: 'torii', name: '鳥居', x: 166, y: 300 },
-  { id: 'kama', name: '茶釜', x: 254, y: 548 },
+  { id: 'karakuri', name: 'からくり歯車の櫓', x: 560, y: 240 },
+  { id: 'torii', name: '鳥居', x: 350, y: 640 },
+  { id: 'kama', name: '茶釜', x: 170, y: 1020 },
 ] as const;
 
 /** スパイ */
@@ -271,8 +281,10 @@ export const SPY_BOT = {
 export const VISION = {
   /** 見える半径 */
   radius: 130,
-  /** 見えない場所の暗さ（0〜1） */
-  fogAlpha: 0.82,
+  /** 見えない場所の暗さ（0〜1）。地面や建物はうっすら見える */
+  fogAlpha: 0.78,
+  /** 見える範囲のふちで、ほかのパテがふわっと消える幅 */
+  pateFade: 24,
 } as const;
 
 /** 8つの国（docs/vision.md より。名産と叩く音のうち、企画書にないものは仮） */

@@ -3,6 +3,7 @@
 import Phaser from 'phaser';
 import { COLORS, SCAN_GAME, SCREEN } from '../game/config';
 import { answerQuiz, mimicStep, pressMimic, type ScanGame } from '../game/scanGame';
+import { pinToScreen } from './ui';
 
 /** パネルの位置と大きさ */
 const PANEL = { x: 12, y: 388, w: SCREEN.width - 24, h: 236 } as const;
@@ -43,6 +44,8 @@ export class ScanGameView {
     this.root = scene.add.container(0, 0, [bg, frame, this.title, this.timer]).setDepth(9700);
     if (game.kind === 'quiz') this.buildQuiz();
     else this.buildMimic();
+    // 採取場のカメラが動いても、パネルは画面の同じ場所に出す（押す位置の判定も画面に合わせる）
+    pinToScreen(this.root);
   }
 
   /** このパネルの上を押したか（押したなら、採取場には「歩く」として渡さない） */

@@ -185,12 +185,14 @@ export function seeded(seed: number): () => number {
 export function drawGround(scene: Phaser.Scene, width: number, height: number): void {
   const rand = seeded(7);
   const g = scene.add.graphics().setDepth(-1000);
+  // 広い採取場でも、土の粒や草の密度が同じになるように数を増やす（基準は画面1枚ぶん 360×640）
+  const many = (n: number) => Math.round(n * Math.max(1, (width * height) / (360 * 640)));
 
   // 土
   g.fillStyle(COLORS.dirt, 1);
   g.fillRect(0, 0, width, height);
   g.fillStyle(COLORS.dirtDark, 1);
-  for (let i = 0; i < 70; i++) {
+  for (let i = 0; i < many(70); i++) {
     g.fillRect(Math.floor(rand() * width), Math.floor(rand() * height), 3, 2);
   }
 
@@ -207,7 +209,7 @@ export function drawGround(scene: Phaser.Scene, width: number, height: number): 
   }
 
   // 草むら
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < many(26); i++) {
     const x = rand() * width;
     const y = rand() * height;
     const s = 10 + rand() * 16;
@@ -219,7 +221,7 @@ export function drawGround(scene: Phaser.Scene, width: number, height: number): 
 
   // 草の葉っぱ
   g.lineStyle(2, COLORS.grassDark, 1);
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < many(40); i++) {
     const x = rand() * width;
     const y = rand() * height;
     g.lineBetween(x, y, x - 3, y - 6);
@@ -256,4 +258,19 @@ export function drawGround(scene: Phaser.Scene, width: number, height: number): 
     leaf(FIELD.left - pad, y);
     leaf(FIELD.right + pad, y);
   }
+
+  // たくさんの図形を毎コマ描き直すと重いので、一度だけ1枚の絵に焼きつけて使う
+  bake(scene, g, 'ground-base', width, height, -1000);
+  bake(scene, hedge, 'ground-hedge', width, height, 5000);
+}
+
+/** 図形を1枚の絵にして置きかえる（同じ大きさなら、前に作った絵を使い回す） */
+function bake(scene: Phaser.Scene, g: Phaser.GameObjects.Graphics, key: string, width: number, height: number, depth: number): void {
+  const old = scene.textures.exists(key) ? scene.textures.get(key).getSourceImage() : null;
+  if (!old || old.width !== width || old.height !== height) {
+    if (old) scene.textures.remove(key);
+    g.generateTexture(key, width, height);
+  }
+  g.destroy();
+  scene.add.image(0, 0, key).setOrigin(0).setDepth(depth);
 }

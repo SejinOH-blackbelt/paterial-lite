@@ -44,6 +44,17 @@ export function textButton(
   return c;
 }
 
+/**
+ * 画面に貼りつける（カメラが動いても、画面の同じ場所に出て、同じ場所で押せる）。
+ * 入れ物（Container）なら中の部品も全部。Phaser の Container は中の部品まで変えてくれないので自分で回る
+ */
+export function pinToScreen<T extends Phaser.GameObjects.GameObject>(obj: T): T {
+  const o = obj as unknown as Partial<Phaser.GameObjects.Components.ScrollFactor> & { list?: Phaser.GameObjects.GameObject[] };
+  o.setScrollFactor?.(0);
+  if (Array.isArray(o.list)) for (const child of o.list) pinToScreen(child);
+  return obj;
+}
+
 /** ふちどり付きの文字 */
 export function label(scene: Phaser.Scene, x: number, y: number, text: string, size: number, color = cssColor(COLORS.uiCream)): Phaser.GameObjects.Text {
   return scene.add
