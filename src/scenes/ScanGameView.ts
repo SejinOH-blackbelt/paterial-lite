@@ -37,7 +37,7 @@ export class ScanGameView {
     frame.lineStyle(1, COLORS.landmarkWoodShade, 0.5);
     frame.strokeRoundedRect(PANEL.x + 7, PANEL.y + 7, PANEL.w - 14, PANEL.h - 14, 4);
     this.title = scene.add
-      .text(SCREEN.width / 2, PANEL.y + 22, '', { fontFamily: 'sans-serif', fontSize: '16px', fontStyle: 'bold', color: TEXT_INK, align: 'center', wordWrap: { width: PANEL.w - 24 } })
+      .text(SCREEN.width / 2, PANEL.y + 22, '', { fontFamily: 'sans-serif', fontSize: '16px', fontStyle: 'bold', color: TEXT_INK, align: 'center', wordWrap: { width: PANEL.w - 24, useAdvancedWrap: true } })
       .setOrigin(0.5, 0);
     this.timer = scene.add.graphics();
     this.root = scene.add.container(0, 0, [bg, frame, this.title, this.timer]).setDepth(9700);
@@ -63,7 +63,7 @@ export class ScanGameView {
       bevel.lineStyle(1, COLORS.landmarkWood, 0.45);
       bevel.strokeRoundedRect(x + 5, y + 5, bw - 10, bh - 14, 4);
       const t = this.scene.add
-        .text(x + bw / 2, y + bh / 2, '', { fontFamily: 'sans-serif', fontSize: '15px', fontStyle: 'bold', color: TEXT_INK, align: 'center', wordWrap: { width: bw - 10 } })
+        .text(x + bw / 2, y + bh / 2, '', { fontFamily: 'sans-serif', fontSize: '15px', fontStyle: 'bold', color: TEXT_INK, align: 'center', wordWrap: { width: bw - 10, useAdvancedWrap: true } })
         .setOrigin(0.5);
       b.on('pointerdown', () => {
         if (this.game.kind !== 'quiz') return;

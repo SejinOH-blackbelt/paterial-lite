@@ -3,7 +3,7 @@ import Phaser from 'phaser';
 import { COLORS, LANDMARKS, PART_NAMES, SCREEN } from '../game/config';
 import type { MatchState, OutcomeReason, Pawn } from '../game/match';
 import { PateView } from './PateView';
-import { FONT, INK, label, mmss, textButton } from './ui';
+import { FONT, INK, cssColor, label, mmss, panel, textButton } from './ui';
 
 export interface ResultData {
   match: MatchState;
@@ -13,7 +13,7 @@ export interface ResultData {
 const REASON: Record<OutcomeReason, string> = {
   gauge: '国の仕事ゲージが 満タンになった！',
   caught: '会議で スパイを当てた！',
-  scanned: 'スパイが 名物を全部スキャンして、ミッションも終えた',
+  scanned: 'スパイが 名物を全部スキャンして、\nミッションも終えた',
   frozen: '市民が 全員 置物にされた…',
   timeout: '時間切れ… 国の仕事が 終わらなかった',
 };
@@ -32,22 +32,26 @@ export class ResultScene extends Phaser.Scene {
     const o = match.outcome!;
     const spy = match.pawns.find((p) => p.isSpy)!;
     const playerWon = (o.winner === 'spy') === player.isSpy;
-    this.cameras.main.setBackgroundColor(o.winner === 'spy' ? 0x3a3f47 : COLORS.background);
+    const x = SCREEN.width / 2;
+    this.cameras.main.setBackgroundColor(o.winner === 'spy' ? COLORS.uiStone : COLORS.background);
 
-    label(this, SCREEN.width / 2, 48, o.winner === 'spy' ? 'スパイの勝ち' : '市民の勝ち', 34, o.winner === 'spy' ? '#ffd43b' : '#fff8e8');
+    panel(this, x, 83, 326, 124, o.winner === 'spy' ? COLORS.landmarkIron : COLORS.uiWood);
+    label(this, x, 48, o.winner === 'spy' ? 'スパイの勝ち' : '市民の勝ち', 34, o.winner === 'spy' ? cssColor(COLORS.uiHoney) : cssColor(COLORS.uiCream));
     label(this, SCREEN.width / 2, 90, REASON[o.reason], 15);
-    label(this, SCREEN.width / 2, 124, playerWon ? 'きみの勝ち！' : 'きみの負け…', 20, playerWon ? '#ffd43b' : '#adb5bd');
+    label(this, SCREEN.width / 2, 124, playerWon ? 'きみの勝ち！' : 'きみの負け…', 20, playerWon ? cssColor(COLORS.uiHoney) : cssColor(COLORS.uiCream));
 
     // スパイの正体
+    panel(this, x, 218, 326, 121, COLORS.uiPaper);
+    this.add.ellipse(90, 243, 86, 23, COLORS.uiPaperEdge).setStrokeStyle(2, COLORS.uiWood);
     this.spyView = new PateView(this, 90, 240);
     this.spyView.setHeadPart(spy.part as never);
     this.spyView.setPatch(match.spy.patch.u, match.spy.patch.v, 6);
     this.spyView.setScale(1.5);
     this.add
-      .text(150, 175, `スパイの正体は\n${spy === player ? 'きみ' : `${partName(spy)}のパテ`}！`, { fontFamily: FONT, fontSize: '18px', fontStyle: 'bold', color: INK, backgroundColor: '#fff3dc', padding: { x: 8, y: 6 } })
+      .text(150, 175, `スパイの正体は\n${spy === player ? 'きみ' : `${partName(spy)}のパテ`}！`, { fontFamily: FONT, fontSize: '18px', fontStyle: 'bold', color: INK, padding: { x: 8, y: 6 } })
       .setOrigin(0, 0);
     this.add
-      .text(150, 238, `設計図のカケラ ${match.spy.fragments}/${LANDMARKS.length}`, { fontFamily: FONT, fontSize: '14px', fontStyle: 'bold', color: INK, backgroundColor: '#fff3dc', padding: { x: 8, y: 4 } })
+      .text(150, 238, `設計図のカケラ ${match.spy.fragments}/${LANDMARKS.length}`, { fontFamily: FONT, fontSize: '14px', fontStyle: 'bold', color: INK, padding: { x: 8, y: 4 } })
       .setOrigin(0, 0);
 
     // 振り返り：スパイがしたこと・会議の結果を、時間の順に
@@ -68,15 +72,19 @@ export class ResultScene extends Phaser.Scene {
     }
     lines.sort((a, b) => a.t - b.t);
     const body = lines.length ? lines.map((l) => `${mmss(l.t - match.startedAt)}  ${l.text}`).join('\n') : 'スパイは 何もしなかった…';
-    this.add
-      .text(SCREEN.width / 2, 300, 'スパイの振り返り', { fontFamily: FONT, fontSize: '16px', fontStyle: 'bold', color: INK, backgroundColor: '#ffd43b', padding: { x: 8, y: 4 } })
-      .setOrigin(0.5, 0);
-    this.add
-      .text(24, 332, body, { fontFamily: FONT, fontSize: '13px', color: INK, backgroundColor: '#fff3dc', padding: { x: 10, y: 8 }, lineSpacing: 5, fixedWidth: SCREEN.width - 48, wordWrap: { width: SCREEN.width - 68 } })
+    panel(this, x, 424, 326, 264, COLORS.uiPaper);
+    panel(this, x, 310, 310, 28, COLORS.uiWood);
+    label(this, x, 308, 'スパイの振り返り', 16);
+    const timeline = this.add
+      .text(32, 336, body, { fontFamily: FONT, fontSize: '13px', color: INK, lineSpacing: 5, wordWrap: { width: 296, useAdvancedWrap: true } })
       .setOrigin(0, 0);
+    for (let size = 12; timeline.height > 207 && size >= 10; size--) {
+      timeline.setFontSize(size).setLineSpacing(2);
+    }
+    if (timeline.height > 207) timeline.setScale(1, 207 / timeline.height);
 
-    textButton(this, SCREEN.width / 2 - 80, 600, 140, 48, 'もう1回', 0xffd43b, () => this.scene.start('Role'), 20);
-    textButton(this, SCREEN.width / 2 + 80, 600, 140, 48, 'タイトルへ', 0xfff3dc, () => this.scene.start('Title'), 16);
+    textButton(this, SCREEN.width / 2 - 80, 600, 140, 48, 'もう1回', COLORS.uiHoney, () => this.scene.start('Role'), 20);
+    textButton(this, SCREEN.width / 2 + 80, 600, 140, 48, 'タイトルへ', COLORS.uiPaper, () => this.scene.start('Title'), 16);
   }
 
   update(_time: number, deltaMs: number): void {

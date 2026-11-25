@@ -1,12 +1,13 @@
 // 会議の画面。採取場の上に重ねて出します（採取場はそのあいだ止まる）。
 // 6体が輪になって並び、スタンプで話し合って投票します。ルールは src/game/match.ts。
 import Phaser from 'phaser';
-import { MISSIONS, PART_NAMES, SCREEN, SUSPICION } from '../game/config';
+import { COLORS, MISSIONS, PART_NAMES, SCREEN, SUSPICION } from '../game/config';
 import { botVote, castVote, everyoneVoted, hearStamp, meetingTimeLeft, missionsDone, resolveMeeting, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
 import type { Rng } from '../game/random';
 import type { GameAudio } from './audio';
 import { PateView } from './PateView';
-import { FONT, INK, label, textButton } from './ui';
+import { LANDMARK_TEX } from './spyTextures';
+import { INK, cssColor, label, panel, textButton } from './ui';
 
 export interface MeetingData {
   match: MatchState;
@@ -53,13 +54,21 @@ export class MeetingScene extends Phaser.Scene {
   create(): void {
     const { match, player } = this.ctx;
     const meeting = match.meeting!;
-    this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, 0x2b1d14, 0.88).setOrigin(0);
+    this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.85).setOrigin(0);
+    panel(this, CENTER.x, 65, 320, 98, COLORS.uiWood);
+    panel(this, CENTER.x, 306, 330, 380, COLORS.scanPaper);
+    this.add.ellipse(CENTER.x, 316, 258, 204, COLORS.uiPaperEdge)
+      .setStrokeStyle(3, COLORS.uiWood);
+    this.add.ellipse(CENTER.x, 316, 236, 184, COLORS.uiPaper)
+      .setStrokeStyle(2, COLORS.uiWood, 0.5);
+    this.add.image(CENTER.x, 354, LANDMARK_TEX.torii).setOrigin(0.5, 1).setScale(1.3);
     const why =
       meeting.reason === 'emergency'
         ? `${meeting.caller === player ? 'きみ' : nameOf(meeting.caller)}が 緊急の呼び出し！`
         : `${meeting.caller === player ? 'きみ' : nameOf(meeting.caller)}が 置物を見つけた！`;
-    label(this, SCREEN.width / 2, 40, '会議', 30, '#ffd43b');
+    label(this, SCREEN.width / 2, 40, '会議', 30, cssColor(COLORS.uiHoney));
     label(this, SCREEN.width / 2, 78, why, 16);
+    this.add.graphics().fillStyle(COLORS.ink).fillRoundedRect(36, 91, SCREEN.width - 72, 14, 6);
     this.timerBar = this.add.graphics();
 
     // 6体を輪に並べる（置物は置物のまま。投票できない）
@@ -67,39 +76,35 @@ export class MeetingScene extends Phaser.Scene {
       const a = (i / match.pawns.length) * Math.PI * 2 - Math.PI / 2;
       const x = CENTER.x + Math.cos(a) * RING;
       const y = CENTER.y + Math.sin(a) * RING * 0.85 + 24;
-      const ring = this.add.ellipse(x, y, 46, 16, 0xffd43b, 0).setStrokeStyle(3, 0xffd43b, 0);
+      const ring = this.add.ellipse(x, y, 56, 20, p.h.frozen ? COLORS.uiSlate : COLORS.uiPaperEdge)
+        .setStrokeStyle(2, COLORS.uiWood);
       const view = new PateView(this, x, y);
       view.setHeadPart(p.part as never);
       if (p.h.frozen) view.setStatue(true);
       const done = missionsDone(p.h);
-      const tag = this.add
-        .text(x, y + 14, `${p === player ? 'きみ' : PART_NAMES[p.part as keyof typeof PART_NAMES]}  ミッション ${done}/${MISSIONS.length}`, {
-          fontFamily: FONT,
-          fontSize: '11px',
-          fontStyle: 'bold',
-          color: p.h.frozen ? '#adb5bd' : '#fff8e8',
-        })
-        .setOrigin(0.5, 0);
-      const voteMark = this.add.text(x, y - 70, '', { fontFamily: FONT, fontSize: '14px', fontStyle: 'bold', color: '#ffd43b' }).setOrigin(0.5);
+      panel(this, x, y + 22, 98, 23, p.h.frozen ? COLORS.uiSlate : COLORS.uiWood);
+      const name = p === player ? 'きみ' : PART_NAMES[p.part as keyof typeof PART_NAMES];
+      label(this, x, y + 20, `${name}  ${p.h.frozen ? '置物' : '仕事'} ${done}/${MISSIONS.length}`, 11);
+      const voteMark = label(this, x + 28, y - 34, '', 15, cssColor(COLORS.uiHoney)).setDepth(11);
       if (!p.h.frozen) {
         const hit = this.add.zone(x, y - 22, 60, 66).setInteractive();
         hit.on('pointerdown', () => this.select(p));
       }
-      void tag;
       this.seats.set(p, { x, y, view, ring, voteMark });
     });
 
     // スタンプ（文字チャットはなし）
+    const stampColors = [COLORS.uiRose, COLORS.uiPaper, COLORS.uiMoss];
     STAMPS.forEach((s, i) => {
-      textButton(this, 70 + i * 110, 520, 100, 40, s, 0xfff3dc, () => this.playerStamp(s), 15).setAlpha(player.h.frozen ? 0.4 : 1);
+      textButton(this, 70 + i * 110, 520, 100, 40, s, stampColors[i], () => this.playerStamp(s), 15).setAlpha(player.h.frozen ? 0.4 : 1);
     });
-    this.voteButton = textButton(this, 110, 585, 150, 46, '投票する', 0xffd43b, () => this.voteFor(player, this.selected), 18);
-    this.skipButton = textButton(this, 260, 585, 120, 46, 'スキップ', 0xdee2e6, () => this.voteFor(player, null), 16);
+    this.voteButton = textButton(this, 110, 585, 150, 46, '投票する', COLORS.uiHoney, () => this.voteFor(player, this.selected), 18);
+    this.skipButton = textButton(this, 260, 585, 120, 46, 'スキップ', COLORS.uiPaper, () => this.voteFor(player, null), 16);
     if (player.h.frozen) {
       // 土の精は見ているだけ
       this.voteButton.setVisible(false);
       this.skipButton.setVisible(false);
-      label(this, SCREEN.width / 2, 585, '土の精は 投票できない…', 15, '#adb5bd');
+      label(this, SCREEN.width / 2, 585, '土の精は 投票できない…', 15, cssColor(COLORS.uiCream));
     }
 
     // Bot の予定：何回かスタンプを押し、どこかで投票する
@@ -119,7 +124,10 @@ export class MeetingScene extends Phaser.Scene {
     const { match, player } = this.ctx;
     if (player.h.frozen || match.meeting?.votes.has(player)) return;
     this.selected = p;
-    for (const [q, seat] of this.seats) seat.ring.setStrokeStyle(3, 0xffd43b, q === p ? 1 : 0);
+    for (const [q, seat] of this.seats) {
+      seat.ring.setFillStyle(q === p ? COLORS.uiHoney : q.h.frozen ? COLORS.uiSlate : COLORS.uiPaperEdge);
+      seat.ring.setStrokeStyle(q === p ? 4 : 2, q === p ? COLORS.ink : COLORS.uiWood);
+    }
   }
 
   private voteFor(voter: Pawn, target: Pawn | null): void {
@@ -127,7 +135,7 @@ export class MeetingScene extends Phaser.Scene {
     if (!castVote(match, voter, target)) return;
     this.ctx.audio.pon();
     const seat = this.seats.get(voter)!;
-    this.bubble(seat.x, seat.y - 56, '投票した', '#ffd43b');
+    this.bubble(seat.x, seat.y - 56, '投票した', COLORS.uiHoney);
     if (voter === player) {
       this.voteButton.setAlpha(0.4);
       this.skipButton.setAlpha(0.4);
@@ -151,23 +159,25 @@ export class MeetingScene extends Phaser.Scene {
   /** だれを指さしているか、相手の足元を赤く光らせる */
   private pointAt(target: Pawn): void {
     const seat = this.seats.get(target)!;
-    seat.ring.setStrokeStyle(3, 0xe03131, 1);
-    this.time.delayedCall(900, () => seat.ring.setStrokeStyle(3, 0xffd43b, target === this.selected ? 1 : 0));
+    seat.ring.setStrokeStyle(3, COLORS.landmarkVermilion, 1);
+    this.time.delayedCall(900, () => seat.ring.setStrokeStyle(target === this.selected ? 4 : 2, target === this.selected ? COLORS.ink : COLORS.uiWood));
   }
 
   /** スタンプ：パテの頭の上にふきだし */
   private stamp(p: Pawn, s: string): void {
     if (p.h.frozen || this.finished) return;
     const seat = this.seats.get(p)!;
-    this.bubble(seat.x, seat.y - 60, s, INK);
+    this.bubble(seat.x, seat.y - 60, s);
   }
 
-  private bubble(x: number, y: number, text: string, color: string): void {
-    const t = this.add
-      .text(x, y, text, { fontFamily: FONT, fontSize: '13px', fontStyle: 'bold', color, backgroundColor: '#fff3dc', padding: { x: 6, y: 3 } })
-      .setOrigin(0.5)
-      .setDepth(10);
-    this.tweens.add({ targets: t, y: y - 8, alpha: 0, delay: 1400, duration: 400, onComplete: () => t.destroy() });
+  private bubble(x: number, y: number, text: string, color: number = COLORS.uiPaper): void {
+    const t = label(this, 0, -1, text, 13, INK).setStroke(INK, 0);
+    const bubbleX = Phaser.Math.Clamp(x, t.width / 2 + 12, SCREEN.width - t.width / 2 - 12);
+    const tail = this.add.triangle(x - bubbleX, 12, -5, -4, 5, -4, 0, 6, color)
+      .setOrigin(0).setStrokeStyle(2, COLORS.ink);
+    const card = panel(this, 0, 0, t.width + 16, 24, color);
+    const bubble = this.add.container(bubbleX, y, [tail, card, t]).setDepth(10);
+    this.tweens.add({ targets: bubble, y: y - 8, alpha: 0, delay: 1400, duration: 400, onComplete: () => bubble.destroy() });
   }
 
   /** Bot のスタンプ：怪しい相手がいれば「あやしい！」、イタズラを見ていたら「みてた！」、自分が疑われていそうなら「ちがうよ」 */
@@ -206,8 +216,7 @@ export class MeetingScene extends Phaser.Scene {
     const left = meetingTimeLeft(match, now);
     const frac = left / 30;
     this.timerBar.clear();
-    this.timerBar.fillStyle(0x000000, 0.4).fillRect(20, 96, SCREEN.width - 40, 8);
-    this.timerBar.fillStyle(frac < 0.3 ? 0xe03131 : 0x8fd14f, 1).fillRect(20, 96, (SCREEN.width - 40) * frac, 8);
+    this.timerBar.fillStyle(frac < 0.3 ? COLORS.uiRose : COLORS.uiHoney).fillRect(41, 95, (SCREEN.width - 82) * frac, 6);
     if (left <= 0 || everyoneVoted(match)) this.finish();
   }
 
@@ -226,23 +235,24 @@ export class MeetingScene extends Phaser.Scene {
     }
     const skips = [...votes.values()].filter((t) => t === null).length;
     let text: string;
-    let color = '#fff8e8';
+    let color = cssColor(COLORS.uiCream);
     if (!result.target) {
       text = `だれも 調べられなかった（スキップ ${skips}票）`;
     } else if (result.wasSpy) {
       text = `${result.target === player ? 'きみ' : nameOf(result.target)}は スパイだった！\nてへぺろ… 強制送還（罰金 ${result.fine}）`;
-      color = '#ffd43b';
+      color = cssColor(COLORS.uiHoney);
       this.ctx.audio.cracker();
     } else {
       text = `ぬれぎぬ！ ${result.target === player ? 'きみ' : nameOf(result.target)}は 市民だった\n投票した人から 賠償 ${result.compensation}`;
-      color = '#ffa8a8';
+      color = cssColor(COLORS.uiRose);
       this.ctx.audio.zukoo();
     }
-    const box = label(this, SCREEN.width / 2, CENTER.y + 24, text, 18, color);
+    panel(this, CENTER.x, 480, 322, 36, COLORS.uiWood).setDepth(19);
+    const box = label(this, CENTER.x, 478, text, 14, color);
     box.setDepth(20);
     if (result.target) {
       const seat = this.seats.get(result.target)!;
-      seat.ring.setStrokeStyle(4, result.wasSpy ? 0xffd43b : 0xe03131, 1);
+      seat.ring.setStrokeStyle(4, result.wasSpy ? COLORS.uiHoney : COLORS.landmarkVermilion, 1);
     }
     this.time.delayedCall(3800, () => this.ctx.onDone(result));
   }

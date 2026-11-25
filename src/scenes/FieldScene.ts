@@ -48,7 +48,7 @@ import { GameAudio } from './audio';
 import type { MeetingData } from './MeetingScene';
 import type { ResultData } from './ResultScene';
 import type { RoleData } from './RoleScene';
-import { mmss } from './ui';
+import { FONT, INK, cssColor, label, mmss, panel } from './ui';
 import { makePartTextures, type HeadPart } from './partTextures';
 import { PateView } from './PateView';
 import { LANDMARK_TEX, makeSpyTextures } from './spyTextures';
@@ -103,14 +103,18 @@ export class FieldScene extends Phaser.Scene {
   /** 役の発表で決まったスパイの番号 */
   private spyIndex = 0;
   /** 画面上のゲージ・時間・ミッション */
-  private hud!: Phaser.GameObjects.Graphics;
+  private gaugeFill!: Phaser.GameObjects.Rectangle;
+  private gaugeText!: Phaser.GameObjects.Text;
+  private hudPercent = -1;
+  private hudSeconds = -1;
+  private hudMissionKey = -1;
   private timeText!: Phaser.GameObjects.Text;
   private missionText!: Phaser.GameObjects.Text;
   /** 呼び出しボタン（置物のそば・鳥居のそばでだけ出る） */
   private callButton!: Phaser.GameObjects.Container;
   private callLabel!: Phaser.GameObjects.Text;
   /** 置物にされたプレイヤーの「土の精」（ほかのパテからは見えない） */
-  private spirit: { walker: Walker; view: PateView } | null = null;
+  private spirit: { walker: Walker; view: PateView; glow: Phaser.GameObjects.Graphics } | null = null;
   /** スパイ（6体のうち1体）。プレイヤーがスパイなら isPlayerSpy */
   private spy!: SpyState;
   private spyEntity!: PateEntity;
@@ -629,38 +633,64 @@ export class FieldScene extends Phaser.Scene {
 
   /** 画面の上：国の仕事ゲージ・残り時間・自分のミッション */
   private setupHud(): void {
-    this.hud = this.add.graphics().setDepth(9450);
-    const style = { fontFamily: 'sans-serif', fontStyle: 'bold', color: '#fff8e8' };
-    this.add.text(12, 14, '国の仕事', { ...style, fontSize: '12px' }).setDepth(9500).setStroke('#2b1d14', 3);
-    this.timeText = this.add.text(SCREEN.width - 12, 16, '', { ...style, fontSize: '16px' }).setOrigin(1, 0.5).setDepth(9500).setStroke('#2b1d14', 4);
-    this.missionText = this.add.text(12, 56, '', { ...style, fontSize: '12px', lineSpacing: 2 }).setDepth(9500).setStroke('#2b1d14', 3);
+    this.hudPercent = -1;
+    this.hudSeconds = -1;
+    this.hudMissionKey = -1;
+    panel(this, 180, 24, 336, 32, COLORS.uiPaper).setDepth(9450);
+    panel(this, 180, 63, 336, 27, COLORS.uiPaper).setDepth(9450);
+    panel(this, 306, 23, 71, 24, COLORS.uiWood).setDepth(9451);
+    this.add.graphics().setDepth(9451)
+      .fillStyle(COLORS.ink).fillRoundedRect(82, 15, 142, 16, 5)
+      .fillStyle(COLORS.uiPaperEdge).fillRect(85, 18, 136, 10);
+    this.gaugeFill = this.add.rectangle(85, 18, 136, 10, COLORS.uiMoss).setOrigin(0).setDepth(9452);
+    label(this, 46, 22, '国の仕事', 13, INK).setStroke(INK, 0).setDepth(9500);
+    this.gaugeText = label(this, 246, 22, '', 13, INK).setStroke(INK, 0).setDepth(9500);
+    this.timeText = label(this, 306, 21, '', 17).setDepth(9500);
+    this.missionText = label(this, 180, 61, '', 13, INK).setStroke(INK, 0).setDepth(9500);
   }
 
   private drawHud(heard: number): void {
-    const g = this.hud;
-    g.clear();
-    const x = 66;
-    const w = SCREEN.width - 66 - 70;
-    g.fillStyle(0x2b1d14, 0.7).fillRoundedRect(x, 14, w, 12, 5);
-    g.fillStyle(0x8fd14f, 1).fillRoundedRect(x + 2, 16, Math.max(0, (w - 4) * gauge(this.match)), 8, 3);
-    this.timeText.setText(mmss(timeLeft(this.match, heard)));
+    const progress = gauge(this.match);
+    this.gaugeFill.setScale(progress, 1);
+    const percent = Math.floor(progress * 100);
+    if (percent !== this.hudPercent) {
+      this.hudPercent = percent;
+      this.gaugeText.setText(`${percent}%`);
+    }
+    const seconds = Math.floor(timeLeft(this.match, heard));
+    if (seconds !== this.hudSeconds) {
+      this.hudSeconds = seconds;
+      this.timeText.setText(mmss(seconds));
+    }
+
     const me = this.player;
+    if (me.frozen) {
+      this.missionText.setText('きみは 置物にされた… 土の精になって 見守ろう');
+      return;
+    }
+    const key = MISSIONS.reduce((n, m, i) => n * (m.need + 1) + missionProgress(me, i), 0);
+    if (key === this.hudMissionKey) return;
+    this.hudMissionKey = key;
     const lines = MISSIONS.map((m, i) => {
       const prog = missionProgress(me, i);
       return `${prog >= m.need ? '✔' : '・'}${RESOURCE_NAMES[m.kind]} ${prog}/${m.need}`;
     });
     this.missionText.setText(`ミッション  ${lines.join('  ')}`);
-    if (this.player.frozen) this.missionText.setText('きみは 置物にされた… 土の精になって 見守ろう');
   }
 
   /** 呼び出しボタン（左下・スキャンの上） */
   private makeCallButton(): Phaser.GameObjects.Container {
     const r = 30;
-    const bg = this.add.circle(0, 0, r, 0xff8787).setStrokeStyle(4, 0x2b1d14);
+    const art = this.add.graphics();
+    art.fillStyle(COLORS.ink).fillCircle(0, 0, r + 2);
+    art.fillStyle(COLORS.terracottaDark).fillCircle(0, 0, r - 1);
+    art.fillStyle(COLORS.landmarkVermilion).fillEllipse(0, -3, 56, 51);
+    art.lineStyle(2, COLORS.landmarkVermilionLight).lineBetween(-18, -14, 18, -14);
+    art.fillStyle(COLORS.uiHoney).fillCircle(0, 23, 4);
     this.callLabel = this.add
-      .text(0, 0, '呼び出し', { fontFamily: 'sans-serif', fontSize: '12px', fontStyle: 'bold', color: '#2b1d14', align: 'center' })
-      .setOrigin(0.5);
-    const c = this.add.container(48, 524, [bg, this.callLabel]).setDepth(9100).setVisible(false);
+      .text(0, -1, '呼び出し', { fontFamily: FONT, fontSize: '12px', fontStyle: 'bold', color: cssColor(COLORS.uiCream), align: 'center' })
+      .setOrigin(0.5).setStroke(INK, 3);
+    const c = this.add.container(48, 524, [art, this.callLabel]).setDepth(9100).setVisible(false);
     c.setSize(r * 2, r * 2);
     c.setInteractive(new Phaser.Geom.Circle(r, r, r + 6), Phaser.Geom.Circle.Contains);
     return c;
@@ -722,16 +752,22 @@ export class FieldScene extends Phaser.Scene {
     if (!this.spirit) {
       const view = new PateView(this, 0, 0);
       view.setHeadPart(PLAYER_PART);
-      view.setAlpha(0.45).setDepth(9000);
+      view.setAlpha(0.62).setDepth(9000);
+      const glow = this.add.graphics().setDepth(8999);
+      glow.fillStyle(COLORS.uiSpirit, 0.12).fillEllipse(0, -25, 72, 78);
+      glow.fillStyle(COLORS.uiSpirit, 0.20).fillEllipse(0, -25, 56, 62);
+      glow.fillStyle(COLORS.uiCream, 0.7).fillCircle(-28, -30, 2).fillCircle(26, -44, 2.5);
       const walker = createWalker({ ...this.player.walker.pos, y: this.player.walker.pos.y - 10 });
-      this.spirit = { walker, view };
+      this.spirit = { walker, view, glow };
       this.button.setVisible(false);
       this.scanButton?.setVisible(false);
       this.prankButton?.setVisible(false);
     }
     stepWalker(this.spirit.walker, dt, PATE.speed * 1.3);
     const { x, y } = this.spirit.walker.pos;
-    this.spirit.view.setPosition(x, y - 10 - Math.sin(this.time.now / 300) * 4);
+    const floatY = y - 10 - Math.sin(this.time.now / 300) * 4;
+    this.spirit.view.setPosition(x, floatY);
+    this.spirit.glow.setPosition(x, floatY);
     this.spirit.view.setFacing(this.spirit.walker.facing);
     this.spirit.view.update(dt, isWalking(this.spirit.walker));
   }

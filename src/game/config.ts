@@ -9,6 +9,16 @@ export const SCREEN = {
 
 /** 色（ドット絵の色数を絞るための基本パレット） */
 export const COLORS = {
+  uiPaper: 0xffefd3, // 画面のカードに使う生成りの紙
+  uiPaperEdge: 0xd6ad7c, // 紙の端と木の細い筋
+  uiCream: 0xfff8e8, // 暗い下地に載せる明るい文字
+  uiHoney: 0xf5c365, // 決定ボタン・選択枠・票印の山吹色
+  uiRose: 0xeeb092, // 指さしスタンプの淡い朱色
+  uiMoss: 0xc7d092, // ミッションと進捗に使う若草色
+  uiWood: 0x8d563c, // 木枠とボタン側面の焦げ茶
+  uiStone: 0x35343b, // スパイ画面の暗い石
+  uiSlate: 0x79767e, // 石の継ぎ目と置物の席
+  uiSpirit: 0xffe1a4, // 土の精を包む柔らかな光
   background: 0xf3e6cc, // 紙のようなベージュ
   terracotta: 0xae6a45, // 和の国：素焼きの茶色
   terracottaDark: 0x773d2a, // 素焼きの影
