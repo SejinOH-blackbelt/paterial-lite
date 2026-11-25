@@ -214,4 +214,12 @@ describe('Botの疑い度', () => {
     expect(botVote(m, pawns[3], createRng(1))).toBe(spy);
     expect(botVote(m, pawns[4], createRng(1))).toBe(spy);
   });
+
+  it('同じ相手を何度指さしても、効くのは1回の会議で1度だけ（連打で票を集められない）', () => {
+    const { m, pawns } = setup();
+    startMeeting(m, pawns[0], 'emergency', null, 5);
+    expect(hearStamp(m, pawns[0], pawns[1], 'sus')).toBe(true);
+    for (let i = 0; i < 10; i++) expect(hearStamp(m, pawns[0], pawns[1], 'sus')).toBe(false);
+    expect(botVote(m, pawns[3], createRng(1))).toBeNull(); // 1回分だけでは投票の基準に届かない
+  });
 });

@@ -113,6 +113,8 @@ export class FieldScene extends Phaser.Scene {
   /** 呼び出しボタン（置物のそば・鳥居のそばでだけ出る） */
   private callButton!: Phaser.GameObjects.Container;
   private callLabel!: Phaser.GameObjects.Text;
+  /** プレイヤーが目撃した最後のイタズラ（会議の画面に引き継ぐ。会議が終わったら消す） */
+  private witnessed: { spy: Pawn; target: Pawn } | null = null;
   /** 置物にされたプレイヤーの「土の精」（ほかのパテからは見えない） */
   private spirit: { walker: Walker; view: PateView; glow: Phaser.GameObjects.Graphics } | null = null;
   /** スパイ（6体のうち1体）。プレイヤーがスパイなら isPlayerSpy */
@@ -450,14 +452,14 @@ export class FieldScene extends Phaser.Scene {
     this.drawSpyUi(heard);
     this.drawHud(heard);
     this.updateCallButton();
-    // Botの呼び出し（イタズラを目撃した・置物を見つけた）
-    const call = botWantsToReport(this.match, heard, VISION.radius);
-    if (call) {
-      this.beginMeeting(call.caller, 'report', call.body);
+    // 勝ち負けが決まったら、リザルトへ（Botの呼び出しより先に判定する）
+    if (checkOutcome(this.match, heard)) {
+      this.endMatch();
       return;
     }
-    // 勝ち負けが決まったら、リザルトへ
-    if (checkOutcome(this.match, heard)) this.endMatch();
+    // Botの呼び出し（イタズラを目撃した・置物を見つけた）
+    const call = botWantsToReport(this.match, heard, VISION.radius);
+    if (call) this.beginMeeting(call.caller, 'report', call.body);
   }
 
   /** 予約済みでまだ鳴っていない拍の音を取り消し、予約をやり直す */
@@ -600,7 +602,7 @@ export class FieldScene extends Phaser.Scene {
 
   /** 住民Botが採取したとき：近いほど大きく音が聞こえる。遠いと聞こえない */
   private onBotTap(e: PateEntity, ev: BotTapEvent, heard: number): void {
-    const me = this.player.walker.pos;
+    const me = this.listenerPos();
     const d = Math.hypot(e.h.walker.pos.x - me.x, e.h.walker.pos.y - me.y);
     const volume = Math.max(0, 1 - d / BOT.hearRadius) ** 2;
     // 音は叩いた時刻に予約する。動きも、その音が聞こえる瞬間に合わせて出す
@@ -723,6 +725,7 @@ export class FieldScene extends Phaser.Scene {
       player: this.playerPawn,
       audio: this.audio,
       rng: this.rng,
+      witnessed: this.witnessed,
       onDone: () => {
         this.scene.stop('Meeting');
         // 会議のあいだは制限時間を進めない
@@ -731,8 +734,10 @@ export class FieldScene extends Phaser.Scene {
           this.endMatch();
           return;
         }
+        this.witnessed = null;
         this.scene.resume();
         for (const e of this.pates) this.syncPate(e, 0);
+        this.updateMaterials(false); // ぬれぎぬの賠償で素材の数が変わっていることがある
       },
     };
     this.scene.pause();
@@ -874,7 +879,12 @@ export class FieldScene extends Phaser.Scene {
   /** スパイがスキャンやイタズラをしたとき（見える範囲・聞こえる範囲にいれば分かる） */
   private onSpyEvent(ev: SpyEvent, heard: number): void {
     observeSpyEvent(this.match, ev); // 見た・聞いたBotの疑いが上がる
-    const me = this.player.walker.pos;
+    // プレイヤーが目撃したイタズラは、すぐ覚えておく（Botがすぐ呼び出して会議になっても、会議の画面で分かるように）
+    if (ev.kind === 'prank' && ev.witnesses.includes(this.player)) {
+      const target = this.pates.find((e) => e.h === ev.target)?.pawn;
+      if (target) this.witnessed = { spy: this.spyEntity.pawn, target };
+    }
+    const me = this.listenerPos();
     const d = Math.hypot(ev.at.x - me.x, ev.at.y - me.y);
     const volume = this.isPlayerSpy ? 1 : Math.max(0, 1 - d / BOT.hearRadius) ** 2;
     const delayMs = Math.max(0, ev.time - heard) * 1000;
@@ -908,6 +918,11 @@ export class FieldScene extends Phaser.Scene {
         else if (ev.witnesses.includes(this.player)) this.popText('見た…！', '#e03131', 20, 10);
       }
     });
+  }
+
+  /** 音を聞く位置：ふだんは自分のパテ、土の精になったら土の精のいる場所 */
+  private listenerPos(): { x: number; y: number } {
+    return this.spirit ? this.spirit.walker.pos : this.player.walker.pos;
   }
 
   /** 計算した位置と歩行状態を絵に反映する */

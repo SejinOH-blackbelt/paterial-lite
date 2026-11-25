@@ -36,6 +36,8 @@ export interface Meeting {
   startedAt: number;
   /** 投票：だれが、だれに（null はスキップ） */
   votes: Map<Pawn, Pawn | null>;
+  /** スタンプで、だれがだれを指さしたか（同じ相手を何度指さしても、効くのは1回だけ） */
+  pointed: Map<Pawn, Set<Pawn>>;
 }
 
 export interface MeetingResult {
@@ -185,7 +187,7 @@ export function startMeeting(m: MatchState, caller: Pawn, reason: Meeting['reaso
   }
   m.spy.scan = null;
   m.phase = 'meeting';
-  m.meeting = { caller, reason, body, startedAt: now, votes: new Map() };
+  m.meeting = { caller, reason, body, startedAt: now, votes: new Map(), pointed: new Map() };
   return m.meeting;
 }
 
@@ -223,13 +225,22 @@ function addSuspicion(m: MatchState, observer: Pawn, target: Pawn, amount: numbe
 /**
  * 会議のスタンプ：speaker が target を「みてた！」「あやしい！」と言ったら、ほかのBotも target を少し怪しむ。
  * （スパイBotは聞き流す。言われた本人も変わらない）
+ * 同じ speaker が同じ target を指させるのは、1回の会議で1度だけ（連打で票を集められないように）。
+ * 効いたら true を返す。
  */
-export function hearStamp(m: MatchState, speaker: Pawn, target: Pawn, stamp: 'saw' | 'sus'): void {
+export function hearStamp(m: MatchState, speaker: Pawn, target: Pawn, stamp: 'saw' | 'sus'): boolean {
+  if (m.meeting) {
+    const set = m.meeting.pointed.get(speaker) ?? new Set<Pawn>();
+    if (set.has(target)) return false;
+    set.add(target);
+    m.meeting.pointed.set(speaker, set);
+  }
   const amount = stamp === 'saw' ? SUSPICION.trustSaw : SUSPICION.trustSus;
   for (const p of m.pawns) {
     if (p === speaker || p === target || p.isSpy || p.h.frozen) continue;
     addSuspicion(m, p, target, amount);
   }
+  return true;
 }
 
 /** Bot の投票：いちばん怪しいパテに投票。怪しさが足りなければスキップ。スパイBotは市民に票を集める */

@@ -16,6 +16,8 @@ export interface MeetingData {
   rng: Rng;
   /** 会議が終わったとき（結果を渡す） */
   onDone: (result: MeetingResult) => void;
+  /** プレイヤーが会議の前に目撃したイタズラ（だれが、だれを）。会議の画面で思い出せるように */
+  witnessed: { spy: Pawn; target: Pawn } | null;
 }
 
 const STAMPS = ['あやしい！', 'ちがうよ', 'みてた！'] as const;
@@ -98,7 +100,7 @@ export class MeetingScene extends Phaser.Scene {
     STAMPS.forEach((s, i) => {
       textButton(this, 70 + i * 110, 520, 100, 40, s, stampColors[i], () => this.playerStamp(s), 15).setAlpha(player.h.frozen ? 0.4 : 1);
     });
-    this.voteButton = textButton(this, 110, 585, 150, 46, '投票する', COLORS.uiHoney, () => this.voteFor(player, this.selected), 18);
+    this.voteButton = textButton(this, 110, 585, 150, 46, '投票する', COLORS.uiHoney, () => this.playerVote(), 18);
     this.skipButton = textButton(this, 260, 585, 120, 46, 'スキップ', COLORS.uiPaper, () => this.voteFor(player, null), 16);
     if (player.h.frozen) {
       // 土の精は見ているだけ
@@ -118,6 +120,12 @@ export class MeetingScene extends Phaser.Scene {
       this.botPlans.push({ at: start + 6 + this.ctx.rng() * 16, pawn: p, kind: 'vote' });
     }
     this.ctx.audio.bell();
+    // 会議の前に、プレイヤーがイタズラを目撃していたら、会議の画面で思い出せるように出す
+    const w = this.ctx.witnessed;
+    if (w) {
+      const nm = (p: Pawn) => (p === player ? 'きみ' : nameOf(p));
+      label(this, SCREEN.width / 2, 490, `きみは見た！ ${nm(w.spy)}が${nm(w.target)}を置物に`, 13, '#ffa8a8').setDepth(15);
+    }
   }
 
   private select(p: Pawn): void {
@@ -128,6 +136,17 @@ export class MeetingScene extends Phaser.Scene {
       seat.ring.setFillStyle(q === p ? COLORS.uiHoney : q.h.frozen ? COLORS.uiSlate : COLORS.uiPaperEdge);
       seat.ring.setStrokeStyle(q === p ? 4 : 2, q === p ? COLORS.ink : COLORS.uiWood);
     }
+  }
+
+  /** プレイヤーの「投票する」：パテを選んでいなければ、選ぶように案内する（スキップは別のボタン） */
+  private playerVote(): void {
+    const { player } = this.ctx;
+    if (!this.selected) {
+      const seat = this.seats.get(player)!;
+      this.bubble(seat.x, seat.y - 60, 'パテを えらんでね', 0xffc9c9);
+      return;
+    }
+    this.voteFor(player, this.selected);
   }
 
   private voteFor(voter: Pawn, target: Pawn | null): void {
