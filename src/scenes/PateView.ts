@@ -3,7 +3,7 @@
 import Phaser from 'phaser';
 import { PATE } from '../game/config';
 import type { Facing } from '../game/movement';
-import { partKey, type HeadPart } from './partTextures';
+import { PART_ORIGIN_Y, partKey, type HeadPart } from './partTextures';
 import { PATE_SIZE, TEX } from './textures';
 
 /** 部品の置き場所（足元の中心を 0,0 とする） */
@@ -12,6 +12,9 @@ export const PATE_LAYOUT = {
   bodyBottom: -5.5,
   /** 足の左右の位置 */
   legX: 7.5,
+  /** 軸が刺さる位置は頭頂より少し内側 */
+  headInset: 4,
+  headSideX: 4,
   /** 肩の位置 */
   armX: 14,
   armY: -29,
@@ -59,10 +62,19 @@ export class PateView extends Phaser.GameObjects.Container {
 
   setHeadPart(part: HeadPart): void {
     this.headPart?.destroy();
-    this.headPart = this.scene.add
-      .image(0, PATE_LAYOUT.bodyBottom - PATE_SIZE.h + 5, partKey(part))
-      .setOrigin(0.5, 1);
+    this.headPart = this.scene.add.image(0, 0, partKey(part)).setOrigin(0.5, PART_ORIGIN_Y);
     this.upperBody.add(this.headPart);
+    this.placeHeadPart();
+  }
+
+  private placeHeadPart(): void {
+    const x = this.facing === 'left' ? PATE_LAYOUT.headSideX
+      : this.facing === 'right' ? -PATE_LAYOUT.headSideX : 0;
+    // 胴体の伸び縮みに合わせ、差し込み位置を頭の表面に固定する。
+    this.headPart?.setPosition(
+      x * this.torso.scaleX,
+      this.torso.y + (PATE_LAYOUT.headInset - PATE_SIZE.h) * this.torso.scaleY,
+    ).setFlipX(this.facing === 'right');
   }
 
   setFacing(facing: Facing): void {
@@ -79,6 +91,8 @@ export class PateView extends Phaser.GameObjects.Container {
     this.armR.setVisible(!side);
     if (side) this.upperBody.bringToTop(this.armL);
     else this.upperBody.moveTo(this.armL, 0);
+    if (this.headPart) this.upperBody.bringToTop(this.headPart);
+    this.placeHeadPart();
 
     const legX = side ? PATE.sideLegX * direction : L.legX;
     this.legL.setX(-legX).setFlipX(mirror);
@@ -143,6 +157,7 @@ export class PateView extends Phaser.GameObjects.Container {
     this.upperBody.y -= this.hitPose * PATE.hitLean;
     const torsoStretch = stretch - this.hitPose * PATE.hitSquash;
     this.torso.setScale(1 / torsoStretch, torsoStretch);
+    this.placeHeadPart();
   }
 
   /** 見た目の高さ（重なり順の計算などに使う） */

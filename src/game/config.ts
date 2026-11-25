@@ -20,6 +20,16 @@ export const COLORS = {
   bambooLight: 0xa5b568, // 竹の節と光が当たる面
   stoneLight: 0xa2a09a, // 石に光が当たる面
   stoneDark: 0x505158, // 石の割れ目と影
+  partPetal: 0xf5789c, // 花びらの鮮やかな桃色
+  partPetalShade: 0xc64368, // 重なった花びらの影
+  partStraw: 0xe2b458, // 笠の乾いた藁の色
+  partStrawShade: 0xa77235, // 笠の編み目とひさしの影
+  partIvory: 0xf3e2ba, // 角の温かい乳白色
+  partIvoryShade: 0xc5a47b, // 角の筋と羽根の軸
+  partFlag: 0x58b6cb, // 旗の明るい青
+  partFlagShade: 0x367a94, // 旗の折り返しの影
+  partFeather: 0xb38bc4, // 羽根の赤みがかった紫
+  partFeatherShade: 0x79588f, // 羽根の筋と片側の影
   ink: 0x2b1d14, // 輪郭・文字・目の穴
   dirt: 0xd9b37c, // 採取場の土
   dirtDark: 0xc49a62, // 土の濃い部分
