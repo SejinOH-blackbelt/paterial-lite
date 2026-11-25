@@ -7,14 +7,14 @@ import { PATE_SIZE, TEX } from './textures';
 /** 部品の置き場所（足元の中心を 0,0 とする） */
 export const PATE_LAYOUT = {
   /** 胴体の下端の高さ（足が少しのぞく） */
-  bodyBottom: -5,
+  bodyBottom: -5.5,
   /** 足の左右の位置 */
-  legX: 7,
+  legX: 7.5,
   /** 肩の位置 */
-  armX: 15,
-  armY: -27,
+  armX: 14,
+  armY: -29,
   /** 腕の開き具合（ラジアン） */
-  armAngle: 0.55,
+  armAngle: 0.62,
 } as const;
 
 export class PateView extends Phaser.GameObjects.Container {

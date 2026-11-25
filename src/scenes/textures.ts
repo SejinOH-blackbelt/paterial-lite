@@ -13,65 +13,118 @@ export const TEX = {
 /** パテの胴体の絵の大きさ（参考：docs/concept/pate-concept.webp） */
 export const PATE_SIZE = { w: 40, h: 44 } as const;
 
-/** 卵型（下がふっくら）の輪郭の点を作る */
-function eggPoints(cx: number, cy: number, rx: number, ry: number, bulge: number): Phaser.Math.Vector2[] {
-  const pts: Phaser.Math.Vector2[] = [];
-  for (let i = 0; i < 48; i++) {
-    const t = (i / 48) * Math.PI * 2;
-    const py = Math.sin(t); // -1 が上、+1 が下
-    const f = 1 + bulge * py; // 下ほど横に広い
-    pts.push(new Phaser.Math.Vector2(cx + Math.cos(t) * rx * f, cy + py * ry));
-  }
-  return pts;
+/** 曲線で描いた部品を、Phaser が表示できる画像にする */
+function drawPart(
+  scene: Phaser.Scene,
+  key: string,
+  width: number,
+  height: number,
+  draw: (ctx: CanvasRenderingContext2D) => void,
+): void {
+  const texture = scene.textures.createCanvas(key, width, height);
+  if (!texture) throw new Error(`部品テクスチャを作れませんでした: ${key}`);
+  const ctx = texture.context;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  draw(ctx);
+  texture.refresh();
+}
+
+function clayColor(color: number): string {
+  return `#${color.toString(16).padStart(6, '0')}`;
+}
+
+function fillClay(ctx: CanvasRenderingContext2D, shape: Path2D): void {
+  ctx.fillStyle = clayColor(COLORS.terracotta);
+  ctx.fill(shape);
+}
+
+function outlineClay(ctx: CanvasRenderingContext2D, shape: Path2D): void {
+  ctx.strokeStyle = clayColor(COLORS.pateOutline);
+  ctx.lineWidth = 1.25;
+  ctx.stroke(shape);
+}
+
+function makePateTextures(scene: Phaser.Scene): void {
+  drawPart(scene, TEX.pateBody, PATE_SIZE.w, PATE_SIZE.h, (ctx) => {
+    // 頭から胴までひと続きで、下腹に重みのある形。
+    const body = new Path2D(
+      'M 20 1 C 11 0.8 6.4 8 4.7 17.4 C 3.8 21.4 2.9 25.1 3.2 29.4 ' +
+      'C 3.6 38 9.6 42.5 20 42.7 C 30.4 42.5 36.4 38 36.8 29.4 ' +
+      'C 37.1 25.1 36.2 21.4 35.3 17.4 C 33.6 8 29 0.8 20 1 Z',
+    );
+    fillClay(ctx, body);
+    ctx.save();
+    ctx.clip(body);
+    // 右側から下腹へ回り込む影。
+    ctx.fillStyle = clayColor(COLORS.terracottaDark);
+    ctx.globalAlpha = 0.42;
+    ctx.fill(new Path2D(
+      'M 26 1 C 36 8 37 24 33 31 C 29.6 39 14 42 4 33 ' +
+      'L 2 44 L 39 44 L 39 1 Z',
+    ));
+
+    // 素焼きの細かな粒。同じ模様を毎回描く。
+    const rand = seeded(19);
+    ctx.fillStyle = clayColor(COLORS.pateCrack);
+    ctx.globalAlpha = 0.14;
+    for (let i = 0; i < 110; i++) {
+      const x = rand() * PATE_SIZE.w;
+      const y = rand() * PATE_SIZE.h;
+      ctx.fillRect(x, y, 0.5, 0.42);
+    }
+    ctx.globalAlpha = 0.92;
+    ctx.strokeStyle = clayColor(COLORS.pateCrack);
+    ctx.lineWidth = 0.55;
+    ctx.stroke(new Path2D(
+      'M 15 1.8 L 14 3.7 14.3 5.8 15.6 7 15.9 8.7 ' +
+      'M 14 3.7 L 12.4 3.1 M 14.3 5.8 L 13.3 7.1 13.1 8.4 ' +
+      'M 33.1 29.5 L 31.8 31.2 31.4 33.4 29.8 34.7 30 36.6 28.9 37.8 28 40.4 ' +
+      'M 29.8 34.7 L 28.9 33.3 27.7 32.8 ' +
+      'M 9 34.9 L 8.2 33.4 7.6 33.1 7 33.7 M 8.2 33.4 L 8 35.1 ' +
+      'M 26.4 5.6 L 26.9 5.9 M 27.2 7 L 27.6 7.3 M 28.6 8.4 L 28.9 8.8 ' +
+      'M 8.2 27.8 L 8.6 28.5 M 9.4 31 L 9.8 31.4 M 32.6 21.8 L 32.3 22.5',
+    ));
+    ctx.restore();
+    outlineClay(ctx, body);
+
+    // 穴の縁に土の色を細く残して、目の奥行きを出す。
+    ctx.fillStyle = clayColor(COLORS.pateOutline);
+    ctx.fill(new Path2D(
+      'M 10.65 14 A 2.55 2.55 0 1 0 15.75 14 A 2.55 2.55 0 1 0 10.65 14 Z ' +
+      'M 24.25 14 A 2.55 2.55 0 1 0 29.35 14 A 2.55 2.55 0 1 0 24.25 14 Z ' +
+      'M 18.5 19.1 A 1.5 1.5 0 1 0 21.5 19.1 A 1.5 1.5 0 1 0 18.5 19.1 Z',
+    ));
+    ctx.strokeStyle = clayColor(COLORS.pateEyeRim);
+    ctx.lineWidth = 0.45;
+    ctx.stroke(new Path2D('M 12.3 12.5 Q 10.9 13.9 12.1 15.5 M 27.7 12.5 Q 29.1 13.9 27.9 15.5'));
+  });
+
+  drawPart(scene, TEX.pateArm, 10, 17, (ctx) => {
+    const arm = new Path2D('M 2 2 Q 4.7 0.1 7 2.6 C 9.6 6.1 8.5 14.8 5.2 15.7 C 2.4 16.3 0.6 7.2 2 2 Z');
+    fillClay(ctx, arm);
+    ctx.fillStyle = clayColor(COLORS.terracottaDark);
+    ctx.globalAlpha = 0.48;
+    ctx.fill(new Path2D('M 2 2 C 0.6 7.2 2.4 16.3 5.2 15.7 Q 7 15.2 7.7 12.8 C 5.1 16.4 3.2 8 2 2 Z'));
+    ctx.globalAlpha = 1;
+    outlineClay(ctx, arm);
+  });
+
+  drawPart(scene, TEX.pateLeg, 12, 13, (ctx) => {
+    const leg = new Path2D('M 1.2 2 Q 6 -0.3 10.8 2 C 10.7 5.1 10.4 9.7 8.9 11.3 Q 6 13 3.1 11.3 C 1.6 9.7 1.3 5.1 1.2 2 Z');
+    fillClay(ctx, leg);
+    ctx.fillStyle = clayColor(COLORS.terracottaDark);
+    ctx.globalAlpha = 0.48;
+    ctx.fill(new Path2D('M 1.2 2 Q 6 -0.3 10.8 2 L 10.4 6.9 Q 6 9 1.6 6.9 Z'));
+    ctx.globalAlpha = 1;
+    outlineClay(ctx, leg);
+  });
 }
 
 export function makeTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists(TEX.pateBody)) return;
+  makePateTextures(scene);
   const g = scene.add.graphics();
-
-  // --- パテの胴体（卵型の素焼き。空洞の目と口、ひび割れ） ---
-  const { w, h } = PATE_SIZE;
-  const body = eggPoints(w / 2, h / 2, 16.5, 20.5, 0.12);
-  g.fillStyle(COLORS.terracotta, 1);
-  g.fillPoints(body, true);
-  // 右下に影を入れて、丸みを出す
-  g.fillStyle(COLORS.terracottaDark, 0.35);
-  g.fillPoints(eggPoints(w / 2 + 6, h / 2 + 3, 11, 17, 0.12), true);
-  g.fillStyle(COLORS.terracotta, 1);
-  g.fillPoints(eggPoints(w / 2 - 2, h / 2 - 1, 13, 18, 0.1), true);
-  // ひび割れ
-  g.lineStyle(1, COLORS.terracottaDark, 0.9);
-  g.lineBetween(12, 6, 15, 10);
-  g.lineBetween(15, 10, 14, 13);
-  g.lineBetween(15, 10, 18, 11);
-  g.lineBetween(31, 30, 34, 33);
-  g.lineBetween(31, 30, 30, 34);
-  // 輪郭
-  g.lineStyle(2, COLORS.ink, 1);
-  g.strokePoints(body, true);
-  // 空洞の目と口（黒い穴）
-  g.fillStyle(COLORS.ink, 1);
-  g.fillCircle(13.5, 17, 3);
-  g.fillCircle(26.5, 17, 3);
-  g.fillEllipse(20, 24.5, 4, 4.5);
-  g.generateTexture(TEX.pateBody, w, h);
-  g.clear();
-
-  // --- 腕（短いひれのような形。上が肩） ---
-  g.fillStyle(COLORS.terracotta, 1);
-  g.fillEllipse(6, 9, 9, 15);
-  g.lineStyle(2, COLORS.ink, 1);
-  g.strokeEllipse(6, 9, 9, 15);
-  g.generateTexture(TEX.pateArm, 12, 18);
-  g.clear();
-
-  // --- 足（ずんぐりした短い足） ---
-  g.fillStyle(COLORS.terracottaDark, 1);
-  g.fillRoundedRect(1, 1, 10, 10, { tl: 2, tr: 2, bl: 5, br: 5 });
-  g.lineStyle(2, COLORS.ink, 1);
-  g.strokeRoundedRect(1, 1, 10, 10, { tl: 2, tr: 2, bl: 5, br: 5 });
-  g.generateTexture(TEX.pateLeg, 12, 12);
-  g.clear();
 
   // --- 足元の影 ---
   g.fillStyle(0x000000, 0.22);

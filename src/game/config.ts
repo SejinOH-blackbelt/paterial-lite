@@ -10,8 +10,11 @@ export const SCREEN = {
 /** 色（ドット絵の色数を絞るための基本パレット） */
 export const COLORS = {
   background: 0xf3e6cc, // 紙のようなベージュ
-  terracotta: 0xb5653a, // 和の国：素焼きの茶色
-  terracottaDark: 0x8a4526, // 素焼きの影
+  terracotta: 0xae6a45, // 和の国：素焼きの茶色
+  terracottaDark: 0x773d2a, // 素焼きの影
+  pateOutline: 0x24150f, // パテの太い輪郭と空洞の奥
+  pateCrack: 0x572d21, // 素焼きのひびと細かな粒
+  pateEyeRim: 0x926044, // 目の穴に残る土の縁
   stone: 0x6f7378, // バイキング：石のグレー
   ink: 0x2b1d14, // 輪郭・文字・目の穴
   dirt: 0xd9b37c, // 採取場の土
