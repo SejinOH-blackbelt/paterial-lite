@@ -23,6 +23,10 @@ export interface Bot {
   nextTap: { lap: number; time: number } | null;
   /** この時刻まではひと休み */
   restUntil: number;
+  /** 最後に叩いた周（同じ周を2回叩かないため） */
+  lastLap: number;
+  /** lastLap を叩いた採取（別の採取なら周の番号は関係ない） */
+  lastSession: unknown;
   /** いま何をしているか（休むタイミングを決めるため） */
   mode: 'idle' | 'toPoint' | 'wander';
 }
@@ -30,11 +34,13 @@ export interface Bot {
 export interface BotTapEvent {
   bot: Bot;
   pointId: string;
+  /** 叩いた時刻（音の時計）。画面側はこの時刻に合わせて音を予約する */
+  time: number;
   result: HarvestResult;
 }
 
 export function createBot(profile: BotProfile, pos: Point): Bot {
-  return { profile, h: createHarvesterLike(pos), tapsLeft: 0, nextTap: null, restUntil: 0, mode: 'idle' };
+  return { profile, h: createHarvesterLike(pos), tapsLeft: 0, nextTap: null, restUntil: 0, lastLap: -Infinity, lastSession: null, mode: 'idle' };
 }
 
 function createHarvesterLike(pos: Point): Harvester {
@@ -53,7 +59,9 @@ function stepAside(bot: Bot, rng: Rng): void {
 /** 空いていて素材が残っているポイントを、近い順に */
 export function freePoints(bot: Bot, field: FieldState, all: readonly Harvester[]) {
   const { x, y } = bot.h.walker.pos;
-  return RESOURCE_POINTS.filter((r) => field.stock[r.id] > 0 && !claimedByOther(all, r.id, bot.h)).sort(
+  // ほかのパテが使っている・順番を待っているポイントは選ばない（順番待ちのパテを優先する）
+  const waited = (id: string) => all.some((o) => o !== bot.h && o.waitingFor === id);
+  return RESOURCE_POINTS.filter((r) => field.stock[r.id] > 0 && !claimedByOther(all, r.id, bot.h) && !waited(r.id)).sort(
     (a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y),
   );
 }
@@ -71,17 +79,26 @@ export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[]
     if (bot.tapsLeft <= 0) bot.tapsLeft = intBetween(rng, BOT.tapsMin, BOT.tapsMax);
     // 次に採取する周とタイミングを決める（ときどき1周休む。ズレは Bot の上手さしだい）
     if (!bot.nextTap) {
-      let lap = Math.max(s.firstLap, nextLap(s, now));
+      // 叩いた周の次以降から選ぶ（拍より早めに叩いたときに、同じ周をもう一度選ばないように）
+      const after = h.session === bot.lastSession ? bot.lastLap + 1 : -Infinity;
+      let lap = Math.max(s.firstLap, nextLap(s, now), after);
       while (rng() < BOT.skipLapChance) lap++;
-      let time = lapTime(s, lap) + gaussian(rng, bot.profile.timingError);
+      // ズレは半周より小さくおさえる（大きすぎると隣の周を叩いたことになってしまうため）
+      const limit = s.meter.lap / 2 - 0.02;
+      const error = Math.max(-limit, Math.min(limit, gaussian(rng, bot.profile.timingError)));
+      let time = lapTime(s, lap) + error;
       if (time < now) time = now;
       bot.nextTap = { lap, time };
     }
     if (now < bot.nextTap.time) return [];
     const pointId = s.pointId;
-    const result = harvestTap(h, field, bot.nextTap.time, now);
+    const time = bot.nextTap.time;
+    bot.lastLap = bot.nextTap.lap;
+    bot.lastSession = s;
+    const result = harvestTap(h, field, time, now);
     bot.nextTap = null;
     if (!result) return [];
+    bot.lastLap = Math.max(bot.lastLap, result.lap); // 実際に判定された周
     bot.tapsLeft--;
     if (bot.tapsLeft <= 0 && h.session) {
       // じゅうぶん採ったので、別の場所へ
@@ -94,7 +111,7 @@ export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[]
       bot.tapsLeft = 0;
       stepAside(bot, rng);
     }
-    return [{ bot, pointId, result }];
+    return [{ bot, pointId, time, result }];
   }
 
   bot.nextTap = null;

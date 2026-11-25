@@ -278,7 +278,9 @@ export class FieldScene extends Phaser.Scene {
       stepWalker(e.h.walker, dt);
       // 最初の判定は、まだ音の予約が間に合う周から選ぶ（scheduleTicks と同じ締め切り）
       updateHarvester(e.h, this.field, this.all, this.audio.now + SCHEDULE_AHEAD, this.origin);
-      if (e.bot) for (const ev of updateBot(e.bot, this.field, this.all, heard, this.rng)) this.onBotTap(e, ev);
+      // Botは少し先の時刻で判断する。そうすると採取音を、プレイヤーの拍の音と同じように先に予約でき、
+      // 端末の音の遅れがあっても、聞こえる時刻と判定の時刻がそろう
+      if (e.bot) for (const ev of updateBot(e.bot, this.field, this.all, this.audio.now + SCHEDULE_AHEAD, this.rng)) this.onBotTap(e, ev, heard);
     }
     const walking = isWalking(this.player.walker);
     if (!walking && this.marker.visible && this.marker.alpha === 1) {
@@ -406,14 +408,18 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /** 住民Botが採取したとき：近いほど大きく音が聞こえる。遠いと聞こえない */
-  private onBotTap(e: PateEntity, ev: BotTapEvent): void {
-    e.view.playHit();
-    const point = this.resources.get(ev.pointId);
-    if (point) this.reactToHit(point.image, point.chipColor);
+  private onBotTap(e: PateEntity, ev: BotTapEvent, heard: number): void {
     const me = this.player.walker.pos;
     const d = Math.hypot(e.h.walker.pos.x - me.x, e.h.walker.pos.y - me.y);
     const volume = Math.max(0, 1 - d / BOT.hearRadius) ** 2;
-    if (volume > 0.02) this.audio.harvestSound(ev.result.judgement, volume);
+    // 音は叩いた時刻に予約する。動きも、その音が聞こえる瞬間に合わせて出す
+    if (volume > 0.02) this.audio.harvestSound(ev.result.judgement, volume, ev.time);
+    const delayMs = Math.max(0, ev.time - heard) * 1000 - PATE.hitReachSeconds * 1000;
+    this.time.delayedCall(Math.max(0, delayMs), () => {
+      e.view.playHit();
+      const point = this.resources.get(ev.pointId);
+      if (point) this.reactToHit(point.image, point.chipColor);
+    });
   }
 
   /** 計算した位置と歩行状態を絵に反映する */

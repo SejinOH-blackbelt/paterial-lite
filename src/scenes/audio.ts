@@ -75,8 +75,9 @@ export class GameAudio {
    * - Good：ふつうの「ポコッ」
    * - Bad：低くこもった「ぽすっ」（失敗もコミカルに）
    */
-  harvestSound(judgement: 'excellent' | 'good' | 'bad' | null, volume = 1): void {
-    const t = this.ctx.currentTime;
+  harvestSound(judgement: 'excellent' | 'good' | 'bad' | null, volume = 1, when?: number): void {
+    // when を渡すと、その時刻（音の時計）に鳴るよう予約する。過ぎていればすぐ鳴らす
+    const t = Math.max(this.ctx.currentTime, when ?? 0);
     // 音の大きさ（遠くのパテの音は小さく）
     const out = this.ctx.createGain();
     out.gain.value = volume;

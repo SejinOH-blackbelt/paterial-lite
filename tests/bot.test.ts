@@ -115,4 +115,32 @@ describe('住民Bot', () => {
     expect(got).toBeGreaterThan(0);
     expect(got).toBeLessThan(1 + BOT.tapsMax * 1.3 + STOCK.regenSeconds);
   });
+
+  it('拍より早めに叩いても、同じ周を2回叩かない', () => {
+    // ズレがとても大きいBotで長く動かしても、同じ採取の中で同じ周の判定が2回出ない
+    const b = createBot({ id: 'test', part: 'flag', timingError: 0.25 }, standSpot(clay));
+    const f = createFieldState();
+    const rng = createRng(9);
+    const all = [b.h];
+    const seen = new Set<string>();
+    for (let t = 0; t < 60; t += 1 / 60) {
+      updateFieldState(f, t);
+      stepWalker(b.h.walker, 1 / 60);
+      updateHarvester(b.h, f, all, t + 0.2, 0);
+      for (const e of updateBot(b, f, all, t, rng)) {
+        const key = `${String(b.lastSession && (b.lastSession as { firstLap: number }).firstLap)}-${e.pointId}-${e.result.lap}`;
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+      }
+    }
+    expect(seen.size).toBeGreaterThan(5);
+  });
+
+  it('順番待ちのパテがいるポイントは、Botが選ばない', () => {
+    const f = createFieldState();
+    const me = createHarvester(createWalker(standSpot(clay)));
+    me.waitingFor = 'clay';
+    const b = createBot(BOT_PROFILES[0], { x: clay.x, y: clay.y + 90 });
+    expect(freePoints(b, f, [me, b.h]).map((r) => r.id)).not.toContain('clay');
+  });
 });
