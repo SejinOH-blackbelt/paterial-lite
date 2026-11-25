@@ -2,6 +2,7 @@
 // 位置の計算はしません。src/game 側で決めた位置をもらって表示するだけです。
 import Phaser from 'phaser';
 import { PATE } from '../game/config';
+import type { Facing } from '../game/movement';
 import { PATE_SIZE, TEX } from './textures';
 
 /** 部品の置き場所（足元の中心を 0,0 とする） */
@@ -24,6 +25,7 @@ export class PateView extends Phaser.GameObjects.Container {
   readonly legL: Phaser.GameObjects.Image;
   readonly legR: Phaser.GameObjects.Image;
   private readonly upperBody: Phaser.GameObjects.Container;
+  private facing: Facing = 'down';
   private walkPhase = 0;
   private breathPhase = 0;
   private walkWeight = 0;
@@ -48,6 +50,26 @@ export class PateView extends Phaser.GameObjects.Container {
     return this.stepBounce;
   }
 
+  setFacing(facing: Facing): void {
+    if (this.facing === facing) return;
+    this.facing = facing;
+    const side = facing === 'left' || facing === 'right';
+    const mirror = facing === 'right';
+    const direction = mirror ? -1 : 1;
+    const L = PATE_LAYOUT;
+
+    this.torso.setTexture(side ? TEX.pateSide : facing === 'up' ? TEX.pateBack : TEX.pateBody).setFlipX(mirror);
+    this.armL.setPosition(side ? PATE.sideArmX * direction : -L.armX, side ? PATE.sideArmY : L.armY)
+      .setFlipX(mirror);
+    this.armR.setVisible(!side);
+    if (side) this.upperBody.bringToTop(this.armL);
+    else this.upperBody.moveTo(this.armL, 0);
+
+    const legX = side ? PATE.sideLegX * direction : L.legX;
+    this.legL.setX(-legX).setFlipX(mirror);
+    this.legR.setX(legX).setFlipX(mirror);
+  }
+
   update(dtSeconds: number, isWalking: boolean): void {
     const turn = 2 * Math.PI;
     const weightChange = dtSeconds / PATE.poseTransitionSeconds;
@@ -61,11 +83,21 @@ export class PateView extends Phaser.GameObjects.Container {
     this.stepBounce = Math.abs(sway);
     this.legL.y = -Math.max(0, sway) * PATE.legLift;
     this.legR.y = -Math.max(0, -sway) * PATE.legLift;
-    // 左足を上げると右腕が外に振れ、胴体は地面についている右足に傾く
-    this.armL.rotation = PATE_LAYOUT.armAngle - sway * PATE.armSwing;
-    this.armR.rotation = -PATE_LAYOUT.armAngle - sway * PATE.armSwing;
+    const side = this.facing === 'left' || this.facing === 'right';
+    const direction = this.facing === 'right' ? -1 : 1;
+    if (side) {
+      // 足を交互に前後へ運び、手前の腕は手前の足と逆に振る。
+      const stride = Math.cos(this.walkPhase) * this.walkWeight;
+      this.legL.x = (-PATE.sideLegX + stride * PATE.sideStride) * direction;
+      this.legR.x = (PATE.sideLegX - stride * PATE.sideStride) * direction;
+      this.armL.rotation = (PATE.sideArmAngle - stride * PATE.sideArmSwing) * direction;
+    } else {
+      // 左足を上げると右腕が外に振れ、胴体は地面についている右足に傾く
+      this.armL.rotation = PATE_LAYOUT.armAngle - sway * PATE.armSwing;
+      this.armR.rotation = -PATE_LAYOUT.armAngle - sway * PATE.armSwing;
+    }
     this.upperBody.y = -this.stepBounce * PATE.bodyBobHeight;
-    this.upperBody.rotation = sway * PATE.bodyTilt;
+    this.upperBody.rotation = sway * PATE.bodyTilt * direction;
 
     const squash = (this.walkWeight - this.stepBounce) * PATE.landingSquash;
     const breath = Math.sin(this.breathPhase) * PATE.breathAmount * (1 - this.walkWeight);

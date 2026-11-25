@@ -60,6 +60,7 @@ export class FieldScene extends Phaser.Scene {
   private syncSprite(dt: number, walking: boolean): void {
     const { x, y } = this.player.pos;
     this.pateSprite.setPosition(x, y);
+    this.pateSprite.setFacing(this.player.facing);
     this.pateSprite.update(dt, walking);
     this.shadow.setPosition(x, y - 1).setScale(1 - this.pateSprite.bounce * PATE.shadowShrink);
     // 下にいるものほど手前に表示する（あとでパテが6体になったときのため）

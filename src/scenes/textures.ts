@@ -4,6 +4,8 @@ import { COLORS, FIELD } from '../game/config';
 
 export const TEX = {
   pateBody: 'pate-body',
+  pateBack: 'pate-back',
+  pateSide: 'pate-side',
   pateArm: 'pate-arm',
   pateLeg: 'pate-leg',
   shadow: 'shadow',
@@ -45,10 +47,14 @@ function outlineClay(ctx: CanvasRenderingContext2D, shape: Path2D): void {
   ctx.stroke(shape);
 }
 
-function makePateTextures(scene: Phaser.Scene): void {
-  drawPart(scene, TEX.pateBody, PATE_SIZE.w, PATE_SIZE.h, (ctx) => {
+function drawPateBody(scene: Phaser.Scene, view: 'down' | 'up' | 'left', key: string): void {
+  drawPart(scene, key, PATE_SIZE.w, PATE_SIZE.h, (ctx) => {
     // 頭から胴までひと続きで、下腹に重みのある形。
-    const body = new Path2D(
+    const body = new Path2D(view === 'left'
+      ? 'M 19 1 C 10.8 0.8 6.2 8 4.6 17.4 C 3.6 22 3.1 26 3.8 30.7 ' +
+        'C 4.7 38.2 11.1 42.7 20.6 42.7 C 30.3 42.5 35.9 36.7 36.3 29.4 ' +
+        'C 36.7 24.1 35.8 19.5 34.4 15 C 31.7 6 26.6 0.9 19 1 Z'
+      :
       'M 20 1 C 11 0.8 6.4 8 4.7 17.4 C 3.8 21.4 2.9 25.1 3.2 29.4 ' +
       'C 3.6 38 9.6 42.5 20 42.7 C 30.4 42.5 36.4 38 36.8 29.4 ' +
       'C 37.1 25.1 36.2 21.4 35.3 17.4 C 33.6 8 29 0.8 20 1 Z',
@@ -76,7 +82,15 @@ function makePateTextures(scene: Phaser.Scene): void {
     ctx.globalAlpha = 0.92;
     ctx.strokeStyle = clayColor(COLORS.pateCrack);
     ctx.lineWidth = 0.55;
-    ctx.stroke(new Path2D(
+    ctx.stroke(new Path2D(view === 'up'
+      ? 'M 23.8 1.6 L 24.6 4 23.6 6.3 24.2 8.4 M 24.6 4 L 27 4.6 28.4 6 ' +
+        'M 8.8 29.4 L 10 31.1 9.8 33.7 11.7 35.6 11.9 38.1 13 40.3 ' +
+        'M 9.8 33.7 L 7.8 33.5 6.7 32.5 M 29.7 30.4 L 30.2 31.1 M 30.6 32.3 L 30.5 33'
+      : view === 'left'
+      ? 'M 15 1.6 L 14.1 4.1 14.6 6.3 13.9 8.5 M 14.1 4.1 L 12.3 4.5 11.4 5.8 ' +
+        'M 32.9 29.1 L 31.5 30.6 31.1 33.1 29.3 34.5 29.8 36.9 28.1 40.8 ' +
+        'M 29.3 34.5 L 27.9 33.4 27.3 32 M 28.5 9.3 L 29.1 10 M 29.9 11.5 L 30.2 12'
+      :
       'M 15 1.8 L 14 3.7 14.3 5.8 15.6 7 15.9 8.7 ' +
       'M 14 3.7 L 12.4 3.1 M 14.3 5.8 L 13.3 7.1 13.1 8.4 ' +
       'M 33.1 29.5 L 31.8 31.2 31.4 33.4 29.8 34.7 30 36.6 28.9 37.8 28 40.4 ' +
@@ -87,6 +101,19 @@ function makePateTextures(scene: Phaser.Scene): void {
     ));
     ctx.restore();
     outlineClay(ctx, body);
+
+    if (view === 'up') return;
+    if (view === 'left') {
+      ctx.fillStyle = clayColor(COLORS.pateOutline);
+      ctx.fill(new Path2D(
+        'M 9.2 11.3 C 12.1 11.4 11.9 17 9.1 17 C 6.6 16.8 6.7 11.4 9.2 11.3 Z ' +
+        'M 5.9 18.9 C 7.6 18.9 7.7 22.2 5.9 22.2 C 4.7 22.1 4.7 19.1 5.9 18.9 Z',
+      ));
+      ctx.strokeStyle = clayColor(COLORS.pateEyeRim);
+      ctx.lineWidth = 0.45;
+      ctx.stroke(new Path2D('M 8.9 12 Q 7.3 13.5 8.4 16 M 5.8 19.6 Q 5.3 20.4 5.6 21.4'));
+      return;
+    }
 
     // 穴の縁に土の色を細く残して、目の奥行きを出す。
     ctx.fillStyle = clayColor(COLORS.pateOutline);
@@ -99,6 +126,12 @@ function makePateTextures(scene: Phaser.Scene): void {
     ctx.lineWidth = 0.45;
     ctx.stroke(new Path2D('M 12.3 12.5 Q 10.9 13.9 12.1 15.5 M 27.7 12.5 Q 29.1 13.9 27.9 15.5'));
   });
+}
+
+function makePateTextures(scene: Phaser.Scene): void {
+  drawPateBody(scene, 'down', TEX.pateBody);
+  drawPateBody(scene, 'up', TEX.pateBack);
+  drawPateBody(scene, 'left', TEX.pateSide);
 
   drawPart(scene, TEX.pateArm, 10, 17, (ctx) => {
     const arm = new Path2D('M 2 2 Q 4.7 0.1 7 2.6 C 9.6 6.1 8.5 14.8 5.2 15.7 C 2.4 16.3 0.6 7.2 2 2 Z');
