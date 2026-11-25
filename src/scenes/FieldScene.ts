@@ -12,6 +12,8 @@ import { drawGround, makeTextures, TEX } from './textures';
 
 /** 「たたく」ボタンの位置と大きさ */
 const BUTTON = { x: SCREEN.width / 2, y: 556, r: 38 } as const;
+/** 拍の音を何秒前に予約するか */
+const SCHEDULE_AHEAD = 0.2;
 /** 輪が縮み始めるときの半径 */
 const RING_START_R = 92;
 
@@ -199,7 +201,8 @@ export class FieldScene extends Phaser.Scene {
     const dt = Math.min(deltaMs, 100) / 1000;
     const heard = this.audio.heardTime();
     stepWalker(this.player.walker, dt);
-    updateHarvester(this.player, heard, this.origin);
+    // 最初の準備拍は、まだ音の予約が間に合う拍から選ぶ（scheduleBeats と同じ締め切り）
+    updateHarvester(this.player, this.audio.now + SCHEDULE_AHEAD, this.origin);
     const walking = isWalking(this.player.walker);
     if (!walking && this.marker.visible && this.marker.alpha === 1) {
       this.tweens.add({ targets: this.marker, alpha: 0, duration: 200, onComplete: () => this.marker.setVisible(false) });
@@ -211,7 +214,7 @@ export class FieldScene extends Phaser.Scene {
 
   /** 採取中は、少し先の拍の音を予約しておく（予約すると、処理が重くても音がずれない） */
   private scheduleBeats(): void {
-    const lookahead = this.audio.now + 0.2;
+    const lookahead = this.audio.now + SCHEDULE_AHEAD;
     // 前に予約した拍が古すぎるときは、いまの拍から数え直す
     this.scheduledBeat = Math.max(this.scheduledBeat, nextBeat(this.audio.now, this.origin));
     while (beatTime(this.scheduledBeat, this.origin) < lookahead) {

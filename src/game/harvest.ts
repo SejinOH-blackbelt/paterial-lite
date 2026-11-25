@@ -27,7 +27,7 @@ export function standSpot(r: ResourcePoint): Point {
 
 /** タップした場所にある素材ポイント（なければ null） */
 export function resourceAtTap(p: Point): ResourcePoint | null {
-  return RESOURCE_POINTS.find((r) => Math.hypot(r.x - p.x, r.y - p.y) <= RESOURCE.tapRadius) ?? null;
+  return RESOURCE_POINTS.find((r) => Math.hypot(r.x - p.x, r.y - RESOURCE.tapCenterUp - p.y) <= RESOURCE.tapRadius) ?? null;
 }
 
 /** いま立っている場所で採取できる素材ポイント（なければ null） */
@@ -47,12 +47,16 @@ export function moveHarvester(h: Harvester, p: Point): void {
   h.session = null;
 }
 
-/** 毎コマ呼ぶ。立ち止まった場所が素材ポイントなら採取を始める */
-export function updateHarvester(h: Harvester, now: number, origin: number): void {
+/**
+ * 毎コマ呼ぶ。立ち止まった場所が素材ポイントなら採取を始める。
+ * earliest：最初の拍として使ってよい一番早い時刻。拍の音は少し前に予約するので、
+ * 画面側は「もう予約が間に合わない拍」を選ばないよう、予約の締め切り時刻を渡す。
+ */
+export function updateHarvester(h: Harvester, earliest: number, origin: number): void {
   if (h.walker.target || h.session) return;
   const r = resourceAtStand(h.walker.pos);
   if (!r) return;
-  h.session = startSession(r.id, now, origin);
+  h.session = startSession(r.id, earliest, origin);
   h.walker.facing = 'up'; // 素材のほうを向く
 }
 

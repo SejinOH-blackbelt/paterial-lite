@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { RESOURCE_POINTS } from '../src/game/config';
-import { createHarvester, harvestTap, moveHarvester, standSpot, updateHarvester } from '../src/game/harvest';
+import { RESOURCE, RESOURCE_POINTS } from '../src/game/config';
+import { createHarvester, harvestTap, moveHarvester, resourceAtTap, standSpot, updateHarvester } from '../src/game/harvest';
 import { createWalker, stepWalker } from '../src/game/movement';
 import { beatTime } from '../src/game/rhythm';
 
@@ -11,6 +11,18 @@ describe('採取の流れ', () => {
     const h = createHarvester(createWalker({ x: 180, y: 400 }));
     moveHarvester(h, { x: clay.x + 5, y: clay.y - 5 });
     expect(h.walker.target).toEqual(standSpot(clay));
+  });
+
+  it('竹の先のほう（足元より上）をタップしても、その素材を選べる', () => {
+    const bamboo = RESOURCE_POINTS[1];
+    expect(resourceAtTap({ x: bamboo.x, y: bamboo.y - 48 })?.id).toBe('bamboo');
+    expect(resourceAtTap({ x: bamboo.x, y: bamboo.y - RESOURCE.tapCenterUp - RESOURCE.tapRadius - 5 })).toBeNull();
+  });
+
+  it('最初の準備拍は、渡された締め切り時刻より後の拍になる', () => {
+    const h = createHarvester(createWalker(standSpot(clay)));
+    updateHarvester(h, 10.55, 10); // 0.6秒間隔なので 10.55 の次の拍は 1拍目（10.6）
+    expect(h.session!.firstBeat).toBeGreaterThanOrEqual(1);
   });
 
   it('着いたら採取が始まり、素材のほうを向く', () => {

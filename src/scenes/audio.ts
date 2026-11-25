@@ -26,17 +26,17 @@ export class GameAudio {
 
   /**
    * performance.now() の時刻 perfMs に、耳に届いていた音の時刻（音の時計の秒）。
-   * 表示もタップ判定もこの時刻で行う。
+   * 表示もタップ判定もこの時刻で行う。calibrationMs を + にすると、タップが遅め寄りに判定される。
    */
   heardTime(perfMs: number = performance.now()): number {
     const calib = RHYTHM.calibrationMs / 1000;
     const ts = typeof this.ctx.getOutputTimestamp === 'function' ? this.ctx.getOutputTimestamp() : null;
     if (ts && ts.contextTime && ts.performanceTime) {
-      return ts.contextTime + (perfMs - ts.performanceTime) / 1000 - calib;
+      return ts.contextTime + (perfMs - ts.performanceTime) / 1000 + calib;
     }
     // 古いブラウザ向けの近似：いまの時刻から出力の遅れを引く
     const latency = (this.ctx as AudioContext & { outputLatency?: number }).outputLatency || this.ctx.baseLatency || 0;
-    return this.ctx.currentTime - (performance.now() - perfMs) / 1000 - latency - calib;
+    return this.ctx.currentTime - (performance.now() - perfMs) / 1000 - latency + calib;
   }
 
   /** 止まっていたら動かす（スマホは最初のタップまで音が止まっている） */
