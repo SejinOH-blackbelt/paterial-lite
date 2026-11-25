@@ -44,8 +44,11 @@ export class GameAudio {
     if (this.ctx.state !== 'running') void this.ctx.resume();
   }
 
-  /** 拍の音（木魚のような「コン」）。強拍は少し高く大きく。when は音の時計の時刻 */
-  tick(when: number, accent: boolean): void {
+  /**
+   * 拍の音（木魚のような「コン」）。強拍は少し高く大きく。when は音の時計の時刻。
+   * 戻り値の関数を呼ぶと、まだ鳴っていなければ取り消せる。
+   */
+  tick(when: number, accent: boolean): () => void {
     const o = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     o.type = 'sine';
@@ -57,6 +60,13 @@ export class GameAudio {
     o.connect(g).connect(this.master);
     o.start(when);
     o.stop(when + 0.1);
+    return () => {
+      if (this.ctx.currentTime < when) {
+        g.gain.cancelScheduledValues(0);
+        g.gain.setValueAtTime(0, this.ctx.currentTime);
+        o.disconnect();
+      }
+    };
   }
 
   /** 素焼きをたたく「ポコッ」。中が空洞の、丸くて軽い音 */

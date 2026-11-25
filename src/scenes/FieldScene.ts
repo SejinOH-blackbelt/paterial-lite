@@ -45,6 +45,8 @@ export class FieldScene extends Phaser.Scene {
   /** 音を予約している採取と、次に予約する周の番号 */
   private tickSession: HarvestSession | null = null;
   private scheduledLap = 0;
+  /** 予約済みでまだ鳴っていない拍の音の取り消し方法 */
+  private pendingTicks: { when: number; cancel: () => void }[] = [];
   private resources = new Map<string, { image: Phaser.GameObjects.Image; chipColor: number }>();
   private button!: Phaser.GameObjects.Container;
   private meter!: Phaser.GameObjects.Graphics;
@@ -236,15 +238,21 @@ export class FieldScene extends Phaser.Scene {
   private scheduleTicks(): void {
     const s = this.player.session;
     if (s !== this.tickSession) {
+      // 採取が変わったら、前の採取で予約した音を取り消し、点滅の記録も消す（音の二重や光り忘れを防ぐ）
+      for (const t of this.pendingTicks) t.cancel();
+      this.pendingTicks = [];
+      this.lastFlashLap = -1;
       this.tickSession = s;
       if (s) this.scheduledLap = nextLap(s, this.audio.now);
     }
+    this.pendingTicks = this.pendingTicks.filter((t) => t.when > this.audio.now);
     if (!s) return;
     const lookahead = this.audio.now + SCHEDULE_AHEAD;
     // 前に予約した周が古すぎるときは、いまの周から数え直す
     this.scheduledLap = Math.max(this.scheduledLap, nextLap(s, this.audio.now));
     while (lapTime(s, this.scheduledLap) < lookahead) {
-      this.audio.tick(lapTime(s, this.scheduledLap), this.scheduledLap >= s.firstLap);
+      const when = lapTime(s, this.scheduledLap);
+      this.pendingTicks.push({ when, cancel: this.audio.tick(when, this.scheduledLap >= s.firstLap) });
       this.scheduledLap++;
     }
   }
