@@ -2,11 +2,12 @@
 import Phaser from 'phaser';
 import { PATE, SCREEN } from '../game/config';
 import { isWalking, setTarget, stepWalker, type Walker } from '../game/movement';
-import { drawGround, makeTextures, PATE_SIZE, TEX } from './textures';
+import { PateView } from './PateView';
+import { drawGround, makeTextures, TEX } from './textures';
 
 export class FieldScene extends Phaser.Scene {
   private player!: Walker;
-  private pateSprite!: Phaser.GameObjects.Image;
+  private pateSprite!: PateView;
   private shadow!: Phaser.GameObjects.Image;
   private marker!: Phaser.GameObjects.Image;
   private walkTime = 0;
@@ -21,7 +22,7 @@ export class FieldScene extends Phaser.Scene {
 
     this.player = { pos: { x: SCREEN.width / 2, y: SCREEN.height * 0.6 }, target: null };
     this.shadow = this.add.image(0, 0, TEX.shadow);
-    this.pateSprite = this.add.image(0, 0, TEX.pate).setOrigin(0.5, 1);
+    this.pateSprite = new PateView(this, 0, 0);
     this.marker = this.add.image(0, 0, TEX.marker).setVisible(false);
 
     // 画面をタッチした場所へ歩く。指を押したまま動かすと、その方向へついてくる
@@ -72,6 +73,6 @@ export class FieldScene extends Phaser.Scene {
     this.shadow.setPosition(x, y - 1).setScale(1 - hop * 0.2);
     // 下にいるものほど手前に表示する（あとでパテが6体になったときのため）
     this.pateSprite.setDepth(y);
-    this.shadow.setDepth(y - PATE_SIZE.h);
+    this.shadow.setDepth(y - PateView.height);
   }
 }

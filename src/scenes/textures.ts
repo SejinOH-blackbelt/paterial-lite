@@ -3,43 +3,80 @@ import Phaser from 'phaser';
 import { COLORS, FIELD } from '../game/config';
 
 export const TEX = {
-  pate: 'pate',
+  pateBody: 'pate-body',
+  pateArm: 'pate-arm',
+  pateLeg: 'pate-leg',
   shadow: 'shadow',
   marker: 'marker',
 } as const;
 
-/** パテの仮の絵の大きさ */
-export const PATE_SIZE = { w: 36, h: 44 } as const;
+/** パテの胴体の絵の大きさ（参考：docs/concept/pate-concept.webp） */
+export const PATE_SIZE = { w: 40, h: 44 } as const;
+
+/** 卵型（下がふっくら）の輪郭の点を作る */
+function eggPoints(cx: number, cy: number, rx: number, ry: number, bulge: number): Phaser.Math.Vector2[] {
+  const pts: Phaser.Math.Vector2[] = [];
+  for (let i = 0; i < 48; i++) {
+    const t = (i / 48) * Math.PI * 2;
+    const py = Math.sin(t); // -1 が上、+1 が下
+    const f = 1 + bulge * py; // 下ほど横に広い
+    pts.push(new Phaser.Math.Vector2(cx + Math.cos(t) * rx * f, cy + py * ry));
+  }
+  return pts;
+}
 
 export function makeTextures(scene: Phaser.Scene): void {
-  if (scene.textures.exists(TEX.pate)) return;
+  if (scene.textures.exists(TEX.pateBody)) return;
   const g = scene.add.graphics();
 
-  // --- パテ（ロゴのような、上が丸いドーム型のハニワ） ---
+  // --- パテの胴体（卵型の素焼き。空洞の目と口、ひび割れ） ---
   const { w, h } = PATE_SIZE;
-  const r = w / 2;
-  g.lineStyle(2, COLORS.ink, 1);
+  const body = eggPoints(w / 2, h / 2, 16.5, 20.5, 0.12);
   g.fillStyle(COLORS.terracotta, 1);
-  g.fillRoundedRect(1, 1, w - 2, h - 2, { tl: r - 1, tr: r - 1, bl: 4, br: 4 });
-  // 右半分に影を入れて、素焼きの丸みを出す
+  g.fillPoints(body, true);
+  // 右下に影を入れて、丸みを出す
   g.fillStyle(COLORS.terracottaDark, 0.35);
-  g.fillRoundedRect(w * 0.6, 6, w * 0.4 - 3, h - 9, { tl: 0, tr: r - 4, bl: 0, br: 3 });
-  // 足元の台
-  g.fillStyle(COLORS.terracottaDark, 1);
-  g.fillRect(2, h - 7, w - 4, 5);
-  g.strokeRoundedRect(1, 1, w - 2, h - 2, { tl: r - 1, tr: r - 1, bl: 4, br: 4 });
+  g.fillPoints(eggPoints(w / 2 + 6, h / 2 + 3, 11, 17, 0.12), true);
+  g.fillStyle(COLORS.terracotta, 1);
+  g.fillPoints(eggPoints(w / 2 - 2, h / 2 - 1, 13, 18, 0.1), true);
+  // ひび割れ
+  g.lineStyle(1, COLORS.terracottaDark, 0.9);
+  g.lineBetween(12, 6, 15, 10);
+  g.lineBetween(15, 10, 14, 13);
+  g.lineBetween(15, 10, 18, 11);
+  g.lineBetween(31, 30, 34, 33);
+  g.lineBetween(31, 30, 30, 34);
+  // 輪郭
+  g.lineStyle(2, COLORS.ink, 1);
+  g.strokePoints(body, true);
   // 空洞の目と口（黒い穴）
   g.fillStyle(COLORS.ink, 1);
-  g.fillEllipse(w * 0.32, h * 0.38, 7, 8);
-  g.fillEllipse(w * 0.68, h * 0.38, 7, 8);
-  g.fillEllipse(w * 0.5, h * 0.62, 5, 6);
-  g.generateTexture(TEX.pate, w, h);
+  g.fillCircle(13.5, 17, 3);
+  g.fillCircle(26.5, 17, 3);
+  g.fillEllipse(20, 24.5, 4, 4.5);
+  g.generateTexture(TEX.pateBody, w, h);
+  g.clear();
+
+  // --- 腕（短いひれのような形。上が肩） ---
+  g.fillStyle(COLORS.terracotta, 1);
+  g.fillEllipse(6, 9, 9, 15);
+  g.lineStyle(2, COLORS.ink, 1);
+  g.strokeEllipse(6, 9, 9, 15);
+  g.generateTexture(TEX.pateArm, 12, 18);
+  g.clear();
+
+  // --- 足（ずんぐりした短い足） ---
+  g.fillStyle(COLORS.terracottaDark, 1);
+  g.fillRoundedRect(1, 1, 10, 10, { tl: 2, tr: 2, bl: 5, br: 5 });
+  g.lineStyle(2, COLORS.ink, 1);
+  g.strokeRoundedRect(1, 1, 10, 10, { tl: 2, tr: 2, bl: 5, br: 5 });
+  g.generateTexture(TEX.pateLeg, 12, 12);
   g.clear();
 
   // --- 足元の影 ---
   g.fillStyle(0x000000, 0.22);
-  g.fillEllipse(16, 5, 32, 10);
-  g.generateTexture(TEX.shadow, 32, 10);
+  g.fillEllipse(18, 5, 36, 10);
+  g.generateTexture(TEX.shadow, 36, 10);
   g.clear();
 
   // --- タッチした場所の目印 ---
