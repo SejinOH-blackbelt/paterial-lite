@@ -554,7 +554,7 @@ export const MISSION_GAME = {
    * 網の上に来た拍で「すくう」を押すと、その魚群（1〜3匹）がとれる。fishNeeded 匹とったら完了。
    * startBeats：最初の魚群が網に来るまでの拍。travelBeats：画面の右はしから網まで泳ぐ拍。schoolSizes：魚群の大きさの出やすさ
    */
-  net: { fishNeeded: 10, intervalBeats: 2, startBeats: 3, travelBeats: 3, schoolSizes: [1, 1, 1, 2, 2, 3] },
+  net: { fishNeeded: 10, intervalBeats: 2, startBeats: 3, travelBeats: 2, schoolSizes: [1, 1, 1, 2, 2, 3] },
   phrase: { phrases: { shape: 2, wind: 3, dark: 2 }, leadBeats: 2, gapBeats: 2, lateGrace: 0.15, darkLanes: 4 },
 } as const;
 

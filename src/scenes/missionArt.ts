@@ -16,7 +16,13 @@ const frames = (name: string, count: number) =>
   Array.from({ length: count }, (_, i) => `mission-art-${name}-${i + 1}`);
 
 export const MISSION_PART_TEX = {
+  beat: {
+    tap: { target: 'mission-art-beat-yellow-target', approach: 'mission-art-beat-yellow-approach' },
+    release: { target: 'mission-art-beat-blue-target', approach: 'mission-art-beat-blue-approach' },
+  },
   fire: {
+    bellows: { idle: 'mission-art-bellows', pressed: 'mission-art-bellows-pressed' },
+    thermometer: 'mission-art-thermometer',
     stove: 'mission-art-stove',
     dial: 'mission-art-dial',
     needle: 'mission-art-needle',
@@ -27,14 +33,27 @@ export const MISSION_PART_TEX = {
     },
   },
   water: {
+    pond: 'mission-art-pond',
+    liftNet: { submerged: 'mission-art-lift-net-submerged', raised: 'mission-art-lift-net-raised' },
+    shadows: { 1: frames('fish-shadow-1', 3), 2: frames('fish-shadow-2', 3), 3: frames('fish-shadow-3', 3) },
+    catch: 'mission-art-fish-catch',
+    scoop: { idle: 'mission-art-scoop', pressed: 'mission-art-scoop-pressed' },
     net: 'mission-art-net',
     fish: { carp: frames('carp', 3), goldfish: frames('goldfish', 3), medaka: frames('medaka', 3) },
     splash: 'mission-art-splash',
   },
-  earth: { wheel: 'mission-art-wheel', clay: frames('clay', 4) },
+  earth: { mallet: 'mission-art-mallet', wheel: 'mission-art-wheel', clay: frames('clay', 4) },
   wind: { rotor: frames('rotor', 4), stream: 'mission-art-stream' },
-  thunder: { lantern: 'mission-art-lantern', litLantern: 'mission-art-lantern-lit', glow: 'mission-art-glow', cue: 'mission-art-cue' },
+  thunder: { lantern: 'mission-art-lantern', litLantern: 'mission-art-lantern-lit', glow: 'mission-art-glow', cue: 'mission-art-cue', flashCue: 'mission-art-flash-cue' },
 } as const;
+
+const missionThemes = {
+  wa: { parts: MISSION_PART_TEX, background: MISSION_BG_TEX, spot: MISSION_SPOT_TEX },
+} as const;
+
+export function missionTheme(country: keyof typeof missionThemes) {
+  return missionThemes[country];
+}
 
 type Brush = CanvasRenderingContext2D;
 const ink = '#272521';
@@ -378,6 +397,196 @@ function background(c: Brush, element: ElementId): void {
   line(c, 'M9 9 H327 V369 H9Z', element === 'thunder' ? '#708198' : paper, 1.5);
 }
 
+// 池を真上から見た構図。中央の水には網と魚影を重ねる。
+function pond(c: Brush): void {
+  c.fillStyle = '#427f89';
+  c.fillRect(0, 0, 336, 378);
+  paint(c, 'M0 91 Q83 55 146 89 T336 75 V290 Q274 321 218 299 T0 307Z', '#56969a', 0);
+  paint(c, 'M0 124 Q71 99 136 118 T336 103 V255 Q272 279 196 259 T0 274Z', '#67a5a3', 0);
+  paint(c, 'M0 0 H336 V29 Q285 49 239 36 T125 48 Q55 77 0 59Z', '#d0b688', 0);
+  paint(c, 'M0 345 Q61 325 126 357 T249 352 Q297 323 336 326 V378 H0Z', '#cfb58a', 0);
+  line(c, 'M0 59 Q55 77 125 48 T239 36 Q285 49 336 29 M0 345 Q61 325 126 357 T249 352 Q297 323 336 326', '#304e50', 3);
+  for (let i = 0; i < 34; i++) {
+    const x = 12 + i * 71 % 306;
+    const y = 77 + i * 47 % 242;
+    line(c, `M${x} ${y} q9 -3 ${15 + i % 13} 0`, i % 3 ? '#bbd2bb' : '#397783', i % 3 ? 1 : 2);
+  }
+  for (const [x, y] of [[27, 91], [302, 68], [314, 286], [30, 315]]) {
+    c.save();
+    c.translate(x, y);
+    paint(c, 'M0 0 L14 -5 C11 -17 -14 -13 -16 -1 C-16 13 11 16 15 2Z', '#80945c');
+    line(c, 'M-10 -4 Q-6 -8 1 -8', '#bdc78a');
+    c.restore();
+  }
+  for (const [x, y] of [[30, 43], [50, 49], [272, 347], [294, 341]]) {
+    oval(c, x, y, 11, 6, '#a79d84');
+    line(c, `M${x - 6} ${y - 2} q5 -3 10 -2`, paper, 1);
+  }
+  line(c, 'M4 4 H332 V374 H4Z', ink, 4);
+  line(c, 'M9 9 H327 V369 H9Z', paper, 1.5);
+}
+
+function liftNet(c: Brush, raised: boolean): void {
+  c.lineJoin = 'round';
+  c.lineCap = 'round';
+  c.globalAlpha = raised ? 1 : 0.44;
+  const rim = raised
+    ? 'M14 56 Q58 59 123 19 Q165 50 206 59 Q154 121 91 127 Q39 106 14 56Z'
+    : 'M14 65 L123 24 L206 74 L91 117Z';
+  const rope = raised ? '#cea04d' : '#c5bc71';
+  paint(c, rim, raised ? '#497f88a8' : '#426d7890', 0);
+  // 両方向の縄を同じふちへ結び、持ち上げたときだけ中央をたわませる。
+  const grid = new Path2D();
+  const corners = raised ? [[14, 56], [123, 19], [206, 59], [91, 127]] : [[14, 65], [123, 24], [206, 74], [91, 117]];
+  const [a, b, d, e] = corners;
+  const point = (p: number[], q: number[], t: number, bend: number) => [
+    p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t + bend * 4 * t * (1 - t),
+  ] as const;
+  for (let i = 1; i < 7; i++) {
+    const t = i / 7;
+    const bow = raised ? 40 * t * (1 - t) : 0;
+    for (const [start, end] of [
+      [point(a, b, t, raised ? 10.75 : 0), point(e, d, t, raised ? 14 : 0)],
+      [point(a, e, t, raised ? 7.25 : 0), point(b, d, t, raised ? 5.5 : 0)],
+    ]) {
+      grid.moveTo(...start);
+      grid.quadraticCurveTo((start[0] + end[0]) / 2, (start[1] + end[1]) / 2 + bow, ...end);
+    }
+  }
+  c.strokeStyle = ink;
+  c.lineWidth = 3.8;
+  c.stroke(grid);
+  c.strokeStyle = rope;
+  c.lineWidth = 2.4;
+  c.stroke(grid);
+  line(c, rim, ink, 9);
+  line(c, rim, rope, 5.5);
+  for (const [x, y] of corners) {
+    paint(c, `M${x} ${y + 3} q-11 -7 -5 -15 q5 -5 10 0 q6 7 -5 15Z`, '#79523a', 2.5);
+    line(c, `M${x - 3} ${y - 7} q1 -3 4 -3`, '#bd8b59', 1.5);
+  }
+  c.globalAlpha = 1;
+  if (raised) {
+    placed(c, 73, 48, 0.95, splash);
+    paint(c, 'M49 51 Q36 38 43 33 Q52 35 49 51Z M158 63 Q161 42 171 49 Q172 55 158 63Z', '#a5e2dc', 2);
+  } else {
+    line(c, 'M27 80 Q49 72 70 77 M133 88 Q160 82 182 87 M74 109 Q96 103 121 109', '#c3dfc5aa', 2);
+  }
+}
+
+function fishShadows(c: Brush, count: number, phase: number): void {
+  const layouts = [
+    [[64, 34]],
+    [[46, 23], [79, 45]],
+    [[34, 32], [72, 18], [91, 49]],
+  ];
+  c.globalAlpha = 0.60;
+  layouts[count - 1].forEach(([x, y], i) => {
+    const tail = [-5, 0, 5][(i + phase) % 3];
+    placed(c, x, y + [0, 1, 0][(i + phase) % 3], i === 0 ? 1 : 0.85, (b) => {
+      paint(b, `M-25 0 Q-15 -14 2 -9 Q10 -7 15 -2 L28 ${tail - 8} Q25 ${tail} 29 ${tail + 8} L15 3 Q5 11 -7 10 Q-17 10 -25 2Z M-5 -7 Q2 -16 11 -11 L10 -5Z`, '#203c4b', 0);
+    });
+  });
+  c.globalAlpha = 1;
+}
+
+function fishCatch(c: Brush): void {
+  placed(c, 34, 46, 0.83, splash);
+  for (const [x, y, angle, scale, kind] of [
+    [31, 30, -0.55, 0.94, 'carp'],
+    [86, 21, 0.40, 0.72, 'goldfish'],
+    [59, 52, -0.21, 0.72, 'medaka'],
+  ] as const) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(angle);
+    placed(c, -17, -21, scale, (b) => fish(b, kind, 1));
+    c.restore();
+  }
+  line(c, 'M16 10 Q12 7 10 8 M56 9 L59 4 M123 24 L132 20', '#fff0ce', 3);
+}
+
+function toolButton(c: Brush, kind: 'scoop' | 'mallet', pressed = false): void {
+  c.lineJoin = 'round';
+  oval(c, 48, 51, 42, 42, ink);
+  oval(c, 48, pressed ? 49 : 45, 41, 41, pressed ? '#d1efbe' : kind === 'scoop' ? '#8bcac2' : '#e8ad76', 3);
+  c.translate(0, pressed ? 4 : 0);
+  oval(c, 48, 45, 34, 34, kind === 'scoop' ? '#b9e3cc' : '#f8d9a0', 0);
+  if (kind === 'scoop') {
+    paint(c, 'M23 50 L49 40 L73 52 L47 69 Q32 65 23 50Z', '#d5ad58', 3);
+    line(c, 'M31 47 L54 64 M39 44 L62 59 M65 48 L38 64 M57 44 L30 58', '#755338', 2);
+    paint(c, 'M42 40 V28 H34 L48 14 L62 28 H54 V40Z', paper, 2.7);
+  } else {
+    paint(c, 'M53 38 L67 41 L50 72 Q47 76 41 72 Q37 69 40 64Z', '#b37d4f', 3);
+    paint(c, 'M31 23 Q34 17 41 20 L71 36 Q75 41 70 48 L63 55 Q60 58 55 55 L25 39 Q21 35 25 30Z', '#ac6845', 3);
+    paint(c, 'M31 23 Q40 20 38 28 Q35 38 25 39 Q21 35 25 30Z', '#e5b47a', 2);
+    line(c, 'M43 28 L63 39 M41 34 L57 43 M24 53 L18 57 M31 58 L27 66', '#805139', 2);
+  }
+}
+
+function brushRing(c: Brush, blue: boolean, target: boolean): void {
+  const center = 64;
+  const radius = 53;
+  const pigment = blue ? '#65cce9' : '#ffce58';
+  const rim = new Path2D();
+  for (const side of [1, -1]) {
+    for (let i = 0; i <= 128; i++) {
+      const step = side === 1 ? i : 128 - i;
+      const angle = Math.PI * 2 * step / 128;
+      const wobble = Math.sin(angle * 5) * 0.85 + Math.cos(angle * 9) * 0.49;
+      const width = (target ? 2.5 : 4.2) + Math.sin(angle * 3 + 0.5) * 1.45;
+      const r = radius + wobble + side * width;
+      const x = center + Math.cos(angle) * r;
+      const y = center + Math.sin(angle) * r;
+      if (!i && side === 1) rim.moveTo(x, y);
+      else rim.lineTo(x, y);
+    }
+  }
+  rim.closePath();
+  c.strokeStyle = blue ? '#23445d' : '#5d3d29';
+  c.lineWidth = 2;
+  c.stroke(rim);
+  c.fillStyle = pigment;
+  c.fill(rim);
+  line(c, 'M19 36 Q29 16 51 12 M77 116 Q94 111 105 99', '#fff5d9bb', 1.4);
+}
+
+function bellows(c: Brush, pressed: boolean): void {
+  c.lineJoin = 'round';
+  const top = pressed ? 47 : 24;
+  paint(c, 'M86 55 L114 46 L116 56 L86 69Z', '#a9b8aa', 3);
+  paint(c, `M19 ${top} Q49 ${top - 6} 96 53 L96 66 Q59 80 19 72Z`, '#8c4b43', 3);
+  for (let i = 1; i <= 3; i++) {
+    const y = top + (72 - top) * i / 4;
+    line(c, `M20 ${y} Q50 ${y - 7} 93 ${53 + i * 3}`, '#da9a73', 2);
+  }
+  paint(c, 'M10 69 Q49 76 96 62 L98 70 Q55 91 10 78Z', '#bd8250', 3);
+  paint(c, `M9 ${top - 6} Q37 ${top - 20} 99 48 L96 56 Q46 ${top - 2} 9 ${top + 3}Z`, '#e0a66a', 3);
+  line(c, `M19 ${top - 7} Q37 ${top - 12} 69 ${(top + 38) / 2}`, '#ffe0a4', 2);
+  if (pressed) line(c, 'M119 44 L128 39 M121 52 H132 M118 60 L127 65', '#f8d477', 2.7);
+}
+
+function thermometer(c: Brush): void {
+  c.lineJoin = 'round';
+  paint(c, 'M10 11 Q32 0 55 11 V151 Q32 171 10 151Z', '#c28c60', 3);
+  paint(c, 'M15 18 Q32 11 50 18 V146 Q32 157 15 146Z', paper, 2);
+  for (const [y, pigment] of [[27, '#e88d73'], [61, '#adbf83'], [101, '#90bcc5']] as const) {
+    paint(c, `M17 ${y} H48 v${y === 61 ? 40 : 34} H17Z`, pigment, 0);
+  }
+  for (let y = 30; y <= 130; y += 10) {
+    line(c, `M33 ${y} H${y % 20 === 10 ? 47 : 42}`, '#674837', 1.6);
+  }
+  // 目盛りの左側にはゲーム側から温度の色を載せられる。
+  paint(c, 'M22 30 Q26 26 30 30 V128 Q39 135 33 143 Q26 150 19 143 Q13 135 22 128Z', '#fff7e6', 2);
+}
+
+function flashCue(c: Brush): void {
+  c.lineJoin = 'round';
+  paint(c, 'M49 16 L61 26 L82 15 L84 36 L108 42 L91 58 L102 78 L78 78 L67 98 L52 84 L30 94 L31 74 L9 65 L25 50 L15 30 L40 32Z', '#f2ab5b', 3);
+  paint(c, 'M57 16 L34 57 H51 L43 88 L84 41 H63 L74 16Z', '#fff1a6', 4);
+  line(c, 'M25 17 L18 8 M99 28 L109 22 M20 85 L12 91 M97 86 L105 93', '#fff0ce', 3);
+}
+
 /** 絵を登録する。フレーム番号は名前では1始まり、配列では0始まり。 */
 export function makeMissionArt(scene: Phaser.Scene): void {
   const add = (key: string, w: number, h: number, draw: (c: Brush) => void) => {
@@ -419,4 +628,25 @@ export function makeMissionArt(scene: Phaser.Scene): void {
   add(parts.thunder.litLantern, 80, 80, (c) => lantern(c, true));
   add(parts.thunder.glow, 80, 80, glow);
   add(parts.thunder.cue, 80, 72, spark);
+
+  // 新しい素材の原点は池だけ左上。道具と各コマは中心で重ねる。
+  add(parts.water.pond, MISSION_BG_SIZE.w, MISSION_BG_SIZE.h, pond);
+  add(parts.water.liftNet.submerged, 220, 144, (c) => liftNet(c, false));
+  add(parts.water.liftNet.raised, 220, 144, (c) => liftNet(c, true));
+  for (const count of [1, 2, 3] as const) {
+    parts.water.shadows[count].forEach((key, i) => add(key, 128, 68, (c) => fishShadows(c, count, i)));
+  }
+  add(parts.water.catch, 144, 100, fishCatch);
+  add(parts.water.scoop.idle, 96, 96, (c) => toolButton(c, 'scoop'));
+  add(parts.water.scoop.pressed, 96, 96, (c) => toolButton(c, 'scoop', true));
+  add(parts.earth.mallet, 96, 96, (c) => toolButton(c, 'mallet'));
+  add(parts.fire.bellows.idle, 136, 96, (c) => bellows(c, false));
+  add(parts.fire.bellows.pressed, 136, 96, (c) => bellows(c, true));
+  add(parts.fire.thermometer, 64, 168, thermometer);
+  add(parts.thunder.flashCue, 116, 104, flashCue);
+  for (const action of ['tap', 'release'] as const) {
+    for (const kind of ['target', 'approach'] as const) {
+      add(parts.beat[action][kind], 128, 128, (c) => brushRing(c, action === 'release', kind === 'target'));
+    }
+  }
 }

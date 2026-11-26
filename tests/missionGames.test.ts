@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MISSION_GAME } from '../src/game/config';
 import {
+  schoolSize,
   createNetGame,
   schoolTime,
   scoopNet,
@@ -373,7 +374,7 @@ describe('網で魚すくい（水）', () => {
     const g = make();
     const t = schoolTime(g, 0);
     expect(scoopNet(g, t + 0.05)).toBe('ok');
-    expect(g.caught).toBe(g.sizes[0]);
+    expect(g.caught).toBe(schoolSize(g, 0));
     expect(scoopNet(g, t + 0.06)).toBe('miss'); // 同じ魚群は2回すくえない
   });
 
@@ -398,8 +399,17 @@ describe('網で魚すくい（水）', () => {
 
   it('魚群は1匹のときも、複数のときもある', () => {
     const g = make();
-    expect(new Set(g.sizes.slice(0, 40)).size).toBeGreaterThan(1);
-    expect(Math.min(...g.sizes)).toBe(1);
+    const sizes = Array.from({ length: 40 }, (_, k) => schoolSize(g, k));
+    expect(new Set(sizes).size).toBeGreaterThan(1);
+    expect(Math.min(...sizes)).toBe(1);
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(3);
+  });
+
+  it('魚群は尽きない（長く開いたままでも、ずっと流れてくる）', () => {
+    const g = make();
+    const k = 5000;
+    expect(scoopNet(g, schoolTime(g, k))).not.toBe('miss');
+    expect(visibleSchools(g, schoolTime(g, k)).some((x) => x.k === k)).toBe(true);
   });
 
   it('得意な体は、1回で多くすくえる（相性で変わる）', () => {

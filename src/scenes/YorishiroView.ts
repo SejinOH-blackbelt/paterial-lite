@@ -5,7 +5,7 @@ import Phaser from 'phaser';
 import { COLORS, ELEMENT_NAMES, ELEMENTS, MISSIONS, SCREEN, YORISHIRO } from '../game/config';
 import { affinity, AFFINITY_NAMES, type Affinity, type ElementId, type MissionId } from '../game/elements';
 import type { CommandGame } from '../game/yorishiro';
-import { ELEMENT_ICON, makeElementIcons } from './elementIcons';
+import { ELEMENT_PICTURE as ELEMENT_ICON, makeElementPictures as makeElementIcons } from './elementPictures';
 import { FONT, INK, cssColor, pinToScreen, textButton } from './ui';
 
 const PANEL = { x: 12, y: 116, w: SCREEN.width - 24, h: 378 } as const;
@@ -116,6 +116,9 @@ export class YorishiroView {
       const btn = this.scene.add.image(x, y, ELEMENT_ICON(e)).setScale(1.25).setInteractive(new Phaser.Geom.Circle(32, 32, 34), Phaser.Geom.Circle.Contains);
       btn.on('pointerdown', () => {
         this.scene.tweens.killTweensOf(btn);
+        // 押した瞬間は、明るい版の絵にする
+        btn.setTexture(ELEMENT_ICON(e, true));
+        this.scene.time.delayedCall(140, () => btn.setTexture(ELEMENT_ICON(e)));
         btn.setScale(1.1);
         this.scene.tweens.add({ targets: btn, scale: 1.25, duration: 120, ease: 'Back.Out' });
         this.deps.onPress(i);

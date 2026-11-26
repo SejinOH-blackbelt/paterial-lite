@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>和の国の五つのミッション｜PATERIAL Lite</title>
   <style>
-    :root { color-scheme: light; color: #282721; background: #eee3cb; font: 16px/1.55 system-ui, sans-serif; }
+    :root { --pigment: #81715b; color-scheme: light; color: #282721; background: #eee3cb; font: 16px/1.55 system-ui, sans-serif; }
     * { box-sizing: border-box; }
     body { margin: 0; }
     main { width: min(1040px, 100%); margin: auto; padding: clamp(14px, 4vw, 40px); }
@@ -25,6 +25,10 @@
     .rack { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
     figure { margin: 0; text-align: center; }
     .tile { width: 88px; padding: 4px; border: 1px solid #d1bc9a; background: #e9dcc0; }
+    .pair { display: flex; gap: 4px; }
+    .wide { width: 144px; max-width: 100%; }
+    .tile.wide canvas { height: 124px; }
+    .background + .background { margin-top: 16px; }
     .night .tile { background: #35435b; border-color: #6f7890; color: #fff0ce; }
     .tile canvas { display: block; width: 100%; height: 72px; object-fit: scale-down; }
     .spot canvas { width: 100%; object-fit: contain; }
@@ -39,6 +43,8 @@
   <nav aria-label="ミッション一覧"></nav>
   <button id="motion" type="button" hidden>動きを止める</button>
   <p id="status" role="status">絵を準備しています。</p>
+  <section id="pictures"><h2>依代の祠の丸札</h2></section>
+  <section id="rings"><h2>拍の予告</h2></section>
   <div id="missions"></div>
 </main>
 <div id="engine" hidden></div>

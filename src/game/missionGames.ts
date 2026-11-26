@@ -451,8 +451,8 @@ export interface NetGame {
   caught: number;
   /** 0番目の魚群が網に来る拍 */
   firstBeat: number;
-  /** 魚群ごとの大きさ（はじめに決めておく） */
-  sizes: number[];
+  /** 魚群の大きさを決めるたね（何番目の魚群でも、同じたねなら同じ大きさ。いくらでも続く） */
+  seed: number;
   /** すくった魚群の番号 */
   taken: Set<number>;
   result: 'playing' | 'success';
@@ -460,9 +460,20 @@ export interface NetGame {
 
 export function createNetGame(now: number, origin: number, rng: Rng, bonus: number = AFFINITY.netBonus.plain, window: number = AFFINITY.heatWindow.plain): NetGame {
   const c = MISSION_GAME.net;
-  const sizes = Array.from({ length: 200 }, () => c.schoolSizes[Math.floor(rng() * c.schoolSizes.length)]);
+  const seed = Math.floor(rng() * 2 ** 31);
   const firstBeat = Math.ceil((now - origin) / beatInterval()) + c.startBeats;
-  return { kind: 'net', origin, window, bonus, fishNeeded: c.fishNeeded, caught: 0, firstBeat, sizes, taken: new Set(), result: 'playing' };
+  return { kind: 'net', origin, window, bonus, fishNeeded: c.fishNeeded, caught: 0, firstBeat, seed, taken: new Set(), result: 'playing' };
+}
+
+/** k 番目の魚群の大きさ（1〜3匹） */
+export function schoolSize(g: NetGame, k: number): number {
+  // たねと番号をまぜた数で選ぶ（配列を持たないので、魚群が尽きない）
+  let h = (g.seed ^ Math.imul(k + 1, 0x9e3779b1)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  const sizes = MISSION_GAME.net.schoolSizes;
+  return sizes[h % sizes.length];
 }
 
 /** k 番目の魚群が網の上に来る時刻 */
@@ -479,9 +490,9 @@ function nearestSchool(g: NetGame, t: number): number {
 export function scoopNet(g: NetGame, t: number): Step {
   if (g.result !== 'playing') return 'ignored';
   const k = nearestSchool(g, t);
-  if (k < 0 || k >= g.sizes.length || g.taken.has(k) || Math.abs(t - schoolTime(g, k)) > g.window) return 'miss';
+  if (k < 0 || g.taken.has(k) || Math.abs(t - schoolTime(g, k)) > g.window) return 'miss';
   g.taken.add(k);
-  g.caught += g.sizes[k] + g.bonus;
+  g.caught += schoolSize(g, k) + g.bonus;
   if (g.caught >= g.fishNeeded) {
     g.result = 'success';
     return 'done';
@@ -493,11 +504,11 @@ export function scoopNet(g: NetGame, t: number): Step {
 export function visibleSchools(g: NetGame, now: number): { k: number; size: number; until: number; taken: boolean }[] {
   const travel = MISSION_GAME.net.travelBeats * beatInterval();
   const out: { k: number; size: number; until: number; taken: boolean }[] = [];
-  for (let k = Math.max(0, nearestSchool(g, now) - 2); k < g.sizes.length; k++) {
+  for (let k = Math.max(0, nearestSchool(g, now) - 2); ; k++) {
     const until = schoolTime(g, k) - now;
     if (until > travel) break;
     if (until < -travel / 2) continue;
-    out.push({ k, size: g.sizes[k], until, taken: g.taken.has(k) });
+    out.push({ k, size: schoolSize(g, k), until, taken: g.taken.has(k) });
   }
   return out;
 }

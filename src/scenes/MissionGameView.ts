@@ -119,6 +119,7 @@ export class MissionGameView {
     const foot = textButton(scene, PANEL.x + PANEL.w - 46, PANEL.y + 24, 70, 30, 'やめる', COLORS.uiPaper, () => this.deps.onQuit(), 13);
     this.hitAreas.push(foot);
     this.art = scene.add.graphics();
+    makeMissionArt(scene);
     this.root = scene.add.container(0, 0, [bg, frame, head, this.title, foot, this.art]).setDepth(9700);
     if (game.kind === 'drum') this.buildDrums(game);
     else if (game.kind === 'pegs') this.buildPegs(game);
@@ -498,10 +499,29 @@ export class MissionGameView {
     }
   }
 
+  // ---------- 拍の予告の輪（筆で描いた輪の絵。Codex 作） ----------
+
+  private rings: Phaser.GameObjects.Image[] = [];
+  private ringIdx = 0;
+
+  /** 輪を1つ出す（color：tap 黄＝押す・叩く、release 青＝離す・なぞる。target：ゴールの輪か） */
+  private ring(x: number, y: number, r: number, color: 'tap' | 'release', target: boolean, alpha = 1): void {
+    let img = this.rings[this.ringIdx];
+    if (!img) {
+      img = this.scene.add.image(0, 0, MISSION_PART_TEX.beat.tap.target);
+      this.root.add(img);
+      this.rings.push(img);
+    }
+    this.ringIdx++;
+    img.setTexture(MISSION_PART_TEX.beat[color][target ? 'target' : 'approach']).setPosition(x, y).setScale(r / 56).setAlpha(alpha).setVisible(true);
+    this.root.bringToTop(img);
+  }
+
   /** 毎コマ呼ぶ */
   update(): void {
     if (this.destroyed) return;
     const now = this.deps.now();
+    this.ringIdx = 0;
     this.art.clear();
     const g = this.game;
     if (g.kind === 'drum') this.drawDrums(g, now);
@@ -511,6 +531,7 @@ export class MissionGameView {
     else if (g.kind === 'net') this.drawNet(g, now);
     else if (isPhrase(g)) this.drawPhrase(g, now);
     else this.drawPrayer(g, now);
+    for (let i = this.ringIdx; i < this.rings.length; i++) this.rings[i].setVisible(false);
   }
 
   // ---------- 網で魚すくい（水） ----------
@@ -521,14 +542,27 @@ export class MissionGameView {
   private scoopFlash = 0;
   private scoopGot = 0;
 
+  private netImg: { net: Phaser.GameObjects.Image; catch: Phaser.GameObjects.Image; button: Phaser.GameObjects.Image; shadows: Phaser.GameObjects.Image[] } | null = null;
+
   private buildNet(g: NetGame): void {
-    makeMissionArt(this.scene);
-    const bg = this.scene.add.image(PANEL.x, PANEL.y, MISSION_BG_TEX('water')).setOrigin(0).setDisplaySize(PANEL.w, PANEL.h);
+    const W = MISSION_PART_TEX.water;
+    const bg = this.scene.add.image(PANEL.x, PANEL.y, W.pond).setOrigin(0).setDisplaySize(PANEL.w, PANEL.h);
     const band = this.scene.add.rectangle(PANEL.x + 6, PANEL.y + 6, PANEL.w - 12, 70, COLORS.scanPaper, 0.88).setOrigin(0);
     this.root.addAt(bg, 1);
     this.root.addAt(band, 2);
+    // 魚影（見えている魚群の数だけ使う）・四つ手網・すくえた魚・すくうボタン
+    const shadows = Array.from({ length: 4 }, () => this.scene.add.image(0, 0, W.shadows[1][0]).setVisible(false));
+    this.netImg = {
+      shadows,
+      net: this.scene.add.image(this.netAt.x, this.netAt.y, W.liftNet.submerged),
+      catch: this.scene.add.image(this.netAt.x, this.netAt.y - 10, W.catch).setVisible(false),
+      button: this.scene.add.image(this.scoopAt.x, this.scoopAt.y, W.scoop.idle),
+    };
+    this.root.add([...shadows, this.netImg.net, this.netImg.catch, this.netImg.button]);
     this.root.bringToTop(this.art);
-    const label = this.scene.add.text(this.scoopAt.x, this.scoopAt.y, 'すくう', { fontFamily: FONT, fontSize: '18px', fontStyle: 'bold', color: INK }).setOrigin(0.5);
+    const label = this.scene.add
+      .text(this.scoopAt.x, this.scoopAt.y + 52, 'すくう', { fontFamily: FONT, fontSize: '15px', fontStyle: 'bold', color: INK, backgroundColor: '#fff3dc' })
+      .setOrigin(0.5);
     this.root.add(label);
     this.hotspot(this.scoopAt.x, this.scoopAt.y, 44, (p) => {
       const before = g.caught;
@@ -541,50 +575,36 @@ export class MissionGameView {
   }
 
   private drawNet(g: NetGame, now: number): void {
-    this.title.setText(`魚群の影が 網の上に来た瞬間に「すくう」（${Math.min(g.caught, g.fishNeeded)} / ${g.fishNeeded} 匹）`);
-    const a = this.art;
+    this.title.setText(`魚影が 網の真ん中の線に来た瞬間に「すくう」（${Math.min(g.caught, g.fishNeeded)} / ${g.fishNeeded} 匹）`);
+    const W = MISSION_PART_TEX.water;
+    const img = this.netImg!;
     const { x: nx, y: ny } = this.netAt;
     const lifted = now < this.scoopFlash;
     // 魚群の影（右から左へ。網の上に来た瞬間がすくう拍）
     const travel = MISSION_GAME.net.travelBeats * beatInterval();
-    const right = PANEL.x + PANEL.w + 30;
-    for (const sc of visibleSchools(g, now)) {
-      if (sc.taken) continue;
-      const x = nx + (sc.until / travel) * (right - nx);
-      for (let i = 0; i < sc.size; i++) {
-        const fx = x + (i % 2) * 22 + i * 10;
-        const fy = ny + (i - (sc.size - 1) / 2) * 20 + Math.sin(now * 6 + i) * 2;
-        a.fillStyle(0x0b2233, 0.5).fillEllipse(fx, fy, 34, 13);
-        a.fillTriangle(fx + 14, fy, fx + 26, fy - 7, fx + 26, fy + 7);
+    const right = PANEL.x + PANEL.w + 50;
+    const shown = visibleSchools(g, now).filter((sc) => !sc.taken);
+    img.shadows.forEach((sh, i) => {
+      const sc = shown[i];
+      if (!sc) {
+        sh.setVisible(false);
+        return;
       }
-    }
-    // 大きな四つ手網（四すみに重り）。すくうと持ち上がる
-    const w = lifted ? 150 : 170;
-    const h = lifted ? 96 : 110;
-    const y = ny - (lifted ? 14 : 0);
-    a.lineStyle(4, 0x8a6418, lifted ? 1 : 0.65);
-    a.strokeRect(nx - w / 2, y - h / 2, w, h);
-    a.lineStyle(2, 0xc9a032, lifted ? 1 : 0.55);
-    for (let i = 1; i < 7; i++) {
-      a.lineBetween(nx - w / 2 + (w * i) / 7, y - h / 2, nx - w / 2 + (w * i) / 7, y + h / 2);
-      if (i < 5) a.lineBetween(nx - w / 2, y - h / 2 + (h * i) / 5, nx + w / 2, y - h / 2 + (h * i) / 5);
-    }
-    for (const [cx, cy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-      a.fillStyle(COLORS.ink).fillCircle(nx + (cx * w) / 2 + cx * 6, y + (cy * h) / 2 + cy * 6, 9);
-      a.fillStyle(0x6b3f1f).fillCircle(nx + (cx * w) / 2 + cx * 6, y + (cy * h) / 2 + cy * 6, 7);
-    }
-    // すくえた魚（網の上で跳ねる）
-    if (lifted && this.scoopGot > 0) {
-      for (let i = 0; i < this.scoopGot; i++) {
-        const fx = nx - 30 + i * 22;
-        const fy = y - 6 - Math.abs(Math.sin((this.scoopFlash - now) * 18 + i)) * 10;
-        a.fillStyle(COLORS.ink).fillEllipse(fx, fy, 30, 14);
-        a.fillStyle(0xe8743b).fillEllipse(fx, fy, 26, 10);
-      }
-    }
-    // すくうボタン
-    a.fillStyle(COLORS.ink).fillCircle(this.scoopAt.x, this.scoopAt.y, 42);
-    a.fillStyle(lifted ? COLORS.uiHoney : COLORS.uiCream).fillCircle(this.scoopAt.x, this.scoopAt.y, 39);
+      const frames = W.shadows[Math.min(3, Math.max(1, sc.size)) as 1 | 2 | 3];
+      sh.setTexture(frames[Math.floor(now * 6 + i) % frames.length])
+        .setPosition(nx + (sc.until / travel) * (right - nx), ny + Math.sin(now * 3 + sc.k) * 4)
+        .setVisible(true);
+    });
+    // 大きな四つ手網（すくうと引き上がって、すくえた魚が跳ねる）
+    img.net.setTexture(lifted ? W.liftNet.raised : W.liftNet.submerged).setY(ny - (lifted ? 10 : 0));
+    // 網の真ん中の「ねらう線」。すくえる瞬間（判定の幅のあいだ）だけ、網と線を明るくする
+    const ready = shown.some((sc) => Math.abs(sc.until) <= g.window);
+    img.net.setTint(ready ? 0xfff2a8 : 0xffffff);
+    const a = this.art;
+    a.lineStyle(ready ? 6 : 3, ready ? COLORS.uiHoney : COLORS.uiCream, ready ? 1 : 0.7).lineBetween(nx, ny - 58, nx, ny + 58);
+    a.fillStyle(ready ? COLORS.uiHoney : COLORS.uiCream, ready ? 1 : 0.7).fillTriangle(nx - 9, ny - 70, nx + 9, ny - 70, nx, ny - 58);
+    img.catch.setVisible(lifted && this.scoopGot > 0).setY(ny - 20 - Math.abs(Math.sin((this.scoopFlash - now) * 14)) * 10);
+    img.button.setTexture(lifted ? W.scoop.pressed : W.scoop.idle);
     this.scheduleNetGuide(g, now);
   }
 
@@ -647,8 +667,9 @@ export class MissionGameView {
     if (g.kind === 'shape') {
       this.phraseParts.push(this.scene.add.image(this.clayArea.x, this.clayArea.y + 50, MISSION_PART_TEX.earth.wheel).setScale(1.5));
       this.phraseParts.push(this.scene.add.image(this.clayArea.x, this.clayArea.y + 4, MISSION_PART_TEX.earth.clay[0]).setScale(1.6));
+      this.phraseParts.push(this.scene.add.image(this.malletAt.x, this.malletAt.y, MISSION_PART_TEX.earth.mallet).setScale(0.9));
       this.hotspot(this.malletAt.x, this.malletAt.y, 44, (p) => act(this.deps.tapTime(p), 'tap'));
-      const tapLabel = this.scene.add.text(this.malletAt.x, this.malletAt.y, '叩く', { fontFamily: FONT, fontSize: '16px', fontStyle: 'bold', color: INK }).setOrigin(0.5);
+      const tapLabel = this.scene.add.text(this.malletAt.x, this.malletAt.y + 50, '叩く', { fontFamily: FONT, fontSize: '16px', fontStyle: 'bold', color: INK }).setOrigin(0.5);
       const swipeLabel = this.scene.add
         .text(this.clayArea.x, this.clayArea.y - this.clayArea.h / 2 - 2, 'なぞる ↓', { fontFamily: FONT, fontSize: '13px', fontStyle: 'bold', color: INK, backgroundColor: '#fff3dc' })
         .setOrigin(0.5);
@@ -678,6 +699,8 @@ export class MissionGameView {
     this.root.add(this.phraseLabels);
     this.phraseAct = act;
   }
+
+  private darkCue: Phaser.GameObjects.Image | null = null;
 
   private phraseAct: ((t: number, action: PhraseAction, lane?: number) => void) | null = null;
 
@@ -724,8 +747,6 @@ export class MissionGameView {
     const bounce = now < this.phraseFlash ? 1.12 : 1;
     // 操作の目印（輪のゴール）
     if (g.kind === 'shape') {
-      a.fillStyle(COLORS.ink).fillCircle(this.malletAt.x, this.malletAt.y, 40);
-      a.fillStyle(COLORS.clayLight).fillCircle(this.malletAt.x, this.malletAt.y, 37);
       a.lineStyle(3, COLORS.ink, 0.5).lineBetween(this.clayArea.x - 60, this.clayArea.y, this.clayArea.x + 60, this.clayArea.y);
     }
     if (g.kind === 'wind') a.lineStyle(4, COLORS.ink, 0.5).lineBetween(this.windLineX, PANEL.y + 160, this.windLineX, PANEL.y + 340);
@@ -738,8 +759,7 @@ export class MissionGameView {
       const r = 34 + (Math.max(0, until) / approach) * RING_GROW;
       const fade = Math.min(1, (approach - until) / (approach * 0.3));
       const col = c.action === 'swipe' ? COLORS.partFlag : COLORS.meterNeedle;
-      a.lineStyle(7, COLORS.ink, 0.6 * fade).strokeCircle(at.x, at.y, r);
-      a.lineStyle(4, col, fade).strokeCircle(at.x, at.y, r);
+      this.ring(at.x, at.y, r, c.action === 'swipe' ? 'release' : 'tap', false, fade);
       if (c.action === 'swipe') {
         // スワイプの向きの矢印
         const [dx, dy] = g.kind === 'wind' ? [1, 0] : [0, 1];
@@ -763,9 +783,14 @@ export class MissionGameView {
       this.phraseParts.forEach((img, i) => img.setTexture(lit.has(i) ? MISSION_PART_TEX.thunder.litLantern : MISSION_PART_TEX.thunder.lantern));
       // 次に押す灯籠の上に、稲光の予告
       const next = cues[g.pos];
-      if (next && cueTime(g, g.pos) - now <= approach) {
-        a.fillStyle(COLORS.uiHoney).fillTriangle(this.laneX(next.lane ?? 0) - 6, this.laneY - 92, this.laneX(next.lane ?? 0) + 8, this.laneY - 92, this.laneX(next.lane ?? 0) - 2, this.laneY - 70);
-      }
+      this.darkCue ??= (() => {
+        const im = this.scene.add.image(0, 0, MISSION_PART_TEX.thunder.flashCue).setScale(0.55);
+        this.root.add(im);
+        return im;
+      })();
+      const show = !!next && cueTime(g, g.pos) - now <= approach;
+      this.darkCue.setVisible(show);
+      if (show) this.darkCue.setPosition(this.laneX(next.lane ?? 0), this.laneY - 92);
     }
     // できたまとまりの数（下に丸）
     for (let i = 0; i < total; i++) {
@@ -800,7 +825,22 @@ export class MissionGameView {
   private readonly furnaceAt = { x: CX + 26, y: PANEL.y + 86 };
   private readonly thermo = { x: PANEL.x + 42, top: PANEL.y + 82, bottom: PANEL.y + 330 };
 
+  private heatImg: { stove: Phaser.GameObjects.Image; flame: Phaser.GameObjects.Image; bellows: Phaser.GameObjects.Image; thermo: Phaser.GameObjects.Image } | null = null;
+
   private buildHeat(g: HeatGame): void {
+    const bg = this.scene.add.image(PANEL.x, PANEL.y, MISSION_BG_TEX('fire')).setOrigin(0).setDisplaySize(PANEL.w, PANEL.h);
+    const band = this.scene.add.rectangle(PANEL.x + 6, PANEL.y + 6, PANEL.w - 12, 70, COLORS.scanPaper, 0.88).setOrigin(0);
+    this.root.addAt(bg, 1);
+    this.root.addAt(band, 2);
+    const F = MISSION_PART_TEX.fire;
+    this.heatImg = {
+      stove: this.scene.add.image(this.furnaceAt.x, this.furnaceAt.y + 40, F.stove).setScale(1.5),
+      flame: this.scene.add.image(this.furnaceAt.x, this.furnaceAt.y + 44, F.flame.small[0]).setOrigin(0.5, 0.8),
+      bellows: this.scene.add.image(this.bellowsAt.x, this.bellowsAt.y, F.bellows.idle),
+      thermo: this.scene.add.image(this.thermo.x, (this.thermo.top + this.thermo.bottom) / 2, F.thermometer).setDisplaySize(52, this.thermo.bottom - this.thermo.top + 20),
+    };
+    this.root.add([this.heatImg.stove, this.heatImg.flame, this.heatImg.thermo, this.heatImg.bellows]);
+    this.root.bringToTop(this.art);
     // ふいご（押しているあいだ風を送る。指を離すと止まる）
     this.hotspot(this.bellowsAt.x, this.bellowsAt.y, 62, (p) => {
       const s = pressHeat(g, this.deps.tapTime(p));
@@ -827,47 +867,37 @@ export class MissionGameView {
     );
     const a = this.art;
     const level = heatLevel(g, now);
-    // 温度計（ちょうどいい帯は緑。上は熱すぎ、下はぬるい）
+    const img = this.heatImg!;
+    const F = MISSION_PART_TEX.fire;
+    // 温度計（絵）の横に、いまの温度の矢印（ちょうどいい帯は緑。上は熱すぎ、下はぬるい）
     const { x: tx, top, bottom } = this.thermo;
-    const yOf = (v: number) => bottom - v * (bottom - top);
-    a.fillStyle(COLORS.ink).fillRoundedRect(tx - 13, top - 6, 26, bottom - top + 12, 12);
-    a.fillStyle(COLORS.uiCream).fillRoundedRect(tx - 10, top - 3, 20, bottom - top + 6, 10);
-    a.fillStyle(COLORS.uiMoss, 0.55).fillRect(tx - 10, yOf(HEAT_BAND.high), 20, yOf(HEAT_BAND.low) - yOf(HEAT_BAND.high));
+    const yOf = (v: number) => bottom - 26 - v * (bottom - top - 30);
     const inBand = level >= HEAT_BAND.low && level <= HEAT_BAND.high;
-    a.fillStyle(level > HEAT_BAND.high ? COLORS.landmarkVermilion : inBand ? COLORS.meterNeedle : COLORS.partFlag).fillRoundedRect(tx - 6, yOf(level), 12, bottom - yOf(level), 6);
-    a.fillStyle(COLORS.ink).fillCircle(tx, bottom + 12, 15);
-    a.fillStyle(level > HEAT_BAND.high ? COLORS.landmarkVermilion : COLORS.meterNeedle).fillCircle(tx, bottom + 12, 12);
-    // 炉と炎（温度が高いほど大きく）
-    const { x: fx, y: fy } = this.furnaceAt;
-    a.fillStyle(COLORS.ink).fillRoundedRect(fx - 62, fy - 6, 124, 66, 14);
-    a.fillStyle(COLORS.terracotta).fillRoundedRect(fx - 58, fy - 2, 116, 58, 12);
-    a.fillStyle(COLORS.ink).fillRoundedRect(fx - 30, fy + 14, 60, 36, 10);
-    const flame = 14 + level * 46;
-    a.fillStyle(0xf07820).fillTriangle(fx - 22, fy + 46, fx + 22, fy + 46, fx, fy + 46 - flame);
-    a.fillStyle(COLORS.uiHoney).fillTriangle(fx - 12, fy + 46, fx + 12, fy + 46, fx, fy + 46 - flame * 0.6);
-    // ふいご。押す拍・離す拍に向かって、外から輪が縮んでくる（押す＝黄、離す＝青）
+    a.fillStyle(COLORS.uiMoss, 0.35).fillRect(tx - 26, yOf(HEAT_BAND.high), 52, yOf(HEAT_BAND.low) - yOf(HEAT_BAND.high));
+    const col = level > HEAT_BAND.high ? COLORS.landmarkVermilion : inBand ? COLORS.uiMoss : COLORS.partFlag;
+    a.fillStyle(COLORS.ink).fillTriangle(tx + 30, yOf(level), tx + 46, yOf(level) - 10, tx + 46, yOf(level) + 10);
+    a.fillStyle(col).fillTriangle(tx + 32, yOf(level), tx + 44, yOf(level) - 7, tx + 44, yOf(level) + 7);
+    // かまどと炎（温度が高いほど大きな炎）
+    const size = level < 0.45 ? F.flame.small : level < HEAT_BAND.high ? F.flame.medium : F.flame.large;
+    img.flame.setTexture(size[Math.floor(now * 8) % size.length]).setScale(1.4 + level);
+    // ふいご（押しているあいだは、つぶれた絵）。押す拍・離す拍に向かって、外から輪が縮んでくる（押す＝黄、離す＝青）
     const { x: bx, y: by } = this.bellowsAt;
+    img.bellows.setTexture(g.holding ? F.bellows.pressed : F.bellows.idle);
     const approach = MISSION_GAME.heat.leadBeats * beatInterval();
-    a.lineStyle(7, COLORS.ink).strokeCircle(bx, by, RING);
-    a.lineStyle(4, g.holding ? COLORS.partFlag : COLORS.uiHoney).strokeCircle(bx, by, RING);
+    const color = g.holding ? 'release' : 'tap';
+    this.ring(bx, by, RING, color, true);
     const target = g.holding ? heatReleaseTime(g) : heatPressTime(g);
     const until = target - now;
     if (g.result === 'playing' && until <= approach && until >= -g.window) {
       const r = RING + (Math.max(0, until) / approach) * RING_GROW;
       const fade = Math.min(1, (approach - until) / (approach * 0.3));
-      a.lineStyle(8, COLORS.ink, 0.6 * fade).strokeCircle(bx, by, r);
-      a.lineStyle(5, g.holding ? COLORS.partFlag : COLORS.meterNeedle, fade).strokeCircle(bx, by, r);
+      this.ring(bx, by, r, color, false, fade);
     }
     if (g.holding) {
       // 押している長さ（離す拍まで）
       const p = Math.min(1, (now - heatPressTime(g)) / Math.max(0.01, heatReleaseTime(g) - heatPressTime(g)));
-      a.lineStyle(7, COLORS.uiMoss).beginPath().arc(bx, by, RING - 8, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2).strokePath();
+      a.lineStyle(7, COLORS.uiMoss).beginPath().arc(bx, by, RING + 10, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2).strokePath();
     }
-    const squeeze = g.holding ? 0.7 : 1;
-    a.fillStyle(COLORS.ink).fillEllipse(bx, by, 92, 64 * squeeze + 6);
-    a.fillStyle(COLORS.landmarkWood).fillEllipse(bx, by, 86, 64 * squeeze);
-    a.fillStyle(COLORS.ink).fillRect(bx - 4, by - 40, 8, 14);
-    a.lineStyle(2, COLORS.ink).lineBetween(bx - 30, by, bx + 30, by);
     this.scheduleHeatGuide(g, now);
   }
 

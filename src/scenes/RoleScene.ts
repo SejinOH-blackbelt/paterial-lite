@@ -6,7 +6,7 @@ import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
 import { PateView } from './PateView';
 import { INK, cssColor, label, panel, textButton } from './ui';
-import { ELEMENT_ICON, makeElementIcons } from './elementIcons';
+import { ELEMENT_PICTURE as ELEMENT_ICON, makeElementPictures as makeElementIcons } from './elementPictures';
 import { randomElement, type ElementId } from '../game/elements';
 import type { NetGame } from '../net/netGame';
 import type { GoWire, NetMessage, ReadyWire } from '../net/sync';
