@@ -77,6 +77,8 @@ import {
   fieldToWire,
   pawnToWire,
   spyToWire,
+  type CallRequest,
+  type MeetWire,
   type MissionWire,
   type NetMessage,
   type OverWire,
@@ -687,7 +689,7 @@ export class FieldScene extends Phaser.Scene {
       return;
     }
     // Botの呼び出し（イタズラを目撃した・置物を見つけた）
-    const call = this.net ? null : botWantsToReport(this.match, heard, VISION.radius); // 友達と遊ぶ会議は次の段階
+    const call = botWantsToReport(this.match, heard, VISION.radius);
     if (call) this.beginMeeting(call.caller, 'report', call.body);
   }
 
@@ -726,6 +728,11 @@ export class FieldScene extends Phaser.Scene {
     this.netUnlisten = net.relay.listen((from, data) => this.onNet(from, data as NetMessage));
     net.relay.onClosed = () => {
       if (!this.scene.isActive() && !this.scene.isPaused()) return;
+      // 会議の最中なら、会議の画面を閉じて採取場に戻ってから知らせる（止まったままの画面では時間が進まないため）
+      if (this.scene.isPaused()) {
+        this.scene.stop('Meeting');
+        this.scene.resume();
+      }
       this.popText('通信が切れました（ルームを作った人が ぬけた など）', '#e03131', 14, 10);
       this.time.delayedCall(2500, () => this.quitMatch());
     };
@@ -850,6 +857,22 @@ export class FieldScene extends Phaser.Scene {
           if (msg.kind === 'prank' && ev.target && !ev.target.frozen) this.becomeStatue(ev.target);
         }
         this.onSpyEvent(ev, heard);
+        return;
+      }
+      case 'call': {
+        // 子機が呼び出しボタンを押した：置物のそばなら呼び出し、土の祠のそばなら緊急の呼び出し
+        if (!host || fromSeat <= 0 || this.match.phase !== 'play') return;
+        const p = this.pates[fromSeat].pawn;
+        const body = reportableBody(this.match, p);
+        if (body) this.beginMeeting(p, 'report', body);
+        else if (canEmergency(this.match, p)) this.beginMeeting(p, 'emergency', null);
+        return;
+      }
+      case 'meet': {
+        if (host || fromSeat !== 0 || this.match.phase !== 'play') return;
+        const caller = this.pates[msg.c]?.pawn;
+        if (!caller) return;
+        this.beginMeeting(caller, msg.r, msg.b >= 0 ? this.pates[msg.b]?.h ?? null : null);
         return;
       }
       case 'prank': {
@@ -1248,9 +1271,10 @@ export class FieldScene extends Phaser.Scene {
 
   /** プレイヤーが呼び出しボタンを押した（呼び出せなかったら false） */
   private playerCalls(): boolean {
-    if (this.net) {
-      // 友達と遊ぶときの会議は、M8.5 の次の段階で作る
-      this.popText('友達と遊ぶ会議は じゅんび中', '#2b1d14', 14, 0);
+    if (!this.isSim()) {
+      // 子機：会議を開くのは親機（親機が、呼び出せるかを確かめる）
+      if (!reportableBody(this.match, this.playerPawn) && !canEmergency(this.match, this.playerPawn)) return false;
+      this.netSend('host', { k: 'call' } satisfies CallRequest);
       return true;
     }
     const body = reportableBody(this.match, this.playerPawn);
@@ -1262,6 +1286,10 @@ export class FieldScene extends Phaser.Scene {
 
   /** 会議を始める：採取場を止めて、会議の画面を重ねる */
   private beginMeeting(caller: Pawn, reason: 'report' | 'emergency', body: Harvester | null): void {
+    // 親機：みんなに「会議が始まった」を知らせる（子機は、その知らせでここに来る）
+    if (this.net && this.isSim()) {
+      this.netSend('all', { k: 'meet', c: this.seatOf(caller.h), r: reason, b: body ? this.seatOf(body) : -1 } satisfies MeetWire);
+    }
     const started = this.audio.heardTime();
     startMeeting(this.match, caller, reason, body, started);
     this.syncScanView(started);
@@ -1278,6 +1306,7 @@ export class FieldScene extends Phaser.Scene {
       audio: this.audio,
       rng: this.rng,
       witnessed: this.witnessed,
+      net: this.net,
       onDone: () => {
         this.scene.stop('Meeting');
         // 会議のあいだは制限時間を進めない

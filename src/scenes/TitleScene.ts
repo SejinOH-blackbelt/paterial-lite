@@ -24,8 +24,6 @@ const HOW_TO = [
 
 /** 招待の合言葉は1回だけ使う（タイトルに戻ってきたとき、また入らないように） */
 let usedInvite = false;
-/** 友達と遊ぶ（作っている途中）を見せるか */
-const ONLINE_PREVIEW = typeof location !== 'undefined' && new URLSearchParams(location.search).has('online');
 
 export class TitleScene extends Phaser.Scene {
   private pate!: PateView;
@@ -63,15 +61,10 @@ export class TitleScene extends Phaser.Scene {
       this.scene.start('Lobby', { join: invited } satisfies LobbyData);
       return;
     }
-    // 友達と遊ぶは作っている途中なので、URL に ?online があるときだけ出す
-    const online = ONLINE_PREVIEW || invited !== null;
-    if (online) {
+    {
       textButton(this, SCREEN.width / 2, 500, 210, 48, 'ひとりで あそぶ', COLORS.uiHoney, () => this.scene.start('Role'), 19);
       textButton(this, SCREEN.width / 2, 556, 210, 46, '友達と あそぶ', COLORS.uiMoss, () => this.scene.start('Lobby', {} satisfies LobbyData), 18);
       textButton(this, SCREEN.width / 2, 610, 160, 38, 'あそびかた', COLORS.uiPaper, () => this.showHowTo(), 15);
-    } else {
-      textButton(this, SCREEN.width / 2, 510, 200, 52, 'あそぶ', COLORS.uiHoney, () => this.scene.start('Role'), 22);
-      textButton(this, SCREEN.width / 2, 574, 200, 44, 'あそびかた', COLORS.uiPaper, () => this.showHowTo(), 17);
     }
   }
 

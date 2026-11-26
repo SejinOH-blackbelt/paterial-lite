@@ -213,7 +213,45 @@ export interface StartWire {
   seed: number;
 }
 
-export type NetMessage = Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | OverWire | StartWire;
+/** 子機 → 親機：呼び出しボタンを押した（置物のそばなら呼び出し、土の祠なら緊急の呼び出し。親機が確かめる） */
+export interface CallRequest {
+  k: 'call';
+}
+
+/** 親機 → みんな：会議が始まった（席の番号。置物でなければ body は -1） */
+export interface MeetWire {
+  k: 'meet';
+  c: number;
+  r: 'report' | 'emergency';
+  b: number;
+}
+
+/** 会議で言った（スタンプ・指さした相手・見かけた場所）。子機 → 親機 → みんな */
+export interface SayWire {
+  k: 'say';
+  s: number;
+  stamp: string;
+  /** 指さした相手の席（なければ -1） */
+  tg: number;
+  at: { x: number; y: number } | null;
+}
+
+/** 投票した（相手の席。スキップは -1）。子機 → 親機 → みんな */
+export interface VoteWire {
+  k: 'vote';
+  s: number;
+  tg: number;
+}
+
+/** 親機 → みんな：会議の結果（全員の票、王様の支持度、席ごとの素材の増減） */
+export interface ResultWire {
+  k: 'result';
+  votes: [number, number][];
+  sup: number;
+  mat: number[];
+}
+
+export type NetMessage = CallRequest | MeetWire | SayWire | VoteWire | ResultWire | Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | OverWire | StartWire;
 
 /**
  * 親機が席を決める：親機は 0 番、ほかの人は入った順に 1 番から。残りは Bot。

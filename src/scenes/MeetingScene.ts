@@ -6,6 +6,8 @@ import { addNote, botVote, castVote, everyoneVoted, hearStamp, meetingTimeLeft, 
 import type { Rng } from '../game/random';
 import type { GameAudio } from './audio';
 import type { Bgm } from './bgm';
+import type { NetGame } from '../net/netGame';
+import type { NetMessage, ResultWire, SayWire, VoteWire } from '../net/sync';
 import { PateView } from './PateView';
 import { FONT, INK, cssColor, label, panel, textButton } from './ui';
 import { MeetingMap } from './MeetingMap';
@@ -20,6 +22,8 @@ export interface MeetingData {
   onDone: (result: MeetingResult) => void;
   /** プレイヤーが会議の前に目撃したイタズラ（だれが、だれを）。会議の画面で思い出せるように */
   witnessed: { spy: Pawn; target: Pawn } | null;
+  /** 友達と遊ぶときの情報（ひとりなら null）。会議を進める（Bot・締め切り・結果）のは親機 */
+  net?: NetGame | null;
 }
 
 const STAMPS = ['あやしい！', 'ちがうよ', 'みてた！'] as const;
@@ -51,6 +55,7 @@ export class MeetingScene extends Phaser.Scene {
   private stampButtons: Phaser.GameObjects.Container[] = [];
   private cancelRoll: (() => void) | null = null;
   private bgm: Bgm | null = null;
+  private netUnlisten: (() => void) | null = null;
   /** 真ん中の小さな地図と、開いているときの大きな地図 */
   private miniMap!: MeetingMap;
   private bigMap: MeetingMap | null = null;
@@ -115,6 +120,8 @@ export class MeetingScene extends Phaser.Scene {
     this.events.once('shutdown', () => {
       this.cancelRoll?.();
       this.bgm?.stop();
+      this.netUnlisten?.();
+      this.netUnlisten = null;
     });
     const why =
       meeting.reason === 'emergency'
@@ -180,7 +187,7 @@ export class MeetingScene extends Phaser.Scene {
     // Bot の予定：何回かスタンプを押し、どこかで投票する
     const start = this.now();
     for (const p of match.pawns) {
-      if (p.isPlayer || p.h.frozen) continue;
+      if (p.isPlayer || p.h.frozen || !this.isSim()) continue; // Bot を動かすのは、ひとりのときと親機だけ
       // イタズラを目撃したBotは、会議の最初にすぐ「みてた！」と言う
       const witnessed = match.pawns.some((o) => suspicionOf(match, p, o) >= SUSPICION.sawPrank);
       this.botPlans.push({ at: start + (witnessed ? 1.2 + this.ctx.rng() * 1.2 : 2 + this.ctx.rng() * 8), pawn: p, kind: 'stamp' });
@@ -188,6 +195,7 @@ export class MeetingScene extends Phaser.Scene {
       this.botPlans.push({ at: start + 6 + this.ctx.rng() * 16, pawn: p, kind: 'vote' });
     }
     this.ctx.audio.bell();
+    if (this.ctx.net) this.netUnlisten = this.ctx.net.relay.listen((from, data) => this.onNet(from, data as NetMessage));
     // 会議の曲（鐘のあとから）
     this.bgm = this.ctx.audio.createBgm();
     this.bgm.play('meeting', this.ctx.audio.now + 0.6);
@@ -262,9 +270,11 @@ export class MeetingScene extends Phaser.Scene {
     this.voteFor(player, this.selected);
   }
 
-  private voteFor(voter: Pawn, target: Pawn | null): void {
+  private voteFor(voter: Pawn, target: Pawn | null, fromNet = false): void {
     const { match, player } = this.ctx;
     if (!castVote(match, voter, target)) return;
+    // 友達と遊ぶとき：自分（と、親機なら Bot）の票をみんなに伝える
+    if (!fromNet && this.ctx.net) this.netShare({ k: 'vote', s: this.seatOf(voter), tg: target ? this.seatOf(target) : -1 } satisfies VoteWire);
     this.ctx.audio.pon();
     const seat = this.seats.get(voter)!;
     this.bubble(seat.x, seat.y - 56, '投票した', COLORS.uiHoney);
@@ -290,9 +300,12 @@ export class MeetingScene extends Phaser.Scene {
    * だれかが言った：ふきだし、指さす矢印、地図の印、発言の記録欄。
    * 指さしたときは、ほかのBotもそれを聞いて少し怪しむ（スパイBotの指さしは半分だけ効く）
    */
-  private say(p: Pawn, s: string, target: Pawn | null, at: Point | null): void {
+  private say(p: Pawn, s: string, target: Pawn | null, at: Point | null, fromNet = false): void {
     if (p.h.frozen || this.finished) return;
     const { match } = this.ctx;
+    if (!fromNet && this.ctx.net) {
+      this.netShare({ k: 'say', s: this.seatOf(p), stamp: s, tg: target ? this.seatOf(target) : -1, at } satisfies SayWire);
+    }
     addNote(match, p, s, target, at, this.now());
     const seat = this.seats.get(p)!;
     const tname = target ? (target === this.ctx.player ? 'きみ' : PART_NAMES[target.part as keyof typeof PART_NAMES]) : '';
@@ -445,7 +458,60 @@ export class MeetingScene extends Phaser.Scene {
     const frac = left / 30;
     this.timerBar.clear();
     this.timerBar.fillStyle(frac < 0.3 ? COLORS.uiRose : COLORS.uiHoney).fillRect(41, 95, (SCREEN.width - 82) * frac, 6);
-    if (left <= 0 || everyoneVoted(match)) this.finish();
+    // 締め切るのは、ひとりのときと親機だけ（子機は親機から結果が届いたら発表する）
+    if (this.isSim() && (left <= 0 || everyoneVoted(match))) this.finish();
+  }
+
+  // ---------- 友達と遊ぶ ----------
+
+  /** 会議を進めるのはこのスマホか（ひとりのとき・親機） */
+  private isSim(): boolean {
+    return !this.ctx.net || this.ctx.net.mySeat === 0;
+  }
+
+  private seatOf(p: Pawn): number {
+    return this.ctx.match.pawns.indexOf(p);
+  }
+
+  /** 親機ならみんなへ、子機なら親機へ */
+  private netShare(msg: NetMessage): void {
+    this.ctx.net?.relay.send(this.isSim() ? 'all' : 'host', msg);
+  }
+
+  private onNet(from: number, msg: NetMessage): void {
+    const net = this.ctx.net;
+    if (!net || !msg || this.finished) return;
+    const pawns = this.ctx.match.pawns;
+    const fromSeat = net.seats.indexOf(from);
+    const host = this.isSim();
+    switch (msg.k) {
+      case 'say': {
+        // 親機：その人の発言だけ受けつけて、みんなへ回す。子機：親機から届いた、自分以外の発言を出す
+        if (host ? msg.s !== fromSeat : fromSeat !== 0 || msg.s === net.mySeat) return;
+        const p = pawns[msg.s];
+        if (!p) return;
+        if (host) net.relay.send('all', msg);
+        this.say(p, msg.stamp, msg.tg >= 0 ? pawns[msg.tg] ?? null : null, msg.at, true);
+        return;
+      }
+      case 'vote': {
+        if (host ? msg.s !== fromSeat : fromSeat !== 0 || msg.s === net.mySeat) return;
+        const p = pawns[msg.s];
+        if (!p) return;
+        if (host) net.relay.send('all', msg);
+        this.voteFor(p, msg.tg >= 0 ? pawns[msg.tg] ?? null : null, true);
+        return;
+      }
+      case 'result': {
+        if (host || fromSeat !== 0) return;
+        // 親機と同じ票で結果を出す。支持度と、自分の素材の増減は親機の数に合わせる
+        const meeting = this.ctx.match.meeting;
+        if (!meeting) return;
+        meeting.votes = new Map(msg.votes.map(([v, t]) => [pawns[v], t >= 0 ? pawns[t] : null] as [Pawn, Pawn | null]));
+        this.finish(msg);
+        return;
+      }
+    }
   }
 
   private supportText!: Phaser.GameObjects.Text;
@@ -461,17 +527,35 @@ export class MeetingScene extends Phaser.Scene {
    * ② いちばん票が多いパテにスポットライト。「○○は……」でドラムロール
    * ③ スパイだった（クラッカーと紙吹雪）／ぬれぎぬ（ズコーとしょんぼり）／だれも調べない
    */
-  private finish(): void {
+  private finish(fromHost?: ResultWire): void {
     this.finished = true;
     this.bgm?.stop(); // 結果発表は、曲を止めて開票の音とドラムロールを聞かせる
     this.mapView?.close();
     this.logPanel.setVisible(false);
     this.logText.setVisible(false);
     const { match } = this.ctx;
-    // まだ投票していない Bot は、ここで投票する（プレイヤーはスキップ扱い）
-    for (const p of match.pawns) if (!p.h.frozen && !match.meeting!.votes.has(p)) castVote(match, p, p.isPlayer ? null : botVote(match, p, this.ctx.rng));
+    // まだ投票していない Bot は、ここで投票する（人はスキップ扱い）。子機は親機から届いた票を使う
+    if (!fromHost) {
+      for (const p of match.pawns) if (!p.h.frozen && !match.meeting!.votes.has(p)) castVote(match, p, p.isPlayer ? null : botVote(match, p, this.ctx.rng));
+    }
     const votes = [...match.meeting!.votes.entries()];
+    const before = match.pawns.map((p) => p.h.materials);
     const result = resolveMeeting(match, this.now());
+    if (this.ctx.net && !fromHost) {
+      // 親機：みんなに結果を送る（票・支持度・素材の増減）
+      this.ctx.net.relay.send('all', {
+        k: 'result',
+        votes: votes.map(([v, t]) => [this.seatOf(v), t ? this.seatOf(t) : -1]),
+        sup: match.support,
+        mat: match.pawns.map((p, i) => p.h.materials - before[i]),
+      } satisfies ResultWire);
+    }
+    if (fromHost) {
+      // 子機：支持度と自分の素材は親機の数に合わせる（ほかの人の素材は、このあとのようすで届く）
+      match.support = fromHost.sup;
+      const me = this.ctx.player;
+      me.h.materials = before[this.seatOf(me)] + (fromHost.mat[this.seatOf(me)] ?? 0);
+    }
     // 話し合いのボタンを片づけて、開票の場所を出す
     for (const b of [...this.stampButtons, this.voteButton, this.skipButton]) b.setVisible(false);
     this.spotlight(null);
