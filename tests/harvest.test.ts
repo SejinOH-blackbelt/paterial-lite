@@ -157,7 +157,21 @@ describe('素材ポイントの取り合い', () => {
 });
 
 describe('採取ボタンで採取する', () => {
-  it('素材のそばで「採取」を押すと、立つ場所へ寄って採取を始める', () => {
+  it('素材の後ろや横からでも「採取」を押すと、その場で素材のほうを向いて採取を始める', () => {
+    const f = createFieldState();
+    const behind = createHarvester(createWalker({ x: clay.x + 5, y: clay.y - 40 }));
+    expect(startHarvest(behind, f, [behind])?.state).toBe('ready');
+    expect(behind.walker.target).toBeNull();
+    updateHarvester(behind, f, [behind], 5, 0);
+    expect(behind.session?.pointId).toBe('clay');
+    expect(behind.walker.facing).toBe('down');
+    const side = createHarvester(createWalker({ x: clay.x - 50, y: clay.y - 5 }));
+    startHarvest(side, createFieldState(), [side]);
+    updateHarvester(side, createFieldState(), [side], 5, 0);
+    expect(side.walker.facing).toBe('right');
+  });
+
+  it('素材のそばで「採取」を押すと、採取を始める', () => {
     const f = createFieldState();
     const s = standSpot(clay);
     const h = createHarvester(createWalker({ x: s.x + 20, y: s.y + 15 }));
@@ -177,8 +191,7 @@ describe('採取ボタンで採取する', () => {
 
   it('素材から離れたところでは押せない', () => {
     const f = createFieldState();
-    const s = standSpot(clay);
-    const h = createHarvester(createWalker({ x: s.x + RESOURCE.approachRadius + 10, y: s.y }));
+    const h = createHarvester(createWalker({ x: clay.x + RESOURCE.useRadius + 10, y: clay.y }));
     expect(harvestChance(h, f, [h])).toBeNull();
     expect(startHarvest(h, f, [h])).toBeNull();
     expect(h.walker.target).toBeNull();
@@ -190,7 +203,7 @@ describe('採取ボタンで採取する', () => {
     other.claim = 'clay';
     updateHarvester(other, f, [other], 5, 0);
     const s = standSpot(clay);
-    const me = createHarvester(createWalker({ x: s.x + 10, y: s.y + 20 }));
+    const me = createHarvester(createWalker({ x: s.x + 10, y: s.y + 10 }));
     expect(startHarvest(me, f, [other, me])?.state).toBe('busy');
     expect(me.waitingFor).toBeNull();
     expect(me.walker.target).toBeNull();

@@ -1,7 +1,7 @@
 // 素材ポイントと採取の流れのルール。画面表示（Phaser）には依存しません。
 
 import { FIELD, RESOURCE, RESOURCE_POINTS, STOCK } from './config';
-import { faceTo, steerWalker, setTarget, type Point, type Walker } from './movement';
+import { faceTo, facingFor, steerWalker, setTarget, type Point, type Walker } from './movement';
 import type { MissionTask } from './missions';
 import type { Rng } from './random';
 import { startSession, tapSession, type HarvestSession, type TapResult } from './rhythm';
@@ -87,14 +87,17 @@ export function resourceAtTap(p: Point): ResourcePoint | null {
   return RESOURCE_POINTS.find((r) => Math.hypot(r.x - p.x, r.y - RESOURCE.tapCenterUp - p.y) <= RESOURCE.tapRadius) ?? null;
 }
 
-/** いま立っている場所で採取できる素材ポイント（なければ null） */
-export function resourceAtStand(p: Point): ResourcePoint | null {
-  return (
-    RESOURCE_POINTS.find((r) => {
-      const s = standSpot(r);
-      return Math.hypot(s.x - p.x, s.y - p.y) <= RESOURCE.harvestRadius;
-    }) ?? null
-  );
+/** いる場所から採取できる素材ポイント（足元から useRadius 以内でいちばん近いもの。正面でなくても、横や後ろからでもよい） */
+export function nearbyPoint(p: Point): ResourcePoint | null {
+  const near = RESOURCE_POINTS.map((r) => ({ r, d: Math.hypot(r.x - p.x, r.y - p.y) }))
+    .filter((x) => x.d <= RESOURCE.useRadius)
+    .sort((a, b) => a.d - b.d)[0];
+  return near?.r ?? null;
+}
+
+/** 素材のほうを向く（どちら側にいても） */
+function faceResource(h: Harvester, r: ResourcePoint): void {
+  faceTo(h.walker, facingFor(r.x - h.walker.pos.x, r.y - 12 - h.walker.pos.y, 'up'));
 }
 
 export type MoveResult = 'walk' | 'harvest' | 'wait';
@@ -163,14 +166,14 @@ export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harve
     return null;
   }
   if (!h.claim) return null;
-  const r = resourceAtStand(h.walker.pos);
+  const r = nearbyPoint(h.walker.pos);
   if (!r || r.id !== h.claim) return null;
   if (harvestingOther(all, r.id, h) || f.stock[r.id] <= 0) {
     h.claim = null; // 先を越された・空だった
     return f.stock[r.id] <= 0 ? 'empty' : 'taken';
   }
   h.session = startSession(r.id, r.kind, earliest, origin);
-  faceTo(h.walker, 'up'); // 素材のほうを向く
+  faceResource(h, r); // 素材のほうを向く
   return null;
 }
 
@@ -188,14 +191,6 @@ export function driveHarvester(h: Harvester, dx: number, dy: number, dtSeconds: 
   steerWalker(h.walker, dx, dy, dtSeconds);
 }
 
-/** そばにある素材ポイント（立つ場所まで approachRadius 以内でいちばん近いもの。なければ null） */
-export function nearbyPoint(p: Point): ResourcePoint | null {
-  const near = RESOURCE_POINTS.map((r) => ({ r, d: Math.hypot(standSpot(r).x - p.x, standSpot(r).y - p.y) }))
-    .filter((x) => x.d <= RESOURCE.approachRadius)
-    .sort((a, b) => a.d - b.d)[0];
-  return near?.r ?? null;
-}
-
 /**
  * 「採取」ボタンで採取を始められるか。
  * ready：始められる、busy：ほかのパテが採取中、empty：素材が残っていない、null：そばに素材がない・いまはできない
@@ -210,7 +205,7 @@ export function harvestChance(h: Harvester, f: FieldState, all: readonly Harvest
 }
 
 /**
- * 「採取」ボタンを押した：そばの素材ポイントを使うと決めて、立つ場所へ寄る（着いたら採取が始まる）。
+ * 「採取」ボタンを押した：そばの素材ポイントを使うと決める（その場で、次のコマに採取が始まる）。
  * 始められないときは、その理由（harvestChance と同じ）を返し、何もしない。
  */
 export function startHarvest(h: Harvester, f: FieldState, all: readonly Harvester[]): ReturnType<typeof harvestChance> {
@@ -218,8 +213,8 @@ export function startHarvest(h: Harvester, f: FieldState, all: readonly Harveste
   if (!c || c.state !== 'ready') return c;
   h.claim = c.point.id;
   h.waitingFor = null;
-  const s = standSpot(c.point);
-  if (Math.hypot(s.x - h.walker.pos.x, s.y - h.walker.pos.y) > RESOURCE.harvestRadius) setTarget(h.walker, s);
+  h.walker.target = null;
+  faceResource(h, c.point);
   return c;
 }
 

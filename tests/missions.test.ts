@@ -78,22 +78,21 @@ describe('施設のミッション', () => {
     expect(h.task!.endsAt).toBeCloseTo(MISSION_BOT.workSeconds.prayer + MISSION_BOT.retrySeconds, 5);
   });
 
-  it('施設のそばで「アクション」を押すと、施設の前へ寄る。素材が足りない・終えたときは寄らずに理由を返す', () => {
-    const stand = facilityStand(fac('workshop'));
-    const h = createHarvester(createWalker({ x: stand.x + 20, y: stand.y + 10 }));
+  it('施設のそば（後ろや横でもよい）で「アクション」を押すと、その場で始める。素材が足りない・終えたときは理由を返す', () => {
+    const w = fac('workshop');
+    const h = createHarvester(createWalker({ x: w.x + 30, y: w.y - 60 })); // 施設の後ろ
     expect(missionChance(h)?.state).toBe('notReady');
     expect(goToMission(h)?.state).toBe('notReady');
-    expect(h.walker.target).toBeNull();
-    const shrine = facilityStand(fac('shrine'));
-    const p = createHarvester(createWalker({ x: shrine.x - 25, y: shrine.y }));
+    const s = fac('shrine');
+    const p = createHarvester(createWalker({ x: s.x - 60, y: s.y - 20 })); // 祠の横
     expect(goToMission(p)?.state).toBe('ready');
-    expect(p.walker.target).toEqual(shrine);
-    const far = createHarvester(createWalker({ x: stand.x + 200, y: stand.y }));
+    expect(p.walker.target).toBeNull();
+    expect(startMission(p, 0, createRng(1), null)?.result).toBe('started');
+    expect(p.walker.facing).toBe('right');
+    const far = createHarvester(createWalker({ x: w.x + 200, y: w.y }));
     expect(missionChance(far)).toBeNull();
   });
-});
 
-describe('Botのミッション', () => {
   it('住民Botは、採取・加工・お祈りを全部こなす', () => {
     const b = createBot(BOT_PROFILES[1], { x: 350, y: 700 });
     const f = createFieldState();

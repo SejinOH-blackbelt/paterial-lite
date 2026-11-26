@@ -36,7 +36,7 @@ import {
   type Pawn,
 } from '../game/match';
 import {
-  facilityAtStand,
+  facilityNear,
   finishMission,
   goToMission,
   isFinished,
@@ -1513,7 +1513,7 @@ export class FieldScene extends Phaser.Scene {
   private updatePlayerMission(heard: number): void {
     const me = this.player;
     if (this.pendingFacility && !me.walker.target) {
-      const at = facilityAtStand(me.walker.pos);
+      const at = facilityNear(me.walker.pos);
       if (at?.id === this.pendingFacility) startMission(me, heard, this.rng, { origin: this.origin });
       this.pendingFacility = null;
     }

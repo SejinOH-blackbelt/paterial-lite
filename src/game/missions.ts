@@ -6,7 +6,7 @@
 import { FACILITIES, FACILITY, MISSION_BOT, MISSION_WEIGHT, MISSIONS } from './config';
 import type { Harvester } from './harvest';
 import { createMissionGame, type MissionGame } from './missionGames';
-import { faceTo, setTarget, type Point } from './movement';
+import { faceTo, facingFor, type Point } from './movement';
 import type { Rng } from './random';
 
 export type Facility = (typeof FACILITIES)[number];
@@ -55,9 +55,17 @@ export function facilityStand(f: Facility): Point {
   return { x: f.x, y: f.y + FACILITY.standOffsetY };
 }
 
-/** いま立っている場所が、施設の前ならその施設（なければ null） */
-export function facilityAtStand(p: Point): Facility | null {
-  return FACILITIES.find((f) => dist(facilityStand(f), p) <= FACILITY.useRadius) ?? null;
+/** 施設の真ん中（距離を測る点） */
+export function facilityCenter(f: Facility): Point {
+  return { x: f.x, y: f.y - FACILITY.centerUp };
+}
+
+/** いる場所からミッションができる施設（真ん中から useRadius 以内でいちばん近いもの。正面でなくてもよい。なければ null） */
+export function facilityNear(p: Point): Facility | null {
+  const near = FACILITIES.map((f) => ({ f, d: dist(facilityCenter(f), p) }))
+    .filter((x) => x.d <= FACILITY.useRadius)
+    .sort((a, b) => a.d - b.d)[0];
+  return near?.f ?? null;
 }
 
 // ---------- 進み具合 ----------
@@ -125,7 +133,7 @@ export function startMission(
   player: { origin: number } | null,
 ): { result: 'started' | 'notReady' | 'finished'; mission: Mission } | null {
   if (h.frozen || h.task || h.session || h.walker.target || h.driving) return null;
-  const f = facilityAtStand(h.walker.pos);
+  const f = facilityNear(h.walker.pos);
   if (!f) return null;
   const m = missionAt(f.id);
   if (isFinished(h, m.id)) return { result: 'finished', mission: m };
@@ -137,7 +145,8 @@ export function startMission(
     endsAt: now + MISSION_BOT.workSeconds[m.game],
     willFail: rng() < MISSION_BOT.failChance,
   };
-  faceTo(h.walker, 'up'); // 施設のほうを向く
+  const c = facilityCenter(f);
+  faceTo(h.walker, facingFor(c.x - h.walker.pos.x, c.y - h.walker.pos.y, 'up')); // 施設のほうを向く（どちら側にいても）
   return { result: 'started', mission: m };
 }
 
@@ -173,13 +182,8 @@ export function updateBotTask(h: Harvester, now: number, rng: Rng): MissionEvent
   return finishMission(h, now);
 }
 
-/** そばにある施設（施設の前まで approachRadius 以内でいちばん近いもの。なければ null） */
-export function nearbyFacility(p: Point): Facility | null {
-  const near = FACILITIES.map((f) => ({ f, d: dist(facilityStand(f), p) }))
-    .filter((x) => x.d <= FACILITY.approachRadius)
-    .sort((a, b) => a.d - b.d)[0];
-  return near?.f ?? null;
-}
+/** そばにある施設（facilityNear と同じ） */
+export const nearbyFacility = facilityNear;
 
 /**
  * 「アクション」ボタンで、そばの施設のミッションを始められるか。
@@ -203,6 +207,6 @@ export function goToMission(h: Harvester): ReturnType<typeof missionChance> {
   if (!c || c.state !== 'ready') return c;
   h.claim = null;
   h.waitingFor = null;
-  setTarget(h.walker, facilityStand(c.facility));
+  h.walker.target = null; // その場で始める（次のコマに startMission）
   return c;
 }

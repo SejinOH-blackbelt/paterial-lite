@@ -3,7 +3,7 @@
 
 import { BOT, LANDMARKS, MATCH, MISS_SOUND, SUPPORT, SUSPICION } from './config';
 import { createFieldState, type FieldState, type Harvester } from './harvest';
-import { allMissionsDone, facilityById, facilityStand, TOTAL_UNITS, unitsOf, type MissionEvent } from './missions';
+import { allMissionsDone, facilityById, facilityNear, facilityStand, TOTAL_UNITS, unitsOf, type MissionEvent } from './missions';
 import { faceTo, type Point } from './movement';
 import type { Rng } from './random';
 import { allScanned, createSpyState, patchSize, type SpyEvent, type SpyState } from './spy';
@@ -201,7 +201,8 @@ export function emergencySpot(): Point {
 
 /** p が緊急の呼び出しをできるか（土の祠の鈴の前・回数が残っている） */
 export function canEmergency(m: MatchState, p: Pawn): boolean {
-  return !p.h.frozen && m.phase === 'play' && p.emergencyLeft > 0 && dist(emergencySpot(), p.h.walker.pos) <= MATCH.emergencyRadius;
+  // 土の祠のそば（正面でなくてもよい）なら鳴らせる
+  return !p.h.frozen && m.phase === 'play' && p.emergencyLeft > 0 && facilityNear(p.h.walker.pos)?.id === 'shrine';
 }
 
 /** 会議を始める。置物は全部、みんなに知られる */
