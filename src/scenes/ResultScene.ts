@@ -15,6 +15,7 @@ const REASON: Record<OutcomeReason, string> = {
   caught: '会議で スパイを当てた！',
   scanned: 'スパイが 名物を全部スキャンして、\nミッションも終えた',
   frozen: '動ける市民が スパイと同じ数まで 減った…',
+  strike: '王様の支持度が 0 に… 市民が ストライキ！',
   timeout: '時間切れ… 国の仕事が 終わらなかった',
 };
 

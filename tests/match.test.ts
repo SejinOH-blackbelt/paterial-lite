@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LANDMARKS, MATCH, MISSIONS, SPY, SUSPICION } from '../src/game/config';
+import { LANDMARKS, MATCH, MISSIONS, SPY, SUPPORT, SUSPICION } from '../src/game/config';
 import { createHarvester } from '../src/game/harvest';
 import {
   allMissionsDone,
@@ -8,6 +8,7 @@ import {
   canEmergency,
   castVote,
   checkOutcome,
+  chooseKing,
   createMatch,
   everyoneVoted,
   gauge,
@@ -226,5 +227,54 @@ describe('Botの疑い度', () => {
     expect(hearStamp(m, pawns[0], pawns[1], 'sus')).toBe(true);
     for (let i = 0; i < 10; i++) expect(hearStamp(m, pawns[0], pawns[1], 'sus')).toBe(false);
     expect(botVote(m, pawns[3], createRng(1))).toBeNull(); // 1回分だけでは投票の基準に届かない
+  });
+});
+
+describe('王様パテと支持度', () => {
+  /** 市民の victim に全員が投票する会議（ぬれぎぬ） */
+  const wrongMeeting = (m: ReturnType<typeof setup>['m'], pawns: Pawn[], victim: Pawn, now: number) => {
+    startMeeting(m, pawns[0], 'emergency', null, now);
+    for (const p of pawns) castVote(m, p, victim);
+    return resolveMeeting(m, now + 5);
+  };
+
+  it('プレイヤーが市民側ならプレイヤーが王様、スパイ側なら市民Botの1体が王様', () => {
+    const a = setup(5);
+    expect(chooseKing(a.pawns)).toBe(a.pawns[0]);
+    expect(a.pawns.filter((p) => p.isKing).length).toBe(1);
+    const b = setup(0);
+    const king = chooseKing(b.pawns);
+    expect(king.isPlayer).toBe(false);
+    expect(king.isSpy).toBe(false);
+  });
+
+  it('支持度は最初100。ぬれぎぬで下がり、スパイを当てたときは下がらない', () => {
+    const { m, pawns, spy } = setup();
+    expect(m.support).toBe(SUPPORT.start);
+    const r = wrongMeeting(m, pawns, pawns[1], 5);
+    expect(r.supportLost).toBe(SUPPORT.wrongAccusation);
+    expect(m.support).toBe(SUPPORT.start - SUPPORT.wrongAccusation);
+    startMeeting(m, pawns[0], 'emergency', null, 20);
+    for (const p of pawns) castVote(m, p, spy);
+    expect(resolveMeeting(m, 25).supportLost).toBe(0);
+    expect(m.support).toBe(SUPPORT.start - SUPPORT.wrongAccusation);
+  });
+
+  it('スキップや同票で誰も調べなければ、支持度は下がらない', () => {
+    const { m, pawns } = setup();
+    startMeeting(m, pawns[0], 'emergency', null, 5);
+    for (const p of pawns) castVote(m, p, null);
+    resolveMeeting(m, 10);
+    expect(m.support).toBe(SUPPORT.start);
+  });
+
+  it('支持度が0になると、市民がストライキを起こしてスパイの勝ち', () => {
+    const { m, pawns } = setup();
+    wrongMeeting(m, pawns, pawns[1], 5);
+    expect(m.outcome).toBeNull();
+    wrongMeeting(m, pawns, pawns[2], 20);
+    expect(m.support).toBe(0);
+    expect(m.phase).toBe('over');
+    expect(m.outcome).toMatchObject({ winner: 'spy', reason: 'strike' });
   });
 });

@@ -1,7 +1,7 @@
 // 1試合のルール（ミッション・国の仕事ゲージ・勝敗・呼び出し・会議・投票・罰金と賠償・Botの疑い度）。
 // 画面表示（Phaser）には依存しません。
 
-import { BOT, LANDMARKS, MATCH, MISSIONS, SUSPICION } from './config';
+import { BOT, LANDMARKS, MATCH, MISSIONS, SUPPORT, SUSPICION } from './config';
 import { createFieldState, type FieldState, type Harvester } from './harvest';
 import { faceTo, type Point } from './movement';
 import type { Rng } from './random';
@@ -15,12 +15,14 @@ export interface Pawn {
   h: Harvester;
   isSpy: boolean;
   isPlayer: boolean;
+  /** 和の国の王様パテ（王冠をかぶる）。プレイヤーが市民側ならプレイヤー、スパイ側なら市民Botの1体 */
+  isKing?: boolean;
   /** 緊急の呼び出しの残り回数 */
   emergencyLeft: number;
 }
 
 export type Winner = 'citizens' | 'spy';
-export type OutcomeReason = 'gauge' | 'caught' | 'scanned' | 'frozen' | 'timeout';
+export type OutcomeReason = 'gauge' | 'caught' | 'scanned' | 'frozen' | 'strike' | 'timeout';
 
 export interface Outcome {
   winner: Winner;
@@ -49,6 +51,8 @@ export interface MeetingResult {
   /** 罰金（スパイから没収した数）・賠償（ぬれぎぬのパテが受け取った数） */
   fine: number;
   compensation: number;
+  /** ぬれぎぬで下がった王様の支持度 */
+  supportLost: number;
 }
 
 export interface MatchState {
@@ -69,6 +73,19 @@ export interface MatchState {
   suspicion: Map<Pawn, Map<Pawn, number>>;
   /** Botが置物を見つけた時刻（少し間をおいて呼び出すため） */
   spotted: Map<Pawn, number>;
+  /** 王様の支持度（0 になると市民がストライキを起こして、スパイの勝ち） */
+  support: number;
+}
+
+/**
+ * 王様パテを決める：プレイヤーが市民側ならプレイヤー、スパイ側なら市民Botの最初の1体。
+ * スパイを決めたあとに呼ぶ。
+ */
+export function chooseKing(pawns: Pawn[]): Pawn {
+  const player = pawns.find((p) => p.isPlayer);
+  const king = player && !player.isSpy ? player : pawns.find((p) => !p.isSpy && !p.isPlayer)!;
+  for (const p of pawns) p.isKing = p === king;
+  return king;
 }
 
 export function createMatch(pawns: Pawn[], now: number, rng: Rng): MatchState {
@@ -86,6 +103,7 @@ export function createMatch(pawns: Pawn[], now: number, rng: Rng): MatchState {
     known: new Set(),
     suspicion: new Map(pawns.map((p) => [p, new Map()])),
     spotted: new Map(),
+    support: SUPPORT.start,
   };
 }
 
@@ -139,6 +157,7 @@ export function checkOutcome(m: MatchState, now: number): Outcome | null {
   const spies = m.pawns.filter((p) => p.isSpy).length;
   const active = citizens.filter((p) => !p.h.frozen).length;
   if (citizens.length > 0 && active <= spies) o = { winner: 'spy', reason: 'frozen', time: now };
+  else if (m.support <= 0) o = { winner: 'spy', reason: 'strike', time: now };
   else if (allScanned(m.spy) && allMissionsDone(spyPawn.h)) o = { winner: 'spy', reason: 'scanned', time: now };
   else if (gauge(m) >= 1) o = { winner: 'citizens', reason: 'gauge', time: now };
   else if (playedSeconds(m, now) >= MATCH.timeLimit) o = { winner: 'spy', reason: 'timeout', time: now };
@@ -279,7 +298,7 @@ export function resolveMeeting(m: MatchState, now: number): MeetingResult {
     } else if (n === bestN) tie = true;
   }
   const target = tie ? null : best;
-  const result: MeetingResult = { target, wasSpy: !!target?.isSpy, tally, fine: 0, compensation: 0 };
+  const result: MeetingResult = { target, wasSpy: !!target?.isSpy, tally, fine: 0, compensation: 0, supportLost: 0 };
 
   if (target?.isSpy) {
     // スパイを当てた：強制送還（てへぺろ）。集めた素材の一部を罰金として没収
@@ -295,6 +314,13 @@ export function resolveMeeting(m: MatchState, now: number): MeetingResult {
       voter.h.materials -= pay;
       target.h.materials += pay;
       result.compensation += pay;
+    }
+    // 住民を疑ったので、王様の支持度が下がる。0 になったら、市民がストライキ（スパイの勝ち）
+    result.supportLost = Math.min(m.support, SUPPORT.wrongAccusation);
+    m.support -= result.supportLost;
+    if (m.support <= 0) {
+      m.outcome = { winner: 'spy', reason: 'strike', time: now };
+      m.phase = 'over';
     }
   }
   m.history.push({ meeting, result });

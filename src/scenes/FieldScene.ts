@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { BOT, BOT_PROFILES, COLORS, LANDMARKS, MATCH, MISSIONS, PATE, PLAYER_PART, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { BOT, BOT_PROFILES, COLORS, KING_PART, LANDMARKS, MATCH, MISSIONS, PATE, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   approachNearby,
@@ -17,6 +17,7 @@ import {
   botWantsToReport,
   canEmergency,
   checkOutcome,
+  chooseKing,
   createMatch,
   gauge,
   missionProgress,
@@ -114,6 +115,10 @@ export class FieldScene extends Phaser.Scene {
   private hudMissionKey = -1;
   private timeText!: Phaser.GameObjects.Text;
   private missionText!: Phaser.GameObjects.Text;
+  /** 王様の支持度（画面の右上・ミッションの下） */
+  private supportFill!: Phaser.GameObjects.Rectangle;
+  private supportText!: Phaser.GameObjects.Text;
+  private hudSupport = -1;
   /** 呼び出しボタン（置物のそば・鳥居のそばでだけ出る） */
   private callButton!: Phaser.GameObjects.Container;
   private callLabel!: Phaser.GameObjects.Text;
@@ -645,6 +650,10 @@ export class FieldScene extends Phaser.Scene {
     );
     this.field = this.match.field;
     this.spy = this.match.spy;
+    // 王様パテ（プレイヤーが市民側なら自分）は王冠をかぶる
+    const king = chooseKing(this.match.pawns);
+    king.part = KING_PART;
+    this.pates.find((e) => e.pawn === king)!.view.setHeadPart(KING_PART);
     this.spyMind = this.isPlayerSpy ? null : createSpyBotMind();
   }
 
@@ -664,9 +673,23 @@ export class FieldScene extends Phaser.Scene {
     this.gaugeText = this.hud(label(this, 246, 22, '', 13, INK).setStroke(INK, 0).setDepth(9500));
     this.timeText = this.hud(label(this, 306, 21, '', 17).setDepth(9500));
     this.missionText = this.hud(label(this, 180, 61, '', 13, INK).setStroke(INK, 0).setDepth(9500));
+    // 王様の支持度：0 になると市民がストライキ
+    this.hudSupport = -1;
+    this.hud(panel(this, 290, 95, 128, 22, COLORS.uiPaper).setDepth(9450));
+    this.hud(this.add.graphics().setDepth(9451)
+      .fillStyle(COLORS.ink).fillRoundedRect(268, 89, 72, 12, 4)
+      .fillStyle(COLORS.uiPaperEdge).fillRect(270, 91, 68, 8));
+    this.supportFill = this.hud(this.add.rectangle(270, 91, 68, 8, COLORS.uiRose).setOrigin(0).setDepth(9452));
+    this.hud(label(this, 247, 94, '支持度', 11, INK).setStroke(INK, 0).setDepth(9500));
+    this.supportText = this.hud(label(this, 304, 94, '', 10, INK).setStroke(INK, 0).setDepth(9500));
   }
 
   private drawHud(heard: number): void {
+    if (this.match.support !== this.hudSupport) {
+      this.hudSupport = this.match.support;
+      this.supportFill.setScale(Math.max(0, this.match.support) / SUPPORT.start, 1);
+      this.supportText.setText(`${Math.max(0, this.match.support)}`);
+    }
     const progress = gauge(this.match);
     this.gaugeFill.setScale(progress, 1);
     const percent = Math.floor(progress * 100);
@@ -841,8 +864,8 @@ export class FieldScene extends Phaser.Scene {
     this.scanButton = make(48, 'スキャン', 0x9fd3e6);
     this.prankButton = make(SCREEN.width - 48, 'イタズラ', 0xf2a7a0);
     this.fragmentsText = this.add
-      .text(SCREEN.width / 2, 80, '', { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#ffd43b' })
-      .setOrigin(0.5)
+      .text(16, 95, '', { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#ffd43b' })
+      .setOrigin(0, 0.5)
       .setDepth(9500)
       .setStroke('#2b1d14', 4)
       .setScrollFactor(0);

@@ -1,6 +1,6 @@
-// 役の発表：「きみは 市民」か「きみは スパイ」。スパイをここで決めて、採取場に渡す
+// 役の発表：「きみは 王様」（市民側）か「きみは スパイ」。スパイをここで決めて、採取場に渡す
 import Phaser from 'phaser';
-import { COLORS, SCREEN } from '../game/config';
+import { COLORS, KING_PART, SCREEN } from '../game/config';
 import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
 import { PateView } from './PateView';
@@ -39,9 +39,9 @@ export class RoleScene extends Phaser.Scene {
     this.add.ellipse(x, 371, 118, 24, isSpy ? COLORS.uiStone : COLORS.uiPaperEdge).setStrokeStyle(2, trim);
     panel(this, x, 460, 292, 112, isSpy ? COLORS.uiStone : COLORS.scanPaper);
     label(this, x, 150, 'きみは', 26);
-    label(this, x, 205, isSpy ? 'スパイ' : '市民', 56, cssColor(COLORS.uiHoney));
+    label(this, x, 205, isSpy ? 'スパイ' : '王様', 56, cssColor(COLORS.uiHoney));
     this.pate = new PateView(this, SCREEN.width / 2, 370);
-    this.pate.setHeadPart('flower');
+    this.pate.setHeadPart(isSpy ? 'flower' : KING_PART);
     this.pate.setScale(1.6);
     if (isSpy) this.pate.setPatch(0.7, 0.4, 5);
     label(
@@ -50,7 +50,7 @@ export class RoleScene extends Phaser.Scene {
       460,
       isSpy
         ? 'バイキングから来た スパイ。\n茶色に塗って 和の国にまぎれこんだ。\n名物を全部スキャンして、\n自分のミッションも終えよう。'
-        : '和の国の 市民。\nミッションをこなして ゲージを満タンに。\n置物を見つけたら 呼び出して、\nスパイを当てよう。',
+        : '和の国の 王様パテ。\nミッションをこなして ゲージを満タンに。\nスパイを当てよう。でも ぬれぎぬは\n支持度が下がる。0 でストライキ！',
       16,
     );
     const go = () => this.scene.start('Field', { spyIndex } satisfies RoleData);

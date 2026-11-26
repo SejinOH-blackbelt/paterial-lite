@@ -262,11 +262,12 @@ export class MeetingScene extends Phaser.Scene {
       color = cssColor(COLORS.uiHoney);
       this.ctx.audio.cracker();
     } else {
-      text = `ぬれぎぬ！ ${result.target === player ? 'きみ' : nameOf(result.target)}は 市民だった\n投票した人から 賠償 ${result.compensation}`;
+      text = `ぬれぎぬ！ ${result.target === player ? 'きみ' : nameOf(result.target)}は 市民だった\n賠償 ${result.compensation}・王様の支持度 -${result.supportLost}`;
+      if (match.support <= 0) text = `ぬれぎぬ！ 王様の支持度が 0 に…\n市民たちが ストライキを 始めた！`;
       color = cssColor(COLORS.uiRose);
       this.ctx.audio.zukoo();
     }
-    panel(this, CENTER.x, 480, 322, 36, COLORS.uiWood).setDepth(19);
+    panel(this, CENTER.x, 480, 322, 40, COLORS.uiWood).setDepth(19);
     const box = label(this, CENTER.x, 478, text, 14, color);
     box.setDepth(20);
     if (result.target) {
