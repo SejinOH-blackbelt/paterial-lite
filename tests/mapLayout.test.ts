@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { PATE } from '../src/game/config';
 import {
   canWalk, EARTH_SHRINE, ELEMENT_ZONES, EXIT_CANDIDATES, findMapRoute, MAP_BRIDGES,
-  MAP_CENTER, MAP_GRAPH, MAP_LANDMARKS, MAP_RESOURCES, MAP_ROADS, MAP_WORLD,
+  MAP_CENTER, MAP_GRAPH, MAP_LANDMARKS, MAP_OUTLINE, MAP_RESOURCES, MAP_ROADS, MAP_WORLD,
   SWITCH_CANDIDATES, VAULT_CANDIDATES, YORISHIRO_SHRINE,
 } from '../src/game/mapLayout';
 
@@ -26,14 +27,37 @@ describe('五つ浜の地図', () => {
     }
   });
 
-  it.each(bodies)('%s の体なら自分のエリアに早く着く灯籠がある', (body) => {
-    const far = SWITCH_CANDIDATES.find(({ id }) => id === `${body}-switch-4`)!;
-    expect(SWITCH_CANDIDATES.filter(({ element }) => element === body)).toHaveLength(6);
+  it.each(bodies)('%s の体では3秒以上の近道がある灯籠が2つ以上ある', (body) => {
+    const switches = SWITCH_CANDIDATES.filter(({ element }) => element === body);
+    expect(switches).toHaveLength(6);
     expect(MAP_RESOURCES.filter(({ element }) => element === body)).toHaveLength(2);
-    const shortcut = findMapRoute(MAP_CENTER, far, body)!;
-    for (const other of bodies.filter((element) => element !== body)) {
-      const detour = findMapRoute(MAP_CENTER, far, other)!;
-      expect(detour.distance - shortcut.distance).toBeGreaterThan(110);
+    const faster = switches.filter((site) => {
+      const detour = findMapRoute(MAP_CENTER, site, body, { roadsOnly: true })!;
+      const shortcut = findMapRoute(MAP_CENTER, site, body)!;
+      return (detour.distance - shortcut.distance) / PATE.speed >= 3;
+    });
+    expect(faster.length).toBeGreaterThanOrEqual(2);
+    for (const number of [4, 6]) {
+      const site = switches.find(({ id }) => id === body + '-switch-' + number)!;
+      expect(faster, site.id).toContain(site);
+    }
+  });
+
+  it('道と橋だけで最遠の灯籠まで15秒以内に着く', () => {
+    for (const site of SWITCH_CANDIDATES) {
+      const route = findMapRoute(MAP_CENTER, site, site.element, { roadsOnly: true })!;
+      expect(route.distance / PATE.speed, site.id).toBeLessThanOrEqual(15);
+    }
+  });
+
+  it('島の実寸は縦長で、全ゾーンに誰でも使える渡り道がある', () => {
+    const xs = MAP_OUTLINE.map(({ x }) => x);
+    const ys = MAP_OUTLINE.map(({ y }) => y);
+    const ratio = (Math.max(...xs) - Math.min(...xs)) / (Math.max(...ys) - Math.min(...ys));
+    expect(ratio).toBeGreaterThanOrEqual(0.65);
+    expect(ratio).toBeLessThanOrEqual(0.8);
+    for (const body of bodies) {
+      expect(MAP_BRIDGES.some(({ element }) => element === body), body).toBe(true);
     }
   });
 

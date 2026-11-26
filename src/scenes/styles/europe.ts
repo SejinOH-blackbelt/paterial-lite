@@ -1,5 +1,5 @@
 import type Phaser from 'phaser';
-import { LAND_MARKS, TILE_SIZE, elementPigment, line, motif, oval, paint, registerStyle, styleKeys } from './china';
+import { LAND_MARKS, TILE_SIZE, drawDepleted, drawSwitch, elementPigment, line, motif, oval, paint, registerStyle, styleKeys } from './china';
 
 const pen = '#52433c';
 const paper = '#fff3d8';
@@ -49,26 +49,28 @@ export const EUROPE_TEX = styleKeys('europe');
 export function makeEuropeTextures(scene: Phaser.Scene): void {
   registerStyle(scene, EUROPE_TEX, {
     resource(ctx, e, empty) {
-      oval(ctx, 28, 48, 25, 3, '#52433c29');
-      wash(ctx, 'M5 43 Q10 38 19 40 Q31 37 41 40 Q49 40 52 44 L47 48 Q29 52 11 48Z', empty ? '#c1b7ae' : '#ada384', 52);
+      oval(ctx, 28, 48, 24, 2.5, '#52433c29');
       if (empty) {
-        line(ctx, 'M12 44 Q23 40 32 43 T46 44 M17 47 L19 45 M34 47 L37 45', '#786d63', 1.3);
-        motif(ctx, symbols[e], 28, 39, 9, '#9a9187');
-      } else {
-        wash(ctx, finds[e], elementPigment(e), 44);
-        if (e === 'fire') paint(ctx, marks[e], '#ffe2a0', '#a65848', 0.8);
-        else line(ctx, marks[e], paper, 1.5);
-        line(ctx, 'M4 46 l2-3 m2 4 l2-2 m34 2 l2-4 m2 5 l2-3', '#687d56');
+        const faded = { fire: '#9c877f', water: '#c3aa8d', earth: '#a9866d', wind: '#929771', thunder: '#9d98a7' };
+        drawDepleted(ctx, e, faded[e], pen, '#f8e5c9', 1.25);
+        return;
       }
+      ctx.translate(0, 3);
+      ctx.scale(1, 1.08);
+      wash(ctx, finds[e], elementPigment(e), 44);
+      if (e === 'fire') paint(ctx, marks[e], '#ffe2a0', '#a65848', 0.8);
+      else line(ctx, marks[e], paper, 1.5);
     },
     switch(ctx, e, on) {
-      if (on) oval(ctx, 20, 22, 19, 19, '#f7d98258');
-      wash(ctx, 'M9 46 H31 L34 51 Q32 54 20 54 Q9 54 6 51Z', '#aba79a', 54);
-      wash(ctx, 'M11 47 V22 Q11 15 20 8 Q29 16 29 22 V47Z', '#c9b8a3', 48);
-      paint(ctx, 'M14 40 V24 Q14 18 20 15 Q26 18 26 24 V40Z', on ? elementPigment(e) : '#88817e', pen, 1.25);
-      motif(ctx, symbols[e], 20, 29, 12, on ? paper : '#cec5b8');
-      paint(ctx, 'M6 22 L20 4 L34 22 L30 23 L20 11 L10 23Z', '#b36d66', pen, 1.4);
-      line(ctx, 'M12 42 H28 M11 44 H16 M25 44 H29 M11 51 H29 M19 47 V50', '#75665c');
+      drawSwitch(ctx, e, on, {
+        body: on ? '#bf795e' : '#a28c78',
+        trim: on ? '#ffe0a3' : '#c3ad87',
+        ink: pen,
+        roof: 'M7 17 L20 5 L33 17Z',
+        shell(path, color) {
+          wash(ctx, path, color, 54);
+        },
+      });
     },
     facility(ctx, kind) {
       oval(ctx, 38, 75, 33, 4, '#52433c30');
@@ -104,7 +106,7 @@ export function makeEuropeTextures(scene: Phaser.Scene): void {
       line(ctx, 'M16 71 H29 M42 71 H60 M13 74 l1-3 M62 75 l2-4', '#766859');
     },
     tile(ctx, tile) {
-      const hues = { ground: '#bac394', road: '#d8c3aa', fire: '#bd8276', water: '#88bfc5', earth: '#aa9886', wind: '#c1d1bc', thunder: '#8997b6' };
+      const hues = { ground: '#bac394', road: '#d8c3aa', fire: '#bd8276', water: '#88bfc5', earth: '#aa9886', wind: '#487a71', thunder: '#51456d' };
       ctx.fillStyle = hues[tile];
       ctx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
       for (let i = 0; i < 10; i++) {
@@ -112,7 +114,11 @@ export function makeEuropeTextures(scene: Phaser.Scene): void {
         const y = 5 + (i * 7) % 23;
         oval(ctx, x, y, 3 + i % 2, 2, i % 2 ? '#fff5df34' : '#725c6222');
       }
-      line(ctx, LAND_MARKS[tile], tile === 'fire' || tile === 'water' || tile === 'wind' ? '#fff2ccad' : '#534d5270', 1.1);
+      if (tile === 'wind' || tile === 'thunder') {
+        line(ctx, LAND_MARKS[tile], tile === 'wind' ? '#e5f9d7' : '#ffe2a1', 2);
+        return;
+      }
+      line(ctx, LAND_MARKS[tile], tile === 'fire' || tile === 'water' ? '#fff2ccad' : '#534d5270', 1.1);
     },
     icon(ctx, e) {
       oval(ctx, 32, 34, 28, 27, '#52433c28');

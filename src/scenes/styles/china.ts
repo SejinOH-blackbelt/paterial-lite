@@ -102,9 +102,114 @@ export const LAND_MARKS = {
   fire: 'M0 9 H6 L11 15 21 12 27 9 H32 M11 15 L10 23 16 27 V32 M16 0 V3 L21 6',
   water: 'M0 8 Q4 5 8 8 T16 8 T24 8 T32 8 M0 24 Q4 21 8 24 T16 24 T24 24 T32 24 M10 16 Q14 13 18 16',
   earth: 'M3 16 l5-9 7-2 6 7-3 6H7Z M8 7 l3 5 10 0 M19 27 l3-6 5 1 3 5-4 2z',
-  wind: 'M0 10 Q5 10 8 7 Q12 3 16 6 Q18 9 14 10 M18 12 Q25 10 32 10 M5 23 Q9 20 17 21 Q24 22 27 17 M19 27 q5 0 8-3',
-  thunder: 'M3 12 Q6 7 10 11 Q15 3 20 11 Q26 9 29 15 H4Z M18 17 l-5 6 h4 l-4 6 M22 26 h6 M4 26 h5',
+  wind: 'M2 15 H19 Q28 15 28 8 Q28 3 23 3 Q19 3 18 7 M4 21 H23 Q29 21 29 25 Q29 30 24 29 M2 27 H15',
+  thunder: 'M3 13 Q4 8 9 9 Q12 2 19 7 Q25 5 29 11 L28 13Z M19 15 L12 22 H17 L13 29 L24 19 H18Z M6 18 l-3 5 M28 23 l-3 5',
 } as const;
+
+// ミッションの道具は、国をまたいでも輪郭で見分けられるようにする。
+type SwitchStyle = {
+  body: string;
+  trim: string;
+  ink: string;
+  roof: string;
+  shell: (path: string, color: string) => void;
+};
+
+export function drawSwitch(ctx: Ctx, e: ElementId, on: boolean, style: SwitchStyle): void {
+  const { body, trim, ink, roof, shell } = style;
+  const dark = '#42343c';
+  const light = '#fff5bd';
+  oval(ctx, 20, 53, 17, 2, '#28213335');
+
+  switch (e) {
+    case 'fire':
+      if (on) {
+        oval(ctx, 17, 22, 14, 17, '#ffb83b44');
+        paint(ctx, 'M10 29 Q5 21 13 15 Q12 22 16 21 Q21 14 18 5 Q30 13 27 24 L24 29Z', '#ff8b29', ink, 1.4);
+        paint(ctx, 'M14 27 Q14 22 20 17 Q19 23 24 27Z', light);
+      }
+      shell('M4 51 V39 Q4 24 17 23 Q30 24 30 38 V51Z', body);
+      paint(ctx, 'M9 48 V39 Q9 31 17 31 Q25 31 25 39 V48Z', on ? '#ff711d' : dark, ink, 1.5);
+      if (on) paint(ctx, 'M12 46 Q9 41 15 38 L17 42 Q21 38 19 34 Q26 39 22 46Z', light);
+      else line(ctx, 'M12 45 H22', '#ad8e81', 2);
+      paint(ctx, 'M30 19 Q33 16 36 19 V39 Q41 46 34 49 Q27 50 28 44 Q28 41 30 39Z', trim, ink, 1.5);
+      line(ctx, on ? 'M33 22 V44' : 'M33 38 V44', on ? '#e63829' : '#78656a', 2);
+      oval(ctx, 33, 44, 2.7, 2.7, on ? '#e63829' : '#78656a');
+      break;
+    case 'water':
+      shell('M3 36 H37 L32 50 Q20 55 8 50Z', body);
+      line(ctx, 'M12 39 L14 50 M20 40 V52 M28 39 L26 50', ink, 1.2);
+      oval(ctx, 20, 36, 17, 5.5, on ? '#33dcef' : '#536d76', ink, 1.7);
+      line(ctx, on ? 'M14 32 L33 9' : 'M16 38 L34 19', trim, 3);
+      paint(ctx, on
+        ? 'M25 16 Q20 11 23 6 Q29 1 34 6 Q38 10 33 15Z'
+        : 'M10 36 Q15 31 21 35 L20 39 Q15 43 10 36Z', on ? '#a8e5c1' : '#8e9383', ink, 1.4);
+      line(ctx, on ? 'M24 7 L32 13 M27 5 L34 10 M24 12 L30 5' : 'M12 35 L17 39 M15 34 L19 37', ink);
+      if (on) {
+        paint(ctx, 'M8 36 L4 24 L12 31 L15 23 L18 35 L27 31 L33 23 L31 35Z', '#91edff', ink, 1.2);
+        oval(ctx, 4, 19, 2, 3, '#53cde8');
+        oval(ctx, 36, 18, 2, 3, '#53cde8');
+      }
+      break;
+    case 'earth':
+      shell('M6 49 L10 41 H30 L34 49 V53 H6Z', body);
+      oval(ctx, 20, 40, 17, 5, trim, ink, 1.8);
+      shell('M7 38 V13 H12 V35 H27 V13 H33 V38 H27 L25 33 H14 L12 38Z', body);
+      oval(ctx, 20, 13, 16, 4, trim, ink, 1.7);
+      line(ctx, on ? 'M20 10 V28 M13 28 H27' : 'M20 9 V21 M13 21 H27', ink, 2.4);
+      paint(ctx, on ? 'M13 38 V32 L17 29 H23 L27 32 V38Z' : 'M11 38 Q12 34 20 34 Q28 34 29 38Z',
+        on ? '#ffa35e' : '#a27a65', ink, 1.5);
+      if (on) {
+        line(ctx, 'M3 27 L6 30 M2 36 L6 35 M34 30 L38 26 M34 35 L38 36', '#ffac38', 2.2);
+        line(ctx, 'M16 33 H24 M16 36 H24', light);
+      }
+      break;
+    case 'wind': {
+      shell('M8 52 L15 24 H25 L32 52Z', body);
+      line(ctx, 'M13 46 H27 M15 40 H25', ink, 1.3);
+      ctx.save();
+      ctx.translate(20, 22);
+      if (on) {
+        oval(ctx, 0, 0, 17, 17, '#67e8e46b');
+        line(ctx, 'M-17-2 A17 17 0 0 1 3-17 M17 2 A17 17 0 0 1 -3 17', '#43a8b2', 2.3);
+        ctx.rotate(Math.PI / 4);
+      }
+      for (let blade = 0; blade < 4; blade++) {
+        paint(ctx, 'M-1 0 L-4-13 L2-16 L7-13 L3-4Z', on ? '#d9ffed' : trim, ink, 1.5);
+        ctx.rotate(Math.PI / 2);
+      }
+      oval(ctx, 0, 0, 3.5, 3.5, on ? '#fafc9c' : body, ink, 1.5);
+      ctx.restore();
+      break;
+    }
+    case 'thunder':
+      if (on) oval(ctx, 20, 23, 18, 18, '#ffdc5669');
+      shell('M10 53 L13 48 H17 V32 H23 V48 H27 L30 53Z', body);
+      paint(ctx, 'M10 17 H30 L29 33 L25 37 H15 L11 33Z', on ? '#ffdb39' : dark, ink, 2);
+      if (on) {
+        paint(ctx, 'M19 19 H25 L21 25 H25 L16 33 L18 26 H15Z', '#fffce2');
+        line(ctx, 'M3 21 H7 M33 21 H37 M3 32 L7 30 M33 30 L37 32 M20 3 V6', '#f49c21', 2);
+      } else line(ctx, 'M17 20 V32 M23 20 V32', trim, 1.4);
+      shell(roof, body);
+      line(ctx, 'M13 15 H27 M14 50 H26', trim, 1.3);
+      break;
+  }
+}
+
+// 採り尽くしたあとに残る、灰・水跡・掘り跡・株・結晶の欠片。
+const depleted = {
+  fire: ['M5 45 Q13 40 21 38 Q29 32 37 38 L49 45 Q37 51 14 49Z M13 37 L16 32 L35 43 L32 47Z', 'M18 44 L38 32 L42 35 L23 48Z M8 45 H11 M39 45 H44'],
+  water: ['M3 43 Q5 33 18 30 Q33 27 49 34 Q55 38 51 45 Q39 52 15 49Z', 'M7 40 L17 39 L24 43 L22 49 M24 43 L34 40 L37 33 M34 40 L48 43 M17 39 L15 32'],
+  earth: ['M4 46 L10 39 L19 39 L22 31 L36 28 L35 35 L47 37 L52 45 L42 49 H15Z', 'M8 45 H21 L25 37 L38 35 M22 46 H38 L43 41 M39 46 H46'],
+  wind: ['M7 47 L13 43 L14 32 L22 30 L21 45 L25 46 L28 26 L37 25 L34 46 L38 47 L42 34 L49 33 L46 48Z', 'M14 32 L22 30 M28 26 L37 25 M42 34 L49 33 M16 36 L15 44 M31 30 L29 44'],
+  thunder: ['M6 47 L10 38 L20 35 L22 45 L17 49Z M24 46 L27 32 L35 25 L40 35 L36 46Z M40 47 L45 40 L52 43 L48 49Z', 'M10 38 L17 43 L17 49 M27 32 L34 37 L40 35 M34 37 L31 45 M45 40 L47 45'],
+} as const;
+
+export function drawDepleted(ctx: Ctx, e: ElementId, fill: string, ink: string, accent: string, width: number): void {
+  const [shape, details] = depleted[e];
+  paint(ctx, shape, fill, ink, width);
+  line(ctx, details, accent, 1.6);
+}
 
 const ink = '#44201d';
 const gold = '#ffd475';
@@ -138,25 +243,27 @@ export const CHINA_TEX = styleKeys('china');
 export function makeChinaTextures(scene: Phaser.Scene): void {
   registerStyle(scene, CHINA_TEX, {
     resource(ctx, e, empty) {
-      oval(ctx, 28, 48, 25, 3, '#44201d32');
-      paint(ctx, 'M4 39 Q28 33 52 39 L47 46 L40 50 H16 L9 46Z', empty ? '#a99a89' : red, ink, 2.5);
+      oval(ctx, 28, 48, 24, 2.5, '#44201d28');
       if (empty) {
-        oval(ctx, 28, 39, 18, 5, '#67574e');
-        motif(ctx, seal[e], 28, 37, 9, '#d1c1ad');
-      } else {
-        paint(ctx, sources[e], elementPigment(e), ink, 2.7);
-        paint(ctx, facets[e], e === 'thunder' ? '#becfee' : '#fff3b2a0');
+        const faded = { fire: '#897066', water: '#bc9c78', earth: '#987b5a', wind: '#85855f', thunder: '#84798c' };
+        drawDepleted(ctx, e, faded[e], ink, '#ecd2a7', 2);
+        return;
       }
-      line(ctx, 'M12 44 H21 V47 H28 V44 H35 V47 H43', empty ? '#ebe0cf' : gold, 1.5);
+      ctx.translate(0, 4);
+      ctx.scale(1, 1.06);
+      paint(ctx, sources[e], elementPigment(e), ink, 2.7);
+      paint(ctx, facets[e], e === 'thunder' ? '#becfee' : '#fff3b2a0');
     },
     switch(ctx, e, on) {
-      if (on) oval(ctx, 20, 26, 19, 21, '#ffcf5b50');
-      paint(ctx, 'M4 50 L11 43 H29 L36 50 V53 H4Z', '#8c4535', ink, 2.6);
-      paint(ctx, 'M9 17 H31 V43 H9Z', red, ink, 2.4);
-      paint(ctx, 'M13 22 H27 V40 H13Z', on ? elementPigment(e) : '#644747', gold, 1.25);
-      motif(ctx, seal[e], 20, 31, 13, on ? '#fff4c6' : '#c7a99a');
-      paint(ctx, 'M2 15 Q11 17 14 6 H26 Q29 17 38 15 Q35 21 31 21 H9 Q4 21 2 15Z', '#973930', ink, 2.6);
-      line(ctx, 'M7 17 Q15 17 17 8 M33 17 Q25 17 23 8 M11 51 H29', gold, 1.4);
+      drawSwitch(ctx, e, on, {
+        body: on ? red : '#91574a',
+        trim: on ? gold : '#c7a372',
+        ink,
+        roof: 'M3 12 Q11 13 15 6 H25 Q29 13 37 12 L32 17 H8Z',
+        shell(path, color) {
+          paint(ctx, path, color, ink, 2.2);
+        },
+      });
     },
     facility(ctx, kind) {
       oval(ctx, 38, 75, 34, 4, '#44201d38');
@@ -187,13 +294,17 @@ export function makeChinaTextures(scene: Phaser.Scene): void {
       line(ctx, 'M15 72 H24 V70 H30 V73 H46 V70 H52 V72 H61', '#fbe1a0', 1.3);
     },
     tile(ctx, tile) {
-      const hues = { ground: '#dfbd84', road: '#d8bb9b', fire: '#8f4539', water: '#459ba5', earth: '#ae8465', wind: '#b8cbc9', thunder: '#6d7994' };
+      const hues = { ground: '#dfbd84', road: '#d8bb9b', fire: '#8f4539', water: '#459ba5', earth: '#ae8465', wind: '#437477', thunder: '#44335e' };
       ctx.fillStyle = hues[tile];
       ctx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+      if (tile === 'wind' || tile === 'thunder') {
+        line(ctx, LAND_MARKS[tile], tile === 'wind' ? '#e0fff0' : '#ffcf72', 2);
+        return;
+      }
       line(ctx, LAND_MARKS[tile], tile === 'fire' ? '#ffa55b' : '#57372b42', 2);
       if (tile === 'ground') {
         line(ctx, 'M9 25 H5 V20 H13 V28 H20 M20 13 H26 V6 H23 V10 H20', '#f2d29b', 1.4);
-      } else if (tile === 'water' || tile === 'wind' || tile === 'thunder') {
+      } else if (tile === 'water') {
         line(ctx, 'M7 19 Q4 19 5 16 Q7 13 10 15 Q14 10 18 14 Q24 13 24 16 Q24 19 21 19 H13', '#fff7d06e', 1.2);
       }
     },

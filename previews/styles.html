@@ -12,7 +12,7 @@
     header { border-top: 5px solid #362923; padding: 1rem 0 1.4rem; }
     header p { margin: 0 0 .35rem; font-size: .8rem; font-weight: 800; letter-spacing: .14em; }
     h1 { margin: 0; font-family: Georgia, "Yu Mincho", serif; font-size: clamp(1.5rem, 5vw, 2.5rem); }
-    .scroll { overflow: auto; max-height: 78dvh; border: 1px solid #bcb1a2; background: #fffaf0; }
+    .scroll { overflow-x: auto; border: 1px solid #bcb1a2; background: #fffaf0; }
     .scroll:focus-visible { outline: 3px solid #6f4939; outline-offset: 2px; }
     table { width: 100%; min-width: 39rem; border-spacing: 0; table-layout: fixed; }
     thead th { position: sticky; top: 0; z-index: 3; padding: .7rem .25rem; color: #fffaf0; background: #41332b; }
@@ -33,7 +33,6 @@
     .missing { color: #716557; }
     @media (max-width: 600px) {
       main { width: calc(100% - 1rem); padding-top: 1rem; }
-      .scroll { max-height: 80dvh; }
     }
   </style>
 </head>
@@ -41,7 +40,7 @@
   <main>
     <header><p>PATERIAL LITE</p><h1>国の絵柄見本</h1></header>
     <p id="status" role="status">絵を描画しています。</p>
-    <div class="scroll" tabindex="0" role="region" aria-label="国の絵柄比較表。横と縦にスクロールできます">
+    <div class="scroll" tabindex="0" role="region" aria-label="国の絵柄比較表。横にスクロールできます">
       <table aria-label="国の絵柄比較">
         <thead><tr>
           <th scope="col">種類</th><th scope="col">和</th><th scope="col">中華風</th>

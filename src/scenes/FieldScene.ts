@@ -109,7 +109,7 @@ import { PAD_TONES, ScanGameView } from './ScanGameView';
 import { MissionGameView } from './MissionGameView';
 import { DRESSING_TEX, FACILITY_SIZE, FACILITY_TEX, makeFacilityTextures } from './facilityTextures';
 import { ELEMENT_RES_CHIP_COLOR, ELEMENT_RES_EMPTY_TEX, ELEMENT_RES_TEX, makeResourceTextures, RES_SIZE } from './resourceTextures';
-import { makeSpotTextures, SPOT_TEX } from './spotTextures';
+import { makeMissionArt, MISSION_SPOT_TEX as SPOT_TEX } from './missionArt';
 import { ELEMENT_COLOR } from './elementIcons';
 import { drawGround, drawPart, makeTextures, TEX } from './textures';
 
@@ -298,7 +298,7 @@ export class FieldScene extends Phaser.Scene {
   create(): void {
     makeTextures(this);
     makeResourceTextures(this);
-    makeSpotTextures(this);
+    makeMissionArt(this); // スイッチの絵（ミッションの中身が分かる道具の形。Codex 作）
     makePartTextures(this);
     makeSpyTextures(this);
     makeFacilityTextures(this);

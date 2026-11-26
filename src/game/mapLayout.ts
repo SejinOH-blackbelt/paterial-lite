@@ -9,7 +9,7 @@ interface Road {
   readonly points: readonly MapPoint[];
   readonly width: number;
 }
-interface Bridge extends Road { readonly element: ElementId }
+interface Bridge extends Road { readonly element: ElementId; readonly name: string }
 interface Zone {
   readonly element: ElementId;
   readonly name: string;
@@ -17,22 +17,25 @@ interface Zone {
   readonly label: MapPoint;
 }
 
-export const MAP_WORLD = { width: 820, height: 870 };
-export const MAP_CENTER: Place = { id: 'center', name: '中央広場', x: 410, y: 435 };
-export const PLAZA_RADIUS = 76;
+export const MAP_WORLD = { width: 1880, height: 2680 };
+export const MAP_CENTER: Place = {
+  id: 'center', name: '中央広場', x: MAP_WORLD.width / 2, y: MAP_WORLD.height / 2,
+};
+export const PLAZA_RADIUS = 112;
 const EPSILON = 1e-8;
 const distance = (a: MapPoint, b: MapPoint) => Math.hypot(b.x - a.x, b.y - a.y);
 const pointAt = (a: MapPoint, b: MapPoint, t: number): MapPoint =>
   ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
 
+// 花びらの配置を保ちながら、島を縦に伸ばす。
 function polar(degrees: number, radius: number): MapPoint {
   const angle = degrees * Math.PI / 180;
-  return { x: MAP_CENTER.x + Math.cos(angle) * radius, y: MAP_CENTER.y + Math.sin(angle) * radius };
+  return { x: MAP_CENTER.x + Math.cos(angle) * radius * 2.3, y: MAP_CENTER.y + Math.sin(angle) * radius * 3.15 };
 }
 
 // 12度ごとの海岸線。岬を結ぶ湾の奥だけ半径を小さくする。
 export const MAP_OUTLINE: readonly MapPoint[] = Array.from({ length: 30 }, (_, i) =>
-  polar(-90 + i * 12, [397, 387, 360, 326, 360, 387][i % 6]));
+  polar(-90 + i * 12, [403, 394, 377, 347, 377, 394][i % 6]));
 
 type LocalPoint = readonly [side: number, outward: number];
 interface AreaSketch {
@@ -41,21 +44,21 @@ interface AreaSketch {
   readonly side: string;
   readonly turn: number;
   readonly depth: number;
-  readonly bridge: boolean;
+  readonly crossingName: string;
   readonly shore: readonly LocalPoint[];
 }
 
 // 北から時計回り。横の曲がり方、奥行き、斜面・水辺の輪郭を変える。
 const sketches: readonly AreaSketch[] = [
-  { element: 'fire', name: '火の窯野', side: '北', turn: 1, depth: 0, bridge: false,
+  { element: 'fire', name: '火の窯野', side: '北', turn: 1, depth: 0, crossingName: '溶岩のつり橋',
     shore: [[-48, 143], [29, 142], [73, 177], [67, 215], [80, 259], [59, 304], [-43, 309], [-77, 262], [-66, 205]] },
-  { element: 'water', name: '水の青波湖', side: '東北東', turn: -1, depth: -8, bridge: true,
+  { element: 'water', name: '水の青波湖', side: '東北東', turn: -1, depth: -8, crossingName: '湖の板橋',
     shore: [[-42, 141], [42, 147], [70, 179], [82, 240], [62, 289], [22, 313], [-43, 302], [-79, 260], [-75, 191]] },
-  { element: 'earth', name: '土の赤岩峡', side: '南東', turn: 1, depth: 10, bridge: false,
+  { element: 'earth', name: '土の赤岩峡', side: '南東', turn: 1, depth: 10, crossingName: '峡谷の飛び石',
     shore: [[-46, 149], [31, 141], [62, 178], [54, 219], [83, 257], [47, 319], [-33, 312], [-72, 280], [-57, 229], [-76, 186]] },
-  { element: 'wind', name: '風のそよぎ丘', side: '南西', turn: -1, depth: -13, bridge: false,
+  { element: 'wind', name: '風のそよぎ丘', side: '南西', turn: -1, depth: -13, crossingName: '風よけの回廊',
     shore: [[-57, 151], [26, 145], [64, 171], [70, 205], [87, 239], [55, 294], [4, 313], [-43, 296], [-77, 247], [-66, 194]] },
-  { element: 'thunder', name: '雷の紫雲沼', side: '西北西', turn: 1, depth: 4, bridge: true,
+  { element: 'thunder', name: '雷の紫雲沼', side: '西北西', turn: 1, depth: 4, crossingName: '湿原の木道',
     shore: [[-39, 146], [44, 148], [77, 185], [61, 218], [83, 250], [65, 301], [-12, 324], [-55, 301], [-78, 265], [-67, 199]] },
 ];
 
@@ -71,52 +74,63 @@ const areas = sketches.map((sketch, index) => {
     ({ id: `${element}-${id}`, name, element, ...at(side, outward) });
 
   const entry = at(0, 111);
-  const near = place('switch-1', '内側の灯籠', 48, 127);
-  const fork = at(98, 150);
-  const bank = place('resource-1', 'ふちの採取場', 85, 190 + depth);
-  const bend = place('switch-2', '曲がりの灯籠', 118, 223 + depth);
-  const outer = at(102, 265 + depth);
-  const bridgeStart = place('switch-3', '渡り口の灯籠', 98, 293 + depth);
-  const far = place('switch-4', '奥の灯籠', 0, 287 + depth);
-  const bridgeEnd = place('resource-2', '対岸の採取場', -95, 278 + depth);
-  const opposite = place('switch-5', '裏手の灯籠', -109, 223 + depth);
-  const headland = place('switch-6', '岬の灯籠', -37, 339 + depth);
-  const exit = { ...place('exit', `${sketch.side}の出口`, 0, 369), side: sketch.side };
-  const crossing = { id: `${element}-crossing`, element, points: [bridgeStart, far, bridgeEnd], width: 38 };
+  const throat = at(0, 140);
+  const near = place('switch-1', '内側の灯籠', 55, 119);
+  const fork = at(108, 135);
+  const bank = place('resource-1', 'ふちの採取場', 116, 183 + depth);
+  const bend = place('switch-2', '曲がりの灯籠', 136, 222 + depth);
+  const bridgeStart = place('switch-3', '渡り口の灯籠', 95, 274 + depth);
+  const far = place('switch-4', '奥の灯籠', 0, 276 + depth);
+  const bridgeEnd = place('resource-2', '対岸の採取場', -99, 274 + depth);
+  const opposite = place('switch-5', '裏手の灯籠', -134, 237 + depth);
+  const rearFork = at(-108, 135);
+  const rearBank = at(-122, 181 + depth);
+  const headland = place('switch-6', '岬の灯籠', -22, 320 + depth);
+  const exit = { ...place('exit', `${sketch.side}の出口`, 0, 374), side: sketch.side };
+  const lookout = at(136, 167);
+  const bridge: Bridge = {
+    id: `${element}-crossing`, name: sketch.crossingName, element,
+    points: [bridgeStart, at(51, 282 + depth), far, at(-52, 283 + depth), bridgeEnd], width: 42,
+  };
   const roads: Road[] = [
-    { id: `${element}-approach`, points: [MAP_CENTER, entry, near, fork, bank, bend, outer, bridgeStart], width: 42 },
-    { id: `${element}-rear`, points: [bridgeEnd, opposite, at(-92, 169), at(-57, 127), entry], width: 34 },
-    { id: `${element}-cape`, points: [far, headland, exit], width: 36 },
+    { id: `${element}-approach`, points: [MAP_CENTER, entry, throat], width: 50 },
+    { id: `${element}-shore`, points: [entry, near, fork, bank, bend, at(119, 251 + depth), bridgeStart], width: 48 },
+    { id: `${element}-rear`, points: [entry, at(-53, 117), rearFork, rearBank, opposite, at(-119, 253 + depth), bridgeEnd], width: 45 },
+    { id: `${element}-cape`, points: [far, headland, exit], width: 44 },
   ];
-  if (!sketch.bridge) roads.push(crossing);
+  if (element === 'fire') roads.push({ id: 'fire-lookout', points: [fork, at(134, 141), lookout], width: 36 });
 
   return {
-    at, entry, roads, bridge: sketch.bridge ? crossing : null, exit,
-    zone: { element, name: sketch.name, polygon: sketch.shore.map(([u, v]) => at(u, v)), label: at(0, 205) } satisfies Zone,
+    at, entry, fork, rearFork, rearBank, lookout, roads, bridge, exit,
+    zone: {
+      element, name: sketch.name, label: at(18, 222),
+      polygon: sketch.shore.map(([u, v]) => at(u * 1.28, 128 + (v - 141) * 1.17)),
+    } satisfies Zone,
     resources: [bank, bridgeEnd],
     switches: [near, bend, bridgeStart, far, opposite, headland],
-    shortcuts: [[entry, far], [entry, headland], [bank, bridgeEnd]] as const,
+    shortcuts: [[throat, far], [throat, headland]] as const,
   };
 });
 
 export const ELEMENT_ZONES: readonly Zone[] = areas.map((area) => area.zone);
 export const MAP_RESOURCES: readonly AreaPlace[] = areas.flatMap((area) => area.resources);
 export const SWITCH_CANDIDATES: readonly AreaPlace[] = areas.flatMap((area) => area.switches);
-export const MAP_BRIDGES: readonly Bridge[] = areas.flatMap((area) => area.bridge ? [area.bridge] : []);
+export const MAP_BRIDGES: readonly Bridge[] = areas.map((area) => area.bridge);
 export const EXIT_CANDIDATES = areas.map((area) => area.exit);
-const [fire, water, earth, wind, thunder] = areas;
+const [fire, water, earth, wind] = areas;
 
-export const EARTH_SHRINE: Place = { id: 'earth-shrine', name: '土の祠', x: 410, y: 395 };
+export const EARTH_SHRINE: Place = { id: 'earth-shrine', name: '土の祠', ...polar(-90, 23) };
 export const YORISHIRO_SHRINE: Place = { id: 'yorishiro', name: '依代の祠', ...polar(90, 177) };
 export const MAP_LANDMARKS: readonly Place[] = [
-  { id: 'torii', name: '鳥居', x: 410, y: 475 },
+  { id: 'torii', name: '鳥居', ...polar(90, 23) },
   { id: 'gear', name: 'からくり歯車の櫓', ...polar(-54, 151) },
   { id: 'kettle', name: '茶釜', ...polar(162, 148) },
+  { id: 'lookout', name: '火の見晴らし台', ...fire.lookout },
 ];
 export const VAULT_CANDIDATES: readonly Place[] = [
-  { id: 'vault-1', name: '宝物庫候補1', ...fire.at(-90, 174) },
-  { id: 'vault-2', name: '宝物庫候補2', ...water.at(126, 145) },
-  { id: 'vault-3', name: '宝物庫候補3', ...wind.at(135, 175) },
+  { id: 'vault-1', name: '宝物庫候補1', ...fire.at(-145, 164) },
+  { id: 'vault-2', name: '宝物庫候補2', ...water.at(135, 139) },
+  { id: 'vault-3', name: '宝物庫候補3', ...wind.at(139, 160) },
 ];
 
 const ringCorners = areas.map((_, i) => polar(-54 + 72 * i, 128));
@@ -128,12 +142,11 @@ export const MAP_ROADS: readonly Road[] = [
   { id: 'yorishiro', points: [ringCorners[2], polar(84, 153), YORISHIRO_SHRINE], width: 34 },
   { id: 'gear', points: [ringCorners[0], MAP_LANDMARKS[1]], width: 30 },
   { id: 'kettle', points: [ringCorners[3], MAP_LANDMARKS[2]], width: 30 },
-  { id: 'vault-1', points: [fire.at(-92, 169), VAULT_CANDIDATES[0]], width: 30 },
-  { id: 'vault-2', points: [water.at(98, 150), VAULT_CANDIDATES[1]], width: 30 },
-  { id: 'vault-3', points: [wind.at(98, 150), VAULT_CANDIDATES[2]], width: 30 },
-  // 南の湾で土と風を、西の湾で雷と環状路を結ぶ。
-  { id: 'south-bay', points: [earth.at(98, 150), polar(90, 210), wind.at(98, 150)], width: 30 },
-  { id: 'west-bay', points: [thunder.at(-92, 169), polar(162, 176), MAP_LANDMARKS[2]], width: 30 },
+  { id: 'vault-1', points: [fire.rearBank, VAULT_CANDIDATES[0]], width: 30 },
+  { id: 'vault-2', points: [water.fork, VAULT_CANDIDATES[1]], width: 30 },
+  { id: 'vault-3', points: [wind.fork, VAULT_CANDIDATES[2]], width: 30 },
+  // 南の湾の中ほどで土と風を結ぶ。両岸の本道に合流する。
+  { id: 'south-bay', points: [earth.fork, polar(90, 189), wind.fork], width: 40 },
 ];
 
 function distanceToSegment(point: MapPoint, a: MapPoint, b: MapPoint): number {
@@ -157,6 +170,7 @@ function inPolygon(point: MapPoint, polygon: readonly MapPoint[]): boolean {
   return inside;
 }
 
+// 道・橋の中心線を、丸い幅をもつ区間に分ける。
 const roadSegments = [...MAP_ROADS, ...MAP_BRIDGES].flatMap(({ points, width }) =>
   points.slice(1).map((b, index) => ({ a: points[index], b, radius: width / 2 })));
 
@@ -164,7 +178,7 @@ export function canWalk(point: MapPoint, element: ElementId): boolean {
   if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || !inPolygon(point, MAP_OUTLINE)) return false;
   if (distance(point, MAP_CENTER) <= PLAZA_RADIUS ||
       roadSegments.some(({ a, b, radius }) => distanceToSegment(point, a, b) <= radius + EPSILON)) return true;
-  return ELEMENT_ZONES.every((zone) => zone.element === element || !inPolygon(point, zone.polygon));
+  return ELEMENT_ZONES.some((zone) => zone.element === element && inPolygon(point, zone.polygon));
 }
 
 interface GraphEdge { readonly from: number; readonly to: number; readonly length: number; readonly element?: ElementId }
@@ -231,10 +245,10 @@ function canJoin(a: MapPoint, b: MapPoint, element: ElementId, roadsOnly: boolea
   if (roadSegments.some(({ a: p, b: q, radius }) =>
     distanceToSegment(a, p, q) <= radius + EPSILON && distanceToSegment(b, p, q) <= radius + EPSILON)) return true;
   if (roadsOnly) return false;
-  return ELEMENT_ZONES.every((zone) => {
-    if (zone.element === element) return true;
-    const hits = polygonCuts(a, b, zone.polygon);
-    return hits.length === 0 && !inPolygon(a, zone.polygon) && !inPolygon(b, zone.polygon);
+  return ELEMENT_ZONES.some(({ element: owner, polygon }) => {
+    if (owner !== element || !inPolygon(a, polygon) || !inPolygon(b, polygon)) return false;
+    const zoneCuts = [0, ...polygonCuts(a, b, polygon), 1].sort((x, y) => x - y);
+    return zoneCuts.slice(1).every((t, i) => inPolygon(pointAt(a, b, (zoneCuts[i] + t) / 2), polygon));
   });
 }
 

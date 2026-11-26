@@ -8,11 +8,11 @@
     :root { color-scheme: light; --ink:#263d38; --paper:#f9f1dd; --line:#baad8e; }
     * { box-sizing:border-box; }
     body { margin:0; color:var(--ink); background:#eae0c5; font:16px/1.55 system-ui,sans-serif; }
-    main { max-width:1160px; margin:auto; padding:20px clamp(10px,3vw,32px) 26px; }
+    main { max-width:1020px; margin:auto; padding:20px clamp(10px,3vw,32px) 26px; }
     header { display:flex; flex-wrap:wrap; gap:4px 18px; align-items:baseline; margin-bottom:14px; }
     h1 { margin:0; font:700 clamp(26px,5vw,39px)/1.2 serif; letter-spacing:.08em; }
     header span { font-size:.8rem; font-weight:700; letter-spacing:.12em; }
-    .layout { display:grid; grid-template-columns:minmax(0,1fr) 295px; gap:16px; align-items:start; }
+    .layout { display:grid; grid-template-columns:minmax(0,1fr) 365px; gap:16px; align-items:start; }
     figure { margin:0; border:1px solid #66817b; padding:4px; background:#c5d6cd; }
     canvas { display:block; width:100%; height:auto; }
     aside { padding:16px; background:var(--paper); border:1px solid var(--line); }
@@ -27,9 +27,14 @@
     .routes { display:flex; flex-wrap:wrap; gap:5px 12px; font-size:.8rem; }
     .sample { display:inline-block; width:19px; border-top:4px solid #193b59; vertical-align:middle; }
     .sample.dashed { border-top:4px dashed #846127; }
+    table { width:100%; border-collapse:collapse; margin-top:14px; font-size:.82rem; font-variant-numeric:tabular-nums; }
+    caption { text-align:left; font-weight:700; padding-bottom:4px; }
+    th,td { padding:3px 4px; text-align:center; border-bottom:1px solid #d9cdb1; }
+    thead { background:#eee3c7; }
+    .scale,.crossings { margin:8px 0 0; font-size:.82rem; }
     .legend { margin:16px 0 0; padding:12px 0 0; border-top:1px solid var(--line); list-style:none; display:grid; grid-template-columns:1fr 1fr; gap:3px 6px; font-size:.82rem; }
     .legend strong { display:inline-block; width:1.6em; text-align:center; }
-    @media (max-width:760px) {
+    @media (max-width:680px) {
       .layout { grid-template-columns:1fr; }
       aside { padding:12px; }
       .legend { grid-template-columns:repeat(auto-fit,minmax(125px,1fr)); }
@@ -50,13 +55,24 @@
       <button id="toggle" type="button" aria-pressed="true">経路を表示</button>
       <output id="time" aria-live="polite"></output>
       <div class="routes"><span><i class="sample"></i> 選んだ体</span><span><i class="sample dashed"></i> 道と橋だけ</span></div>
+      <p id="scale-text" class="scale"></p>
+      <table>
+        <caption>中央広場からの片道（秒）</caption>
+        <colgroup span="1"></colgroup><colgroup span="2"></colgroup><colgroup span="2"></colgroup>
+        <thead>
+          <tr><th rowspan="2" scope="col">浜</th><th colspan="2" scope="colgroup">④ 奥の灯籠</th><th colspan="2" scope="colgroup">⑥ 岬の灯籠</th></tr>
+          <tr><th scope="col">道だけ</th><th scope="col">その体</th><th scope="col">道だけ</th><th scope="col">その体</th></tr>
+        </thead>
+        <tbody id="travel-times"></tbody>
+      </table>
       <ul class="legend">
         <li><strong>１</strong> スイッチ候補</li><li><strong>◆</strong> 採取場</li>
         <li><strong>鈴</strong> 土の祠</li><li><strong>依</strong> 依代の祠</li>
         <li><strong>⛩</strong> 鳥居</li><li><strong>櫓</strong> 歯車の櫓</li>
         <li><strong>釜</strong> 茶釜</li><li><strong>蔵</strong> 宝物庫候補</li>
-        <li><strong>出</strong> 出口候補</li><li><strong>▤</strong> 橋</li>
+        <li><strong>出</strong> 出口候補</li><li><strong>眺</strong> 見晴らし台</li>
       </ul>
+      <p id="crossings" class="crossings"></p>
     </aside>
   </div>
 </main>

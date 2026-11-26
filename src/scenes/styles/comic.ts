@@ -1,5 +1,5 @@
 import type Phaser from 'phaser';
-import { LAND_MARKS, TILE_SIZE, line, motif, oval, paint, registerStyle, styleKeys } from './china';
+import { LAND_MARKS, TILE_SIZE, drawDepleted, drawSwitch, line, motif, oval, paint, registerStyle, styleKeys } from './china';
 
 const black = '#171528';
 const white = '#fffdf0';
@@ -44,30 +44,37 @@ export const COMIC_TEX = styleKeys('comic');
 export function makeComicTextures(scene: Phaser.Scene): void {
   registerStyle(scene, COMIC_TEX, {
     resource(ctx, e, empty) {
-      paint(ctx, 'M3 43 L11 38 H46 L53 43 L49 48 L41 50 H13Z', empty ? '#8c8595' : '#303559', black, 2.8);
+      oval(ctx, 28, 48, 24, 2.5, '#17152835');
       if (empty) {
-        paint(ctx, 'M12 43 L18 39 H42 L45 43 L40 46 H18Z', '#514d5c', black, 1.3);
-        line(ctx, 'M15 44 L20 42 M37 45 L42 42', '#c5bfc0', 1.25);
-        motif(ctx, symbols[e], 28, 42, 9, '#c5bfc0');
-      } else {
-        paint(ctx, silhouettes[e], hues[e], black, 3);
-        paint(ctx, shadows[e], '#22203b90');
-        ctx.save();
-        ctx.clip(new Path2D(silhouettes[e]));
-        dots(ctx, 8, 26, 10, 4, '#17152858');
-        ctx.restore();
-        motif(ctx, symbols[e], 28, 26, 19, e === 'thunder' ? yellow : white, black);
-        line(ctx, 'M7 21 L4 18 M48 17 L52 14 M13 14 L12 10', black, 1.7);
+        const faded = { fire: '#86818e', water: '#ae9e86', earth: '#a4826f', wind: '#8b956e', thunder: '#7d7f9b' };
+        drawDepleted(ctx, e, faded[e], black, '#efe4ce', 2.6);
+        return;
       }
+      ctx.translate(0, 3);
+      ctx.scale(1, 1.08);
+      paint(ctx, silhouettes[e], hues[e], black, 3);
+      paint(ctx, shadows[e], '#22203b90');
+      ctx.save();
+      ctx.clip(new Path2D(silhouettes[e]));
+      dots(ctx, 8, 26, 10, 4, '#17152858');
+      ctx.restore();
+      motif(ctx, symbols[e], 28, 26, 19, e === 'thunder' ? yellow : white, black);
+      line(ctx, 'M7 21 L4 18 M48 17 L52 14 M13 14 L12 10', black, 1.7);
     },
     switch(ctx, e, on) {
-      if (on) paint(ctx, 'M0 17 L8 14 L7 4 L17 10 L26 1 L28 11 L39 10 L35 20 L40 26 L34 32 L36 45 L25 42 L11 49 L11 37 L1 36 L7 29Z', '#ffe236a0');
-      paint(ctx, 'M5 46 L12 40 H28 L35 46 V53 H5Z', '#303559', black, 2.8);
-      paint(ctx, 'M8 14 L13 9 H31 L34 14 V40 L29 44 H8Z', on ? '#f04845' : '#868193', black, 2.8);
-      paint(ctx, 'M12 17 H27 V38 H12Z', on ? hues[e] : '#4c495c', black, 2.1);
-      paint(ctx, 'M28 17 L33 14 V39 L28 43Z', black);
-      motif(ctx, symbols[e], 19.5, 27.5, 12, on ? white : '#b1aab8');
-      line(ctx, 'M13 13 H27 M9 48 H24', on ? yellow : '#b1aab8', 1.5);
+      drawSwitch(ctx, e, on, {
+        body: on ? hues[e] : '#7e7e94',
+        trim: on ? yellow : '#b5b2c2',
+        ink: black,
+        roof: 'M7 16 L12 8 H28 L34 13 V17 H7Z',
+        shell(path, color) {
+          paint(ctx, path, color, black, 2.7);
+          ctx.save();
+          ctx.clip(new Path2D(path));
+          dots(ctx, 8, 31, 7, 6, '#17152850');
+          ctx.restore();
+        },
+      });
     },
     facility(ctx, kind) {
       const bell = kind === 'emergency';
@@ -105,10 +112,14 @@ export function makeComicTextures(scene: Phaser.Scene): void {
       paint(ctx, 'M8 68 H68 L71 73 H5Z', '#e3d8bf', black, 2.5);
     },
     tile(ctx, tile) {
-      const bases = { ground: '#b0c984', road: '#b6adc0', fire: '#a34749', water: '#39a4c1', earth: '#af825f', wind: '#a5c5ba', thunder: '#697aab' };
+      const bases = { ground: '#b0c984', road: '#b6adc0', fire: '#a34749', water: '#39a4c1', earth: '#af825f', wind: '#156b68', thunder: '#40366c' };
       ctx.fillStyle = bases[tile];
       ctx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
       dots(ctx, 4, 4, 6, 6, '#17152827');
+      if (tile === 'wind' || tile === 'thunder') {
+        line(ctx, LAND_MARKS[tile], tile === 'wind' ? '#b9fff0' : '#ffe236', 2);
+        return;
+      }
       line(ctx, LAND_MARKS[tile], '#17152878', 2.3);
       const accent = tile === 'fire' ? '#ffb94d' : '#fffdf099';
       line(ctx, LAND_MARKS[tile], accent, 0.95);
