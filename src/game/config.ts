@@ -277,6 +277,9 @@ export const AFFINITY = {
   /** ジグソー：最初からはまっているピースの数、まちがえるとはめたピースが1つ外れるか */
   jigsawPreplaced: { good: 2, plain: 0, weak: 0 },
   jigsawPenalty: { good: false, plain: false, weak: true },
+  /** 温度キープ：押して離す回数と、拍からずれてもよい秒数 */
+  heatNotes: { good: 2, plain: 3, weak: 4 },
+  heatWindow: { good: 0.18, plain: 0.14, weak: 0.1 },
 } as const;
 
 /**
@@ -480,7 +483,7 @@ export const FACILITY = {
  * 回る数は、遊びが長いものは2か所、短いものは3か所。
  */
 export const MISSIONS = [
-  { id: 'fire', name: '温度キープ', element: 'fire', game: 'drum', spots: 2, needPerSpot: 8 },
+  { id: 'fire', name: '温度キープ', element: 'fire', game: 'heat', spots: 2, needPerSpot: 8 },
   { id: 'water', name: '網で魚すくい', element: 'water', game: 'pegs', spots: 3, needPerSpot: 5 },
   { id: 'earth', name: '成形', element: 'earth', game: 'prayer', spots: 3, needPerSpot: 5 },
   { id: 'wind', name: '気流チャージ', element: 'wind', game: 'jigsaw', spots: 2, needPerSpot: 8 },
@@ -531,12 +534,18 @@ export const MISSION_GAME = {
    * そのあいだ、外から縮んでくる円で「いつ叩くか」を前もって見せる
    */
   clapLeadBeats: 2,
+  /**
+   * 温度キープ（火）：ふいごを、予告された拍で押して、予告された拍で離す。
+   * leadBeats：最初（とやり直し）の押す拍まで何拍あけるか。gapBeats：離してから次に押すまで。holdBeats：押している長さ（拍）の候補。
+   * lateGrace：離す拍を過ぎてから「熱くなりすぎ」と決めるまでの待ち（秒）。指を離した知らせが遅れて届いても、離した時刻で判定できるように
+   */
+  heat: { leadBeats: 2, gapBeats: 2, holdBeats: [1, 2], lateGrace: 0.15 },
 } as const;
 
 /** Botが施設でミッションをするときの時間と、まちがえる確率 */
 export const MISSION_BOT = {
   /** ミニゲームにかかる秒数 */
-  workSeconds: { drum: 8, jigsaw: 9, pegs: 8, prayer: 8 },
+  workSeconds: { drum: 8, jigsaw: 9, pegs: 8, prayer: 8, heat: 9 },
   /** まちがえる確率（まちがえると音が鳴って、やり直す） */
   failChance: 0.2,
   /** まちがえたあと、やり直しにかかる秒数 */

@@ -4,6 +4,14 @@
 import Phaser from 'phaser';
 import { COLORS, MISSION_GAME, SCREEN } from '../game/config';
 import {
+  HEAT_BAND,
+  heatLevel,
+  heatPressTime,
+  heatReleaseTime,
+  pressHeat,
+  releaseHeat,
+  updateHeat,
+  type HeatGame,
   drumDemoEnd,
   drumDemoTime,
   drumShowing,
@@ -99,6 +107,7 @@ export class MissionGameView {
     if (game.kind === 'drum') this.buildDrums(game);
     else if (game.kind === 'pegs') this.buildPegs(game);
     else if (game.kind === 'jigsaw') this.buildJigsaw(game);
+    else if (game.kind === 'heat') this.buildHeat(game);
     else this.buildPrayer(game);
     pinToScreen(this.root);
     this.update();
@@ -111,9 +120,14 @@ export class MissionGameView {
 
   /** 指を離した（土のお祈りで、手を合わせるのをやめたとき） */
   pointerUp(p: Phaser.Input.Pointer): void {
-    if (this.game.kind !== 'prayer' || p.id !== this.holdPointer) return;
+    if (p.id !== this.holdPointer) return;
     this.holdPointer = null;
-    this.step(releaseHands(this.game, this.deps.tapTime(p)));
+    if (this.game.kind === 'prayer') this.step(releaseHands(this.game, this.deps.tapTime(p)));
+    else if (this.game.kind === 'heat') {
+      const s = releaseHeat(this.game, this.deps.tapTime(p));
+      if (s === 'ok') this.deps.audio.pon();
+      this.step(s);
+    }
   }
 
   /** 押せる場所を作る（円） */
@@ -474,7 +488,109 @@ export class MissionGameView {
     if (g.kind === 'drum') this.drawDrums(g, now);
     else if (g.kind === 'pegs') this.drawPegs(g, now);
     else if (g.kind === 'jigsaw') this.drawJigsaw(g);
+    else if (g.kind === 'heat') this.drawHeat(g, now);
     else this.drawPrayer(g, now);
+  }
+
+  // ---------- 温度キープ（火） ----------
+
+  private readonly bellowsAt = { x: CX + 26, y: PANEL.y + 270 };
+  private readonly furnaceAt = { x: CX + 26, y: PANEL.y + 86 };
+  private readonly thermo = { x: PANEL.x + 42, top: PANEL.y + 82, bottom: PANEL.y + 330 };
+
+  private buildHeat(g: HeatGame): void {
+    // ふいご（押しているあいだ風を送る。指を離すと止まる）
+    this.hotspot(this.bellowsAt.x, this.bellowsAt.y, 62, (p) => {
+      const s = pressHeat(g, this.deps.tapTime(p));
+      // 押せた指だけを覚える（あとから触れた別の指で、離す判定が取られないように）
+      if (s === 'ok') {
+        this.holdPointer = p.id;
+        this.deps.audio.tone(330);
+      }
+      this.step(s);
+    });
+  }
+
+  private drawHeat(g: HeatGame, now: number): void {
+    const s = updateHeat(g, now);
+    if (s === 'miss') {
+      this.holdPointer = null;
+      this.step(s); // 熱くなりすぎた
+      return;
+    }
+    this.title.setText(
+      g.holding
+        ? `もう一度 輪が重なったら 離す（${g.done}/${g.notesNeeded}）`
+        : `炉の火加減：輪が重なったら ふいごを押す（${g.done}/${g.notesNeeded}）`,
+    );
+    const a = this.art;
+    const level = heatLevel(g, now);
+    // 温度計（ちょうどいい帯は緑。上は熱すぎ、下はぬるい）
+    const { x: tx, top, bottom } = this.thermo;
+    const yOf = (v: number) => bottom - v * (bottom - top);
+    a.fillStyle(COLORS.ink).fillRoundedRect(tx - 13, top - 6, 26, bottom - top + 12, 12);
+    a.fillStyle(COLORS.uiCream).fillRoundedRect(tx - 10, top - 3, 20, bottom - top + 6, 10);
+    a.fillStyle(COLORS.uiMoss, 0.55).fillRect(tx - 10, yOf(HEAT_BAND.high), 20, yOf(HEAT_BAND.low) - yOf(HEAT_BAND.high));
+    const inBand = level >= HEAT_BAND.low && level <= HEAT_BAND.high;
+    a.fillStyle(level > HEAT_BAND.high ? COLORS.landmarkVermilion : inBand ? COLORS.meterNeedle : COLORS.partFlag).fillRoundedRect(tx - 6, yOf(level), 12, bottom - yOf(level), 6);
+    a.fillStyle(COLORS.ink).fillCircle(tx, bottom + 12, 15);
+    a.fillStyle(level > HEAT_BAND.high ? COLORS.landmarkVermilion : COLORS.meterNeedle).fillCircle(tx, bottom + 12, 12);
+    // 炉と炎（温度が高いほど大きく）
+    const { x: fx, y: fy } = this.furnaceAt;
+    a.fillStyle(COLORS.ink).fillRoundedRect(fx - 62, fy - 6, 124, 66, 14);
+    a.fillStyle(COLORS.terracotta).fillRoundedRect(fx - 58, fy - 2, 116, 58, 12);
+    a.fillStyle(COLORS.ink).fillRoundedRect(fx - 30, fy + 14, 60, 36, 10);
+    const flame = 14 + level * 46;
+    a.fillStyle(0xf07820).fillTriangle(fx - 22, fy + 46, fx + 22, fy + 46, fx, fy + 46 - flame);
+    a.fillStyle(COLORS.uiHoney).fillTriangle(fx - 12, fy + 46, fx + 12, fy + 46, fx, fy + 46 - flame * 0.6);
+    // ふいご。押す拍・離す拍に向かって、外から輪が縮んでくる（押す＝黄、離す＝青）
+    const { x: bx, y: by } = this.bellowsAt;
+    const approach = MISSION_GAME.heat.leadBeats * beatInterval();
+    a.lineStyle(7, COLORS.ink).strokeCircle(bx, by, RING);
+    a.lineStyle(4, g.holding ? COLORS.partFlag : COLORS.uiHoney).strokeCircle(bx, by, RING);
+    const target = g.holding ? heatReleaseTime(g) : heatPressTime(g);
+    const until = target - now;
+    if (g.result === 'playing' && until <= approach && until >= -g.window) {
+      const r = RING + (Math.max(0, until) / approach) * RING_GROW;
+      const fade = Math.min(1, (approach - until) / (approach * 0.3));
+      a.lineStyle(8, COLORS.ink, 0.6 * fade).strokeCircle(bx, by, r);
+      a.lineStyle(5, g.holding ? COLORS.partFlag : COLORS.meterNeedle, fade).strokeCircle(bx, by, r);
+    }
+    if (g.holding) {
+      // 押している長さ（離す拍まで）
+      const p = Math.min(1, (now - heatPressTime(g)) / Math.max(0.01, heatReleaseTime(g) - heatPressTime(g)));
+      a.lineStyle(7, COLORS.uiMoss).beginPath().arc(bx, by, RING - 8, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2).strokePath();
+    }
+    const squeeze = g.holding ? 0.7 : 1;
+    a.fillStyle(COLORS.ink).fillEllipse(bx, by, 92, 64 * squeeze + 6);
+    a.fillStyle(COLORS.landmarkWood).fillEllipse(bx, by, 86, 64 * squeeze);
+    a.fillStyle(COLORS.ink).fillRect(bx - 4, by - 40, 8, 14);
+    a.lineStyle(2, COLORS.ink).lineBetween(bx - 30, by, bx + 30, by);
+    this.scheduleHeatGuide(g, now);
+  }
+
+  /** 予約した拍の音が、どの回（押す拍・押しているか）に合わせたものか */
+  private heatGuideKey = '';
+
+  /**
+   * 拍の音を少し先まで予約する（押す拍は高い音。離す拍は、押せているときだけ高い音）。
+   * 押しそびれて押す拍が決め直されたら、まだ鳴っていない予約を取り消して、新しい拍に合わせ直す
+   */
+  private scheduleHeatGuide(g: HeatGame, now: number): void {
+    const key = `${g.pressBeat}:${g.holding ? 1 : 0}:${g.done}`;
+    if (key !== this.heatGuideKey) {
+      this.heatGuideKey = key;
+      for (const cancel of this.scheduled) cancel();
+      this.scheduled = [];
+      this.guideBeat = Math.ceil((now - g.origin) / beatInterval()) - 1;
+    }
+    const b = beatInterval();
+    const next = Math.ceil((now - g.origin) / b);
+    const accents = g.holding ? [g.pressBeat + (g.holds[g.done] ?? 1)] : [g.pressBeat];
+    for (let k = Math.max(next, this.guideBeat + 1); g.origin + k * b < now + 0.25; k++) {
+      this.scheduled.push(this.deps.audio.tick(g.origin + k * b, accents.includes(k)));
+      this.guideBeat = k;
+    }
   }
 
   private destroyed = false;

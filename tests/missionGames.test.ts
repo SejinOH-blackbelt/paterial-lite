@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { MISSION_GAME } from '../src/game/config';
 import {
+  HEAT_BAND,
+  createHeatGame,
+  createMissionGame,
+  heatLevel,
+  heatPressTime,
+  heatReleaseTime,
+  pressHeat,
+  releaseHeat,
+  updateHeat,
   createDrumGame,
   createJigsawGame,
   createPegGame,
@@ -186,5 +195,73 @@ describe('土のお祈り（土の祠）', () => {
     toClap(g);
     expect(ringBell(g)).toBe('miss');
     expect(g.stage).toBe(0);
+  });
+});
+
+describe('温度キープ（火）', () => {
+  const make = (notes = 2) => createHeatGame(0, 0, createRng(3), notes, 0.14);
+
+  it('予告された拍で押して、予告された拍で離すと1回できる。決まった回数でできあがり', () => {
+    const g = make(2);
+    expect(heatPressTime(g)).toBeCloseTo(MISSION_GAME.heat.leadBeats * beatInterval(), 6);
+    expect(pressHeat(g, heatPressTime(g) + 0.05)).toBe('ok');
+    expect(releaseHeat(g, heatReleaseTime(g) - 0.05)).toBe('ok');
+    expect(g.done).toBe(1);
+    expect(pressHeat(g, heatPressTime(g))).toBe('ok');
+    expect(releaseHeat(g, heatReleaseTime(g))).toBe('done');
+    expect(g.result).toBe('success');
+  });
+
+  it('押すのがずれる・離すのが早すぎると miss。少し先の拍からやり直す（できた数は減らない）', () => {
+    const g = make(3);
+    pressHeat(g, heatPressTime(g));
+    releaseHeat(g, heatReleaseTime(g));
+    const before = g.pressBeat;
+    expect(pressHeat(g, heatPressTime(g) - 0.3)).toBe('miss');
+    expect(g.pressBeat).toBeGreaterThan(before - 1);
+    expect(g.done).toBe(1);
+    pressHeat(g, heatPressTime(g));
+    expect(releaseHeat(g, heatPressTime(g) + 0.05)).toBe('miss'); // 押してすぐ離した（温度が上がりきらない）
+    expect(g.done).toBe(1);
+    expect(g.holding).toBe(false);
+  });
+
+  it('押したまま離す拍を過ぎると、熱くなりすぎて miss', () => {
+    const g = make(2);
+    pressHeat(g, heatPressTime(g));
+    expect(updateHeat(g, heatReleaseTime(g) + 0.14 + 0.05)).toBe('ignored'); // 離した知らせが遅れて届くのを少し待つ
+    expect(releaseHeat(g, heatReleaseTime(g) + 0.05)).toBe('ok'); // 離した時刻は拍に合っていた
+  });
+
+  it('待っても離さなければ、熱くなりすぎて miss', () => {
+    const g = make(2);
+    pressHeat(g, heatPressTime(g));
+    expect(updateHeat(g, heatReleaseTime(g) + 0.14 + MISSION_GAME.heat.lateGrace + 0.01)).toBe('miss');
+    expect(g.holding).toBe(false);
+  });
+
+  it('押しそびれたら、まちがいにせず先の拍で決め直す。処理が遅れて届いた前の拍のタップも受けつける', () => {
+    const g = make(2);
+    const first = heatPressTime(g);
+    expect(updateHeat(g, first + 0.3)).toBe('ignored');
+    expect(heatPressTime(g)).toBeGreaterThan(first);
+    expect(pressHeat(g, first + 0.02)).toBe('ok'); // 触れた時刻は前の拍に合っていた
+    expect(heatPressTime(g)).toBeCloseTo(first, 6);
+  });
+
+  it('温度は、押しているあいだ上がり、離す拍でちょうどいい帯に入る', () => {
+    const g = make(2);
+    const t0 = heatPressTime(g);
+    expect(heatLevel(g, t0)).toBeLessThan(HEAT_BAND.low);
+    pressHeat(g, t0);
+    const lv = heatLevel(g, heatReleaseTime(g));
+    expect(lv).toBeGreaterThanOrEqual(HEAT_BAND.low);
+    expect(lv).toBeLessThanOrEqual(HEAT_BAND.high);
+  });
+
+  it('得意ほど回数が少なく、苦手ほど多い', () => {
+    const good = createMissionGame('heat', 0, 0, createRng(1), 'good');
+    const weak = createMissionGame('heat', 0, 0, createRng(1), 'weak');
+    expect(good.kind === 'heat' && weak.kind === 'heat' && good.notesNeeded < weak.notesNeeded).toBe(true);
   });
 });

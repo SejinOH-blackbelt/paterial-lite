@@ -1,4 +1,4 @@
-// 施設のミニゲーム（まねっこ太鼓・杭むすび・ジグソー・土のお祈り）のルール。画面表示（Phaser）には依存しません。
+// ミッションのミニゲーム（温度キープ・まねっこ太鼓・杭むすび・ジグソー・土のお祈り）のルール。画面表示（Phaser）には依存しません。
 // ・どれも時間制限はなし。まちがえると 'miss' を返す（画面側で「ブッブー」か「ゴリッ」を鳴らす）。
 //   まちがえても、やり直せば済むようにする（失敗でパテが転んだりはしない）
 // ・最後までできたら 'done'
@@ -318,7 +318,118 @@ export function holdProgress(g: PrayerGame, now: number): number {
   return Math.min(1, (now - g.holdStart) / MISSION_GAME.prayerHoldSeconds);
 }
 
-export type MissionGame = DrumGame | PegGame | JigsawGame | PrayerGame;
+// ---------- 温度キープ（火） ----------
+
+/**
+ * 炉の火加減：ふいごを、予告された拍で押して（風を送る）、予告された拍で離す。
+ * 押しているあいだ温度が上がり、離すと下がる。拍どおりなら温度はちょうどいい帯に収まる。
+ * 押すのが拍からずれる・離すのが早すぎる／遅すぎる（熱くなりすぎる）と 'miss'。そのときは少し先の拍から、その回をやり直す
+ * （できた回の数は減らない）。押しそびれたときは、まちがいにせず、少し先の拍で決め直す（やさしく）。
+ */
+export interface HeatGame {
+  kind: 'heat';
+  origin: number;
+  /** 押して離す回数（得意・苦手で変わる）と、できた数 */
+  notesNeeded: number;
+  done: number;
+  /** 回ごとの、押している長さ（拍） */
+  holds: number[];
+  /** いまの回の、押す拍の番号 */
+  pressBeat: number;
+  /** ふいごを押しているか */
+  holding: boolean;
+  /** 押しそびれて決め直す前の拍（決め直したあとに届いたタップでも、前の拍に合っていればそちらで判定する） */
+  missed: number | null;
+  /** 拍からずれてもよい秒数 */
+  window: number;
+  result: 'playing' | 'success';
+}
+
+export function createHeatGame(now: number, origin: number, rng: Rng, notes: number = AFFINITY.heatNotes.plain, window: number = AFFINITY.heatWindow.plain): HeatGame {
+  const choices = MISSION_GAME.heat.holdBeats;
+  const holds = Array.from({ length: notes }, () => choices[Math.floor(rng() * choices.length)]);
+  const g: HeatGame = { kind: 'heat', origin, notesNeeded: notes, done: 0, holds, pressBeat: 0, holding: false, missed: null, window, result: 'playing' };
+  rescheduleHeat(g, now);
+  return g;
+}
+
+const beatOf = (g: HeatGame, t: number) => Math.ceil((t - g.origin) / beatInterval());
+
+/** 少し先の拍から、いまの回をやり直す */
+function rescheduleHeat(g: HeatGame, t: number): void {
+  g.holding = false;
+  g.pressBeat = beatOf(g, t) + MISSION_GAME.heat.leadBeats;
+}
+
+/** いまの回の、押す時刻と離す時刻 */
+export function heatPressTime(g: HeatGame, beat = g.pressBeat): number {
+  return g.origin + beat * beatInterval();
+}
+export function heatReleaseTime(g: HeatGame): number {
+  return heatPressTime(g, g.pressBeat + (g.holds[g.done] ?? 1));
+}
+
+/** ふいごを押した */
+export function pressHeat(g: HeatGame, t: number): Step {
+  if (g.result !== 'playing' || g.holding) return 'ignored';
+  if (g.missed !== null && Math.abs(t - heatPressTime(g, g.missed)) <= g.window) g.pressBeat = g.missed;
+  g.missed = null;
+  if (Math.abs(t - heatPressTime(g)) > g.window) {
+    rescheduleHeat(g, t);
+    return 'miss';
+  }
+  g.holding = true;
+  return 'ok';
+}
+
+/** ふいごから指を離した */
+export function releaseHeat(g: HeatGame, t: number): Step {
+  if (g.result !== 'playing' || !g.holding) return 'ignored';
+  g.holding = false;
+  const release = heatReleaseTime(g);
+  if (Math.abs(t - release) > g.window) {
+    rescheduleHeat(g, t);
+    return 'miss';
+  }
+  const releaseBeat = g.pressBeat + g.holds[g.done];
+  g.done++;
+  if (g.done >= g.notesNeeded) {
+    g.result = 'success';
+    return 'done';
+  }
+  g.pressBeat = releaseBeat + MISSION_GAME.heat.gapBeats;
+  return 'ok';
+}
+
+/**
+ * 毎コマ呼ぶ：押しそびれたら少し先の拍で決め直す（まちがいにしない）。
+ * 押したまま離す拍を過ぎたら、熱くなりすぎて 'miss'
+ */
+export function updateHeat(g: HeatGame, now: number): Step {
+  if (g.result !== 'playing') return 'ignored';
+  if (!g.holding && now > heatPressTime(g) + g.window) {
+    g.missed = g.pressBeat;
+    rescheduleHeat(g, now);
+  } else if (g.holding && now > heatReleaseTime(g) + g.window + MISSION_GAME.heat.lateGrace) {
+    // 離した知らせが遅れて届くこともあるので、少し待ってから決める（届いた知らせは、離した時刻で判定する）
+    rescheduleHeat(g, now);
+    return 'miss';
+  }
+  return 'ignored';
+}
+
+/**
+ * 炉の温度（0〜1。画面の温度計に使う）。ちょうどいい帯は HEAT_BAND。
+ * 押しているあいだは上がり、離す拍でちょうど帯の上のほうに届く。離すのが遅いと帯を超える
+ */
+export const HEAT_BAND = { low: 0.5, high: 0.8 } as const;
+export function heatLevel(g: HeatGame, now: number): number {
+  if (!g.holding) return g.result === 'success' ? 0.65 : 0.35;
+  const p = (now - heatPressTime(g)) / Math.max(0.01, heatReleaseTime(g) - heatPressTime(g));
+  return Math.min(1, 0.35 + 0.4 * Math.max(0, p));
+}
+
+export type MissionGame = HeatGame | DrumGame | PegGame | JigsawGame | PrayerGame;
 export type MissionGameKind = MissionGame['kind'];
 
 /**
@@ -336,5 +447,7 @@ export function createMissionGame(kind: MissionGameKind, now: number, origin: nu
       return createJigsawGame(rng, AFFINITY.jigsawPreplaced[a], AFFINITY.jigsawPenalty[a]);
     case 'prayer':
       return createPrayerGame(origin, AFFINITY.claps[a], AFFINITY.clapWindow[a]);
+    case 'heat':
+      return createHeatGame(now, origin, rng, AFFINITY.heatNotes[a], AFFINITY.heatWindow[a]);
   }
 }
