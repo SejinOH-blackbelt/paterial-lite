@@ -70,6 +70,8 @@ export class MissionGameView {
   /** 土のお祈り：拍の音を予約した最後の拍 */
   private guideBeat = -Infinity;
   private pieces = new Map<number, Phaser.GameObjects.Image>();
+  /** ジグソー：ピースごとの、台の上の置き場所（最初に決めたまま） */
+  private traySlot = new Map<number, number>();
   /** 先に予約した音（お手本の太鼓・拍の音）の取り消し方法。パネルを閉じたら、まだ鳴っていない音を取り消す */
   private scheduled: (() => void)[] = [];
   /** 土のお祈りで、手を合わせはじめた指（ほかの指を離しても、長押しは続く） */
@@ -247,28 +249,26 @@ export class MissionGameView {
       const zone = this.scene.add.rectangle(this.board.x + qx, this.board.y + qy, half, half, COLORS.ink, 0).setOrigin(0).setInteractive();
       zone.on('pointerdown', () => {
         const r = placePiece(g, s);
-        if (r === 'ok' || r === 'done') {
-          this.deps.audio.kachi();
-          const img = this.pieces.get(s)!;
-          img.setScale(1).setPosition(this.board.x, this.board.y);
-        }
+        if (r === 'ok' || r === 'done') this.deps.audio.kachi();
         this.step(r);
       });
       this.root.add(zone);
       this.hitAreas.push(zone);
     }
-    // 下の台に並ぶピース（台の上の位置は最初に決めたまま）
-    g.tray.forEach((piece, slot) => {
+    // 台の上の置き場所は最初に決めたまま（はじめから台にあるピースの順、そのあとに最初からはまっていたピース）。
+    // 絵の位置は drawJigsaw で、ルールの状態（はまっている・台にある）に合わせて毎回決める
+    const order = [...g.tray, ...g.placed.flatMap((p, i) => (p ? [i] : []))];
+    order.forEach((piece, slot) => {
+      this.traySlot.set(piece, slot);
       const qx = (piece % 2) * half;
       const qy = Math.floor(piece / 2) * half;
-      const scale = 0.8;
-      const at = this.trayAt(slot);
-      const img = this.scene.add.image(at.x - (qx + half / 2) * scale, at.y - (qy + half / 2) * scale, JIGSAW_TEX).setOrigin(0).setScale(scale);
+      const img = this.scene.add.image(0, 0, JIGSAW_TEX).setOrigin(0);
       img.setCrop(qx, qy, half, half);
       this.pieces.set(piece, img);
-      const zone = this.scene.add.rectangle(at.x, at.y, half * scale, half * scale, COLORS.ink, 0).setInteractive();
+      const at = this.trayAt(slot);
+      const zone = this.scene.add.rectangle(at.x, at.y, half * 0.8, half * 0.8, COLORS.ink, 0).setInteractive();
       zone.on('pointerdown', () => {
-        const r = pickPiece(g, piece);
+        const r = pickPiece(g, piece); // はまっているピースは台にないので反応しない
         if (r === 'ok') this.deps.audio.drum(3);
         this.step(r);
       });
@@ -277,7 +277,23 @@ export class MissionGameView {
     });
   }
 
+  /** ピースの絵を、はまっていれば盤面に、台にあれば台の置き場所に置く */
+  private placeJigsawPieces(g: JigsawGame): void {
+    const half = ART / 2;
+    for (const [piece, img] of this.pieces) {
+      if (g.placed[piece]) {
+        img.setScale(1).setPosition(this.board.x, this.board.y);
+      } else {
+        const qx = (piece % 2) * half;
+        const qy = Math.floor(piece / 2) * half;
+        const at = this.trayAt(this.traySlot.get(piece) ?? 0);
+        img.setScale(0.8).setPosition(at.x - (qx + half / 2) * 0.8, at.y - (qy + half / 2) * 0.8);
+      }
+    }
+  }
+
   private drawJigsaw(g: JigsawGame): void {
+    this.placeJigsawPieces(g);
     this.title.setText(`ピースをえらんで、正しい場所に はめよう  ${MISSION_GAME.jigsawPieces - g.tray.length}/${MISSION_GAME.jigsawPieces}`);
     const a = this.art;
     const half = ART / 2;
@@ -288,8 +304,7 @@ export class MissionGameView {
     a.fillStyle(COLORS.landmarkWood).fillRoundedRect(PANEL.x + 14, PANEL.y + 252, PANEL.w - 28, 96, 8);
     a.lineStyle(2, COLORS.ink).strokeRoundedRect(PANEL.x + 14, PANEL.y + 252, PANEL.w - 28, 96, 8);
     g.tray.forEach((piece) => {
-      const slot = [...this.pieces.keys()].indexOf(piece);
-      const at = this.trayAt(slot);
+      const at = this.trayAt(this.traySlot.get(piece) ?? 0);
       const s = half * 0.8;
       a.lineStyle(g.selected === piece ? 5 : 2, g.selected === piece ? COLORS.uiHoney : COLORS.ink).strokeRect(at.x - s / 2, at.y - s / 2, s, s);
     });

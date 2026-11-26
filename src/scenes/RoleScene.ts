@@ -175,6 +175,13 @@ export class RoleScene extends Phaser.Scene {
         this.onReady();
       }
     });
+    // 選んでいるあいだ・待っているあいだに通信が切れたら（親機が抜けた など）、知らせてロビーに戻る
+    net.relay.onClosed = () => {
+      if (!this.scene.isActive()) return;
+      this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.75).setOrigin(0).setInteractive().setDepth(50);
+      label(this, SCREEN.width / 2, 300, '通信が切れました\n（ルームを作った人が ぬけた など）', 16).setDepth(51);
+      this.time.delayedCall(2500, () => this.scene.start('Lobby', {}));
+    };
     this.events.once('shutdown', () => unlisten());
   }
 
