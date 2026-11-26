@@ -6,6 +6,7 @@ import { createFieldState, type FieldState, type Harvester } from './harvest';
 import { allMissionsDone, facilityById, facilityNear, facilityStand, maxUnitsOf, unitsOf, type MissionEvent } from './missions';
 import { faceTo, type Point } from './movement';
 import type { Rng } from './random';
+import { canSee } from './vision';
 import { allScanned, createSpyState, patchSize, type SpyEvent, type SpyState } from './spy';
 
 /** 試合に出ているパテ1体 */
@@ -421,7 +422,8 @@ export function observePatch(m: MatchState, now: number, dt: number): void {
   const spyPawn = m.pawns.find((p) => p.isSpy)!;
   const size = patchSize(m.spy, now);
   for (const p of m.pawns) {
-    if (!p.h.frozen && p !== spyPawn && dist(p.h.walker.pos, spyPawn.h.walker.pos) <= SUSPICION.patchSeeRadius) {
+    // 塗りムラは、スパイが視界に入っているときだけ見える
+    if (!p.h.frozen && p !== spyPawn && dist(p.h.walker.pos, spyPawn.h.walker.pos) <= SUSPICION.patchSeeRadius && canSee(p.h, spyPawn.h.walker.pos, now)) {
       addSuspicion(m, p, spyPawn, SUSPICION.sawPatchPerSecond * (size / 4) * dt, spyPawn.h.walker.pos);
     }
   }
@@ -436,7 +438,10 @@ export function botWantsToReport(m: MatchState, now: number, visionRadius: numbe
   if (m.phase !== 'play') return null;
   for (const p of m.pawns) {
     if (p.isPlayer || p.isSpy || p.h.frozen) continue;
-    const body = m.pawns.find((o) => o.h.frozen && !m.known.has(o.h) && dist(o.h.walker.pos, p.h.walker.pos) <= visionRadius * 0.8);
+    // 置物が視界（前の扇形）に入ったら気づく
+    const body = m.pawns.find(
+      (o) => o.h.frozen && !m.known.has(o.h) && dist(o.h.walker.pos, p.h.walker.pos) <= visionRadius * 0.8 && canSee(p.h, o.h.walker.pos, now),
+    );
     if (!body) {
       m.spotted.delete(p);
       continue;

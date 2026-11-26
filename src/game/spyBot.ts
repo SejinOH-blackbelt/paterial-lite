@@ -6,9 +6,10 @@
 import { LANDMARKS, SCAN_GAME, SPY, SPY_BOT } from './config';
 import { updateBot, type Bot, type BotTapEvent } from './bot';
 import type { FieldState, Harvester } from './harvest';
+import { watchersOf } from './vision';
 import { setTarget } from './movement';
 import type { Rng } from './random';
-import { isLocked, pawnsNear, prank, prankTarget, startScan, updateScan, type SpyEvent, type SpyState } from './spy';
+import { isLocked, prank, prankTarget, startScan, updateScan, type SpyEvent, type SpyState } from './spy';
 
 export interface SpyBotMind {
   /** 向かっている名物（なければ null） */
@@ -45,13 +46,14 @@ export function updateSpyBot(
 ): SpyBotResult {
   const h = bot.h;
   const out: SpyBotResult = { taps: [], spyEvents: [] };
-  const watchers = () => pawnsNear(all, h.walker.pos, SPY.witnessRadius, [h]);
+  // 見ているパテ（前を向いて、こちらが視界に入っている）。後ろからなら気づかれない
+  const watchers = () => watchersOf(all, h.walker.pos, SPY.witnessRadius, [h], now);
 
   // イタズラ：試合の途中から、近くに相手がいて、ほかに見ている人がいないときだけ（1秒ごとに考える）
   if (now >= mind.nextPrankRoll) {
     mind.nextPrankRoll = now + 1;
     const target = prankTarget(spy, all, now);
-    const lonely = target && pawnsNear(all, h.walker.pos, SPY.witnessRadius, [h, target]).length === 0;
+    const lonely = target && watchersOf(all, h.walker.pos, SPY.witnessRadius, [h, target], now).length === 0;
     if (lonely && rng() < SPY_BOT.prankChancePerSecond) {
       const ev = prank(spy, all, now);
       if (ev) out.spyEvents.push(ev);

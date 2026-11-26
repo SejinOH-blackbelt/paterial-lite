@@ -3,7 +3,7 @@
 // ・お祈り：土の祠の前に立つと、土のお祈りが始まる
 // ・プレイヤーはミニゲームを遊ぶ。Botは決まった時間がたつと終わる（ときどきまちがえて、やり直す）
 
-import { AFFINITY, FACILITIES, FACILITY, MISSION_BOT, MISSION_WEIGHT, MISSIONS } from './config';
+import { AFFINITY, FACILITIES, FACILITY, MISSION_BOT, MISSION_WEIGHT, MISSIONS, VISION } from './config';
 import { affinity, type Affinity } from './elements';
 import type { Harvester } from './harvest';
 import { createMissionGame, type MissionGame } from './missionGames';
@@ -187,6 +187,8 @@ export function finishMission(h: Harvester, now: number): MissionEvent | null {
   const m = missionById(task.missionId);
   h.finished.add(m.id);
   if (m.kind !== null) h.materials -= m.need; // 始めるときに手持ちを確かめているので、足りている
+  // 雷のミッションを終えると、しばらく視界がまるくなる（暗闇が晴れる）
+  if (m.element === 'thunder') h.lightUntil = now + VISION.lightSeconds;
   h.task = null;
   return { h, missionId: m.id, kind: 'done', time: now, at: { ...h.walker.pos } };
 }

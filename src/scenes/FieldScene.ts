@@ -76,6 +76,7 @@ import { YorishiroView } from './YorishiroView';
 import { finishPossess, kickFromShrine, nearYorishiro, pressCommand, shrineChance, startPossess } from '../game/yorishiro';
 import type { NetGame } from '../net/netGame';
 import { dealMissions, randomElement, type ElementId } from '../game/elements';
+import { isLit, seeAmount } from '../game/vision';
 import {
   applyFieldWire,
   applySpyWire,
@@ -1484,13 +1485,52 @@ export class FieldScene extends Phaser.Scene {
         ctx.fillRect(0, 0, width, height);
       });
     }
-    this.fog = this.add.image(0, 0, key).setDepth(8800);
+    // 視界は前だけ：前の扇形と足元の円だけ穴をあけた霧（右向きに描いて、向きに合わせて回す）
+    const cone = 'field-vision-cone';
+    if (!this.textures.exists(cone)) {
+      const width = SCREEN.width * 2 + 120;
+      const height = SCREEN.height * 2 + 120;
+      drawPart(this, cone, width, height, (ctx) => {
+        const x = width / 2;
+        const y = height / 2;
+        const tint = Phaser.Display.Color.IntegerToColor(COLORS.spyFog);
+        const rgba = (alpha: number) => `rgba(${tint.red}, ${tint.green}, ${tint.blue}, ${alpha})`;
+        ctx.fillStyle = rgba(VISION.fogAlpha);
+        ctx.fillRect(0, 0, width, height);
+        ctx.globalCompositeOperation = 'destination-out';
+        // 足元のまわりの円
+        const near = ctx.createRadialGradient(x, y, VISION.nearRadius, x, y, VISION.nearRadius + 16);
+        near.addColorStop(0, 'rgba(0,0,0,1)');
+        near.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = near;
+        ctx.fillRect(x - 100, y - 100, 200, 200);
+        // 前の扇形（外のふちはぼかし、横のふちは少しずつ広げて重ね、ぼかす）
+        const sector = (half: number, alpha: number) => {
+          const g = ctx.createRadialGradient(x, y, VISION.radius, x, y, VISION.radius + 22);
+          g.addColorStop(0, `rgba(0,0,0,${alpha})`);
+          g.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.arc(x, y, VISION.radius + 22, -half, half);
+          ctx.closePath();
+          ctx.fill();
+        };
+        sector(VISION.coneHalf - VISION.coneFade, 1);
+        for (let k = 1; k <= 4; k++) sector(VISION.coneHalf - VISION.coneFade + (VISION.coneFade * k) / 4, 0.35);
+      });
+    }
+    this.fog = this.add.image(0, 0, cone).setDepth(8800);
     this.updateFog();
   }
 
   private updateFog(): void {
-    // 土の精になったら、土の精のまわりが見える
+    // 土の精になったら、土の精のまわりが見える（土の精はまるく見える）
     const { x, y } = this.listenerPos();
+    const round = !!this.spirit || isLit(this.player, this.audio.heardTime());
+    const key = round ? 'field-vision-fog' : 'field-vision-cone';
+    if (this.fog.texture.key !== key) this.fog.setTexture(key);
+    this.fog.setRotation(round ? 0 : this.player.walker.heading); // 向いている方向に扇を向ける
     this.fog.setPosition(x, y - 20); // パテの体の真ん中あたりを中心に見る
     this.camTarget.setPosition(x, y - 20);
   }
@@ -1764,8 +1804,12 @@ export class FieldScene extends Phaser.Scene {
 
   /** その場所が、いま見える範囲にどれだけ入っているか（1 = はっきり見える、0 = 見えない） */
   private visibility(x: number, y: number): number {
-    const me = this.listenerPos();
-    const d = Math.hypot(x - me.x, y - me.y);
-    return Phaser.Math.Clamp((VISION.radius - d) / VISION.pateFade, 0, 1);
+    // 土の精はまるく見える。ふつうは前の扇形と足元だけ（雷のミッションのあとは、しばらくまるい）
+    if (this.spirit) {
+      const me = this.listenerPos();
+      const d = Math.hypot(x - me.x, y - me.y);
+      return Phaser.Math.Clamp((VISION.radius - d) / VISION.pateFade, 0, 1);
+    }
+    return seeAmount(this.player, { x, y }, this.audio.heardTime());
   }
 }

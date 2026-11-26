@@ -383,6 +383,14 @@ export const VISION = {
   fogAlpha: 0.78,
   /** ほかのパテが、見える範囲のふちの内側でふわっと消えていく幅（ふちより外では完全に見えない） */
   pateFade: 24,
+  /** 視界は前だけ：向いている方向から左右にこの角度（ラジアン）まで見える */
+  coneHalf: Math.PI / 3,
+  /** 扇のふちで、ふわっと消えていく角度の幅（ラジアン） */
+  coneFade: 0.18,
+  /** 足元のまわりは、後ろでもこの半径まで見える */
+  nearRadius: 46,
+  /** 雷のミッションを終えると、この秒数だけ視界がまるくなる（暗闇が晴れる） */
+  lightSeconds: 25,
 } as const;
 
 /** 8つの国（docs/vision.md より。名産と叩く音のうち、企画書にないものは仮） */
@@ -454,9 +462,9 @@ export const FACILITY = {
  */
 export const MISSIONS = [
   // element：そのミッションのエレメント（M9 の①では、いまの施設に仮に当てている。②で5つの施設に置き換える）
-  { id: 'kiln', name: '窯で焼く', kind: 'clay', need: 8, facility: 'kiln', game: 'drum', element: 'fire' },
-  { id: 'workshop', name: '製造所で組み立てる', kind: 'bamboo', need: 7, facility: 'workshop', game: 'jigsaw', element: 'wind' },
-  { id: 'foundry', name: '鋳造所で流し込む', kind: 'stone', need: 6, facility: 'foundry', game: 'pegs', element: 'thunder' },
+  { id: 'kiln', name: '窯で焼く', kind: 'clay', need: 13, facility: 'kiln', game: 'drum', element: 'fire' },
+  { id: 'workshop', name: '製造所で組み立てる', kind: 'bamboo', need: 11, facility: 'workshop', game: 'jigsaw', element: 'wind' },
+  { id: 'foundry', name: '鋳造所で流し込む', kind: 'stone', need: 10, facility: 'foundry', game: 'pegs', element: 'thunder' },
   { id: 'prayer', name: '土のお祈り', kind: null, need: 0, facility: 'shrine', game: 'prayer', element: 'earth' },
 ] as const;
 

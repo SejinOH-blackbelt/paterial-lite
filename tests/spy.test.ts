@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BOT_PROFILES, LANDMARKS, SPY } from '../src/game/config';
 import { createBot } from '../src/game/bot';
 import { createFieldState, createHarvester, moveHarvester, updateHarvester } from '../src/game/harvest';
-import { createWalker, stepWalker } from '../src/game/movement';
+import { createWalker, stepWalker, faceTo } from '../src/game/movement';
 import { createRng } from '../src/game/random';
 import {
   canScan,
@@ -70,14 +70,18 @@ describe('スパイ', () => {
     expect(allScanned(s)).toBe(true);
   });
 
-  it('スキャンの瞬間に近くにいたパテは目撃者になる。遠くのパテはならない', () => {
+  it('スキャンの瞬間に、近くでこちらを向いていたパテは目撃者になる。遠くのパテ・後ろを向いていたパテはならない（視界は前だけ）', () => {
     const spy = at(torii.x, torii.y + 20);
     const near = at(torii.x + 60, torii.y + 20);
+    faceTo(near.walker, 'left'); // スパイのほうを向いている
+    const back = at(torii.x - 70, torii.y + 20);
+    faceTo(back.walker, 'left'); // スパイに背中を向けている
     const far = at(torii.x + 200, torii.y + 200);
     const s = createSpyState(spy, 0, createRng(1));
     startScan(s, 0);
-    const ev = updateScan(s, [spy, near, far], SPY.scanSeconds)!;
+    const ev = updateScan(s, [spy, near, back, far], SPY.scanSeconds)!;
     expect(ev.witnesses).toContain(near);
+    expect(ev.witnesses).not.toContain(back);
     expect(ev.witnesses).not.toContain(far);
   });
 

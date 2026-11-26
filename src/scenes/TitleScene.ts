@@ -13,13 +13,15 @@ import { FONT, INK, cssColor, label, panel, textButton } from './ui';
 const HOW_TO = [
   '和の国に、バイキングのスパイが1体まぎれこんだ！',
   '',
-  '【操作】左下のスティックで進む（パソコンは矢印キーでも）。右下のボタンは押せるときに光る：素材のそばで「採取」、施設のそばで「アクション」（加工・お祈り）。',
+  '【操作】左下のスティックで進む（パソコンは矢印キーも）。右下のボタンは押せるときに光る：素材のそばで「採取」、施設のそばで「アクション」。',
   '',
-  '【王様（市民側）】きみは王冠のパテ。素材を集めて窯・製造所・鋳造所で加工し、土の祠でお祈りして、国の仕事ゲージを満タンに。置物を見つけたら「呼び出し」、土の祠の鈴で「緊急の呼び出し」。投票でスパイを当てよう。ぬれぎぬだと支持度が下がり、0 でストライキ！',
+  '【王様】王冠のパテ。素材を集め、配られた3つのミッションをこなして国の仕事ゲージを満タンに。置物を見つけたら「呼び出し」、土の祠で「緊急の呼び出し」。投票でスパイを当てよう。ぬれぎぬは支持度が下がる。',
   '',
-  '【スパイ】名物をスキャンして、自分のミッションも終えれば勝ち。近くのパテを置物にもできる。動ける市民がスパイと同じ数になっても勝ち。',
+  '【スパイ】名物をスキャンして、自分のミッションも終えれば勝ち。近くのパテを置物にもできる。',
   '',
-  '手がかり：スパイは叩くと石の「コツッ」、ミッションをまちがえると小さな「ゴリッ」。体にグレーの塗りムラ…',
+  '【エレメント】パテは魂。体のエレメントでミッションに得意・苦手・不可［×］がある。不可なら「依代の祠」でコマンドを押して乗りうつろう。視界は前だけ（雷のミッションのあと、しばらくまるい）。',
+  '',
+  '手がかり：スパイは叩くと石の「コツッ」、まちがえると「ゴリッ」。体にグレーの塗りムラ…',
 ].join('\n');
 
 /** 招待の合言葉は1回だけ使う（タイトルに戻ってきたとき、また入らないように） */
@@ -73,7 +75,7 @@ export class TitleScene extends Phaser.Scene {
     const card = panel(this, SCREEN.width / 2, SCREEN.height / 2, SCREEN.width - 30, 560, COLORS.uiPaper);
     const title = label(this, SCREEN.width / 2, SCREEN.height / 2 - 250, 'あそびかた', 22, cssColor(COLORS.uiHoney));
     const body = this.add
-      .text(SCREEN.width / 2, SCREEN.height / 2 - 222, HOW_TO, { fontFamily: FONT, fontSize: '13px', color: INK, align: 'left', lineSpacing: 4, wordWrap: { width: 300, useAdvancedWrap: true } })
+      .text(SCREEN.width / 2, SCREEN.height / 2 - 222, HOW_TO, { fontFamily: FONT, fontSize: '12px', color: INK, align: 'left', lineSpacing: 3, wordWrap: { width: 300, useAdvancedWrap: true } })
       .setOrigin(0.5, 0);
     const parts: Phaser.GameObjects.GameObject[] = [bg, card, title, body];
     const close = textButton(this, SCREEN.width / 2, SCREEN.height / 2 + 245, 140, 40, 'とじる', COLORS.uiHoney, () => parts.concat(close).forEach((o) => o.destroy()), 16);

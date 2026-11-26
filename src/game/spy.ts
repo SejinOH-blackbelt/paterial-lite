@@ -9,6 +9,7 @@
 import { LANDMARKS, SPY } from './config';
 import { checkTimeout, createScanGame, type QuizContext, type ScanGame } from './scanGame';
 import type { Harvester } from './harvest';
+import { watchersOf } from './vision';
 import type { Point } from './movement';
 import type { Rng } from './random';
 
@@ -142,7 +143,7 @@ export function updateScan(s: SpyState, all: readonly Harvester[], now: number):
   if (!success) {
     // 失敗：その名物は、しばらくスキャンできない。「ブブー」と鳴るので近くにいれば気づく
     s.failed.set(l.id, now + SPY.scanFailLockSeconds);
-    const ev: SpyEvent = { kind: 'scanFail', time: now, at: { ...h.walker.pos }, landmarkId: l.id, witnesses: pawnsNear(all, h.walker.pos, SPY.witnessRadius, [h]) };
+    const ev: SpyEvent = { kind: 'scanFail', time: now, at: { ...h.walker.pos }, landmarkId: l.id, witnesses: watchersOf(all, h.walker.pos, SPY.witnessRadius, [h], now) };
     s.log.push(ev);
     return ev;
   }
@@ -153,7 +154,7 @@ export function updateScan(s: SpyState, all: readonly Harvester[], now: number):
     time: now,
     at: { ...h.walker.pos },
     landmarkId: l.id,
-    witnesses: pawnsNear(all, h.walker.pos, SPY.witnessRadius, [h]),
+    witnesses: watchersOf(all, h.walker.pos, SPY.witnessRadius, [h], now),
   };
   s.log.push(ev);
   return ev;
@@ -189,7 +190,7 @@ export function prank(s: SpyState, all: readonly Harvester[], now: number): SpyE
     time: now,
     at: { ...s.spy.walker.pos },
     target,
-    witnesses: pawnsNear(all, s.spy.walker.pos, SPY.witnessRadius, [s.spy, target]),
+    witnesses: watchersOf(all, s.spy.walker.pos, SPY.witnessRadius, [s.spy, target], now),
   };
   s.log.push(ev);
   return ev;

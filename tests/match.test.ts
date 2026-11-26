@@ -21,7 +21,7 @@ import {
   startMeeting,
   type Pawn,
 } from '../src/game/match';
-import { createWalker } from '../src/game/movement';
+import { createWalker, faceTo } from '../src/game/movement';
 import { createRng } from '../src/game/random';
 import { prank } from '../src/game/spy';
 
@@ -203,7 +203,8 @@ describe('Botの疑い度', () => {
     const { m, pawns, spy } = setup();
     spy.h.walker.pos = { x: 200, y: 300 };
     pawns[1].h.walker.pos = { x: 230, y: 300 }; // ねらわれる
-    pawns[2].h.walker.pos = { x: 200, y: 360 }; // 見ている
+    pawns[2].h.walker.pos = { x: 200, y: 360 }; // 見ている（スパイのほうを向いている）
+    faceTo(pawns[2].h.walker, 'up');
     const ev = prank(m.spy, m.pawns.map((p) => p.h), SPY.prankStartDelay)!;
     observeSpyEvent(m, ev);
     const call = botWantsToReport(m, SPY.prankStartDelay, 130);
