@@ -158,6 +158,12 @@ export const HUD_BUTTONS = {
   prank: { x: 120, y: 450, r: 26 },
 } as const;
 
+/** 友達と遊ぶとき */
+export const NET = {
+  /** ようすを送る間隔（秒）。短いほど動きがなめらかだが、通信が増える */
+  sendInterval: 0.1,
+} as const;
+
 /** リズム採取（回るメーター） */
 export const RHYTHM = {
   /** テンポ（1分間の拍の数）。メーターの針がゾーンの真ん中を通る瞬間は、この拍にそろえる */

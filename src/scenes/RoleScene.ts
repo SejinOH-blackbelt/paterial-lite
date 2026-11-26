@@ -5,10 +5,13 @@ import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
 import { PateView } from './PateView';
 import { cssColor, label, panel } from './ui';
+import type { NetGame } from '../net/netGame';
 
 export interface RoleData {
-  /** スパイになるパテの番号（0 がプレイヤー） */
+  /** スパイになるパテの番号（ひとりで遊ぶときは 0 がプレイヤー。友達と遊ぶときは席の番号） */
   spyIndex: number;
+  /** 友達と遊ぶときの情報（ひとりなら無し） */
+  net?: NetGame;
 }
 
 export class RoleScene extends Phaser.Scene {
@@ -19,12 +22,13 @@ export class RoleScene extends Phaser.Scene {
     super('Role');
   }
 
-  create(): void {
-    // URL の最後が #spy なら必ずスパイ、#citizen なら必ず市民（テスト用）
+  create(data?: Partial<RoleData>): void {
+    const net = data?.net;
+    // URL の最後が #spy なら必ずスパイ、#citizen なら必ず市民（テスト用。友達と遊ぶときは親機が決める）
     const rng = createRng(Date.now());
     const hash = typeof location !== 'undefined' ? location.hash : '';
-    const spyIndex = hash === '#spy' ? 0 : hash === '#citizen' ? 1 + Math.floor(rng() * 5) : chooseSpy(6, rng);
-    const isSpy = spyIndex === 0;
+    const spyIndex = net ? net.spy : hash === '#spy' ? 0 : hash === '#citizen' ? 1 + Math.floor(rng() * 5) : chooseSpy(6, rng);
+    const isSpy = spyIndex === (net ? net.mySeat : 0);
 
     const x = SCREEN.width / 2;
     this.cameras.main.setBackgroundColor(isSpy ? COLORS.uiStone : COLORS.background);
@@ -54,7 +58,7 @@ export class RoleScene extends Phaser.Scene {
         : '和の国の 王様パテ。\nミッションで ゲージを満タンに。\nスパイを当てよう。でも ぬれぎぬは\n支持度が下がる。0 でストライキ！',
       16,
     );
-    const go = () => this.scene.start('Field', { spyIndex } satisfies RoleData);
+    const go = () => this.scene.start('Field', { spyIndex, net } satisfies RoleData);
     this.time.delayedCall(3500, go);
     this.input.once('pointerdown', go);
   }

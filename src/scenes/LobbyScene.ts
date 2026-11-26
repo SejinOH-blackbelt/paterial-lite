@@ -3,6 +3,11 @@ import Phaser from 'phaser';
 import QRCode from 'qrcode';
 import { BOT_PROFILES, COLORS, PLAYER_PART, SCREEN } from '../game/config';
 import { inviteUrl, RelayClient, type JoinError } from '../net/relay';
+import type { NetGame } from '../net/netGame';
+import { assignSeats, type StartWire } from '../net/sync';
+import { createRng } from '../game/random';
+import { chooseSpy } from '../game/spy';
+import type { RoleData } from './RoleScene';
 import { makePartTextures, type HeadPart } from './partTextures';
 import { PateView } from './PateView';
 import { makeSpyTextures } from './spyTextures';
@@ -148,6 +153,10 @@ export class LobbyScene extends Phaser.Scene {
       if (this.scene.isActive()) this.showMenu(relay.room ? 'ルームを作った人が ぬけました' : ERROR_TEXT.network);
     };
     relay.onStarted = () => this.onStarted();
+    relay.listen((from, data) => {
+      const m = data as StartWire;
+      if (m?.k === 'match' && from === relay.host && this.relay === relay) this.goRole(m);
+    });
     try {
       await relay.open();
     } catch {
@@ -229,14 +238,28 @@ export class LobbyScene extends Phaser.Scene {
     relay.start();
   }
 
-  /** 試合が始まった（サーバーからの知らせ） */
+  /**
+   * 試合が始まった（サーバーからの知らせ）。
+   * 親機が席・スパイ・乱数のたねを決めてみんなに送る。ほかの人は、それが届いたら役の発表へ
+   */
   private onStarted(): void {
-    {
-      // 試合中のやりとりは、M8.5 の次の段階で作る
-      this.clear();
-      this.add2(label(this, SCREEN.width / 2, 240, 'みんな そろいました！', 22, INK).setStroke(INK, 0));
-      this.add2(label(this, SCREEN.width / 2, 290, '（いっしょに遊ぶ試合は、いま作っているところです）', 12, INK).setStroke(INK, 0));
-      this.add2(textButton(this, SCREEN.width / 2, 400, 160, 44, 'もどる', COLORS.uiPaper, () => this.scene.start('Title'), 16));
-    }
+    const relay = this.relay!;
+    this.clear();
+    this.add2(label(this, SCREEN.width / 2, 260, 'みんな そろいました！', 22, INK).setStroke(INK, 0));
+    if (!relay.isHost) return; // 親機からの「match」を待つ（listen で受けとる）
+    const seats = assignSeats(relay.host, relay.members.map((m) => m.id), MAX_MEMBERS);
+    const seed = Math.floor(Math.random() * 2 ** 31);
+    const spy = chooseSpy(MAX_MEMBERS, createRng(seed ^ 0x5eed));
+    const msg: StartWire = { k: 'match', seats, spy, seed };
+    relay.send('all', msg);
+    this.goRole(msg);
+  }
+
+  /** 席などが決まったので、役の発表へ（中継の接続は試合へ持っていく） */
+  private goRole(m: StartWire): void {
+    const relay = this.relay!;
+    const net: NetGame = { relay, seats: m.seats, mySeat: m.seats.indexOf(relay.you), spy: m.spy, seed: m.seed };
+    this.relay = null; // この画面を閉じても、接続は切らない
+    this.scene.start('Role', { spyIndex: m.spy, net } satisfies RoleData);
   }
 }

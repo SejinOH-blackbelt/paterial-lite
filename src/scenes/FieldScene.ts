@@ -1,13 +1,14 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, MISSIONS, PATE, HUD_BUTTONS, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, MISSIONS, NET, PATE, HUD_BUTTONS, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   createHarvester,
   driveHarvester,
   harvestChance,
   harvestTap,
+  pointById,
   startHarvest,
   updateFieldState,
   updateHarvester,
@@ -31,6 +32,7 @@ import {
   startMeeting,
   timeLeft,
   type MatchState,
+  type OutcomeReason,
   type Pawn,
 } from '../game/match';
 import {
@@ -63,10 +65,27 @@ import {
   type SpyState,
 } from '../game/spy';
 import { createSpyBotMind, updateSpyBot, type SpyBotMind } from '../game/spyBot';
-import { nearestPass, needleAngle, nextPass, passTime, type HarvestSession, type Judgement } from '../game/rhythm';
+import { nearestPass, needleAngle, nextPass, passTime, startSession, type HarvestSession, type Judgement } from '../game/rhythm';
 import { GameAudio } from './audio';
 import { Stick } from './Stick';
 import { HudButton } from './HudButton';
+import type { NetGame } from '../net/netGame';
+import {
+  applyFieldWire,
+  applySpyWire,
+  applyWireToPawn,
+  fieldToWire,
+  pawnToWire,
+  spyToWire,
+  type MissionWire,
+  type NetMessage,
+  type OverWire,
+  type PrankRequest,
+  type SelfState,
+  type Snapshot,
+  type SpyWire,
+  type TapEvent,
+} from '../net/sync';
 import type { Bgm } from './bgm';
 import type { MeetingData } from './MeetingScene';
 import type { ResultData } from './ResultScene';
@@ -128,8 +147,21 @@ export class FieldScene extends Phaser.Scene {
   /** 1試合のルールの状態 */
   private match!: MatchState;
   private playerPawn!: Pawn;
-  /** 役の発表で決まったスパイの番号 */
+  /** 役の発表で決まったスパイの番号（席の番号） */
   private spyIndex = 0;
+  /** 友達と遊ぶときの情報（ひとりなら null） */
+  private net: NetGame | null = null;
+  /** 自分の席（ひとりなら 0） */
+  private me = 0;
+  /** 次にようすを送る時刻（音の時計） */
+  private netSendAt = 0;
+  /** ほかのスマホのパテが歩いているか（絵を歩く姿にするため） */
+  private remoteWalking = new Map<Harvester, boolean>();
+  /** 子機：親機から届いた残り時間（秒）と、届いたときの時刻 */
+  private netTime: { left: number; at: number } | null = null;
+  /** 子機：親機から届いた塗りムラの大きさ */
+  private netPatch = 0;
+  private netUnlisten: (() => void) | null = null;
   /** 画面上のゲージ・時間・ミッション */
   private gaugeFill!: Phaser.GameObjects.Rectangle;
   private gaugeText!: Phaser.GameObjects.Text;
@@ -207,6 +239,13 @@ export class FieldScene extends Phaser.Scene {
 
   init(data: RoleData): void {
     this.spyIndex = data?.spyIndex ?? 0;
+    this.net = data?.net ?? null;
+    this.me = this.net?.mySeat ?? 0;
+    this.netSendAt = 0;
+    this.remoteWalking.clear();
+    this.netTime = null;
+    this.netPatch = 0;
+    this.netUnlisten = null;
     this.spirit = null;
     this.scanView = null;
     this.missionView = null;
@@ -256,15 +295,18 @@ export class FieldScene extends Phaser.Scene {
     this.facilityMarks = this.add.graphics().setDepth(8701);
 
     // パテ6体：プレイヤー1体 + 住民Bot 5体
-    this.rng = createRng(Date.now());
+    // 友達と遊ぶときは、みんなで同じ乱数のたねを使い、最初のようす（塗りムラの位置など）をそろえる
+    this.rng = createRng(this.net ? this.net.seed : Date.now());
     this.pates = [];
     this.addPate(createHarvester(createWalker({ ...PLAYER_START })), PLAYER_PART, PLAYER_ELEMENT, null, 'player');
     BOT_PROFILES.forEach((profile, i) => {
-      const bot = createBot(profile, BOT_STARTS[i]);
-      this.addPate(bot.h, profile.part, profile.element, bot, profile.id);
+      // 友達が座った席は Bot にしない（その人のスマホが動かす）
+      const human = !!this.net && this.net.seats[i + 1] !== 0;
+      const bot = human ? null : createBot(profile, BOT_STARTS[i]);
+      this.addPate(bot ? bot.h : createHarvester(createWalker({ ...BOT_STARTS[i] })), profile.part, profile.element, bot, profile.id);
     });
-    this.player = this.pates[0].h;
-    this.pateSprite = this.pates[0].view;
+    this.player = this.pates[this.me].h;
+    this.pateSprite = this.pates[this.me].view;
     this.all = this.pates.map((e) => e.h);
     this.setupMatch();
 
@@ -288,6 +330,7 @@ export class FieldScene extends Phaser.Scene {
     this.setupHud();
     this.spyUi = this.add.graphics().setDepth(9150);
     if (this.isPlayerSpy) this.setupSpyButtons();
+    this.setupNet();
     // 右下のボタン：採取・アクション（施設のミッション）・呼び出し
     this.harvestButton = new HudButton(this, HUD_BUTTONS.harvest, '採取', COLORS.uiHoney, 17);
     this.actionButton = new HudButton(this, HUD_BUTTONS.action, 'アクション', COLORS.uiMoss, 10);
@@ -328,9 +371,18 @@ export class FieldScene extends Phaser.Scene {
       if (this.prankButton?.hit(over)) {
         this.prankButton.squash();
         const now = this.audio.heardTime();
-        const ev = prank(this.spy, this.all, now);
-        if (ev) this.onSpyEvent(ev, now);
-        else {
+        if (!this.isSim()) {
+          // 子機のスパイ：イタズラは親機に頼む（相手を置物にするのは親機が決める）
+          if (prankTarget(this.spy, this.all, now)) {
+            this.netSend('host', { k: 'prank' } satisfies PrankRequest);
+            return;
+          }
+        }
+        const ev = this.isSim() ? prank(this.spy, this.all, now) : null;
+        if (ev) {
+          this.onSpyEvent(ev, now);
+          this.shareSpyEvent(ev);
+        } else {
           const wait = prankWait(this.spy, now);
           this.popText(wait > 0 ? `イタズラは あと${Math.ceil(wait)}秒` : 'すぐそばに相手がいない', '#2b1d14', 14, 0);
         }
@@ -464,6 +516,7 @@ export class FieldScene extends Phaser.Scene {
     const pointId = this.player.session?.pointId;
     const t = this.audio.heardTime(perfMs);
     const res = harvestTap(this.player, this.field, t, t, this.rng);
+    this.shareTap(this.player, res?.judgement ?? null, pointId, res?.used ?? 0);
     // タップで次の1周の速さが変わるので、時刻が変わった拍の音だけ予約を取り直す
     if (res) this.refreshTicks();
     // 判定はその場で一瞬で終わるので、判定に合った音をすぐ鳴らす
@@ -572,6 +625,8 @@ export class FieldScene extends Phaser.Scene {
     updateFieldState(this.field, heard);
     this.drive(dt);
     for (const e of this.pates) {
+      // 友達と遊ぶとき：ほかのスマホのパテ（親機から見た友達、子機から見た自分以外）は、届いたようすを写すだけ
+      if (e.h !== this.player && (this.netMirrors(e))) continue;
       stepWalker(e.h.walker, dt);
       // 最初の判定は、まだ音の予約が間に合う周から選ぶ（scheduleTicks と同じ締め切り）
       const lost = updateHarvester(e.h, this.field, this.all, this.audio.now + SCHEDULE_AHEAD, this.origin);
@@ -582,43 +637,283 @@ export class FieldScene extends Phaser.Scene {
       if (e.bot) {
         // 施設でのミッション（決まった時間で終わる。ときどきまちがえて、やり直す）
         const mev = updateBotTask(e.h, ahead, this.rng);
-        if (mev) this.onMissionEvent(mev, heard);
+        if (mev) {
+          this.onMissionEvent(mev, heard);
+          this.shareMission(mev);
+        }
       }
       if (e.bot && e === this.spyEntity && this.spyMind) {
         // スパイBot：市民のふりをして採取しながら、すきを見てスキャンやイタズラをする
         const r = updateSpyBot(e.bot, this.spyMind, this.spy, this.field, this.all, ahead, this.rng);
         for (const ev of r.taps) this.onBotTap(e, ev, heard);
-        for (const ev of r.spyEvents) this.onSpyEvent(ev, heard);
+        for (const ev of r.spyEvents) {
+          this.onSpyEvent(ev, heard);
+          this.shareSpyEvent(ev);
+        }
       } else if (e.bot) {
         for (const ev of updateBot(e.bot, this.field, this.all, ahead, this.rng)) this.onBotTap(e, ev, heard);
       }
     }
+    this.netUpdate(heard);
     if (this.isPlayerSpy) {
       this.syncScanView(heard);
       const ev = updateScan(this.spy, this.all, heard);
-      if (ev) this.onSpyEvent(ev, heard);
+      if (ev) {
+        this.onSpyEvent(ev, heard);
+        this.shareSpyEvent(ev);
+      }
       if (!this.spy.scan) this.syncScanView(heard);
     }
     this.updatePlayerMission(heard);
-    observePatch(this.match, heard, dt);
+    if (this.isSim()) observePatch(this.match, heard, dt);
     this.updateSpirit(dt);
     this.scheduleTicks();
     this.drawMeter(heard);
     this.drawStock(heard);
     for (const e of this.pates) this.syncPate(e, dt);
-    this.spyEntity.view.setPatch(this.spy.patch.u, this.spy.patch.v, patchSize(this.spy, heard));
+    this.spyEntity.view.setPatch(this.spy.patch.u, this.spy.patch.v, this.isSim() ? patchSize(this.spy, heard) : this.netPatch);
     this.updateFog();
     this.drawSpyUi(heard);
     this.drawHud(heard);
     this.updateButtons();
+    // 勝ち負けを決めるのと Bot の呼び出しは、ひとりのときと親機だけ（子機は親機から知らせが来る）
+    if (!this.isSim()) return;
     // 勝ち負けが決まったら、リザルトへ（Botの呼び出しより先に判定する）
     if (checkOutcome(this.match, heard)) {
+      this.netSend('all', { k: 'over', winner: this.match.outcome!.winner, reason: this.match.outcome!.reason } satisfies OverWire);
       this.endMatch();
       return;
     }
     // Botの呼び出し（イタズラを目撃した・置物を見つけた）
-    const call = botWantsToReport(this.match, heard, VISION.radius);
+    const call = this.net ? null : botWantsToReport(this.match, heard, VISION.radius); // 友達と遊ぶ会議は次の段階
     if (call) this.beginMeeting(call.caller, 'report', call.body);
+  }
+
+  // ---------- 友達と遊ぶ（親機と子機のやりとり） ----------
+
+  /** 試合を動かすのはこのスマホか（ひとりのとき・親機） */
+  private isSim(): boolean {
+    return !this.net || this.me === 0;
+  }
+
+  /** このパテは、ほかのスマホから届いたようすを写すだけか（自分のパテは false） */
+  private netMirrors(e: PateEntity): boolean {
+    if (!this.net) return false;
+    if (!this.isSim()) return true; // 子機：自分以外はすべて親機から
+    return e.bot === null; // 親機：友達のパテ
+  }
+
+  private seatOf(h: Harvester): number {
+    return this.pates.findIndex((e) => e.h === h);
+  }
+
+  /** 伝言を送る（ひとりのときは何もしない） */
+  private netSend(to: 'all' | 'host' | number, msg: NetMessage): void {
+    this.net?.relay.send(to, msg);
+  }
+
+  /** 親機ならみんなへ、子機なら親機へ */
+  private netShare(msg: NetMessage): void {
+    if (this.net) this.netSend(this.isSim() ? 'all' : 'host', msg);
+  }
+
+  /** 伝言を受けとる準備（試合の最初に1回） */
+  private setupNet(): void {
+    const net = this.net;
+    if (!net) return;
+    this.netUnlisten = net.relay.listen((from, data) => this.onNet(from, data as NetMessage));
+    net.relay.onClosed = () => {
+      if (!this.scene.isActive() && !this.scene.isPaused()) return;
+      this.popText('通信が切れました（ルームを作った人が ぬけた など）', '#e03131', 14, 10);
+      this.time.delayedCall(2500, () => this.quitMatch());
+    };
+    this.events.once('shutdown', () => {
+      this.netUnlisten?.();
+      this.netUnlisten = null;
+    });
+  }
+
+  /** 毎コマ：少しずつ、ようすを送る（親機はみんなのようす、子機は自分のようす） */
+  private netUpdate(heard: number): void {
+    if (!this.net || heard < this.netSendAt) return;
+    this.netSendAt = heard + NET.sendInterval;
+    const walking = (e: PateEntity) =>
+      e.h === this.player ? this.driving || isWalking(e.h.walker) : this.remoteWalking.get(e.h) ?? isWalking(e.h.walker);
+    if (!this.isSim()) {
+      this.netSend('host', { k: 'me', p: pawnToWire(this.player, walking(this.pates[this.me])) } satisfies SelfState);
+      return;
+    }
+    const f = fieldToWire(this.field, heard);
+    const snap: Snapshot = {
+      k: 'snap',
+      tl: Math.round(timeLeft(this.match, heard) * 10) / 10,
+      sup: this.match.support,
+      pw: this.pates.map((e) => pawnToWire(e.h, walking(e))),
+      st: f.st,
+      rg: f.rg,
+      spy: spyToWire(this.spy, patchSize(this.spy, heard), prankWait(this.spy, heard)),
+    };
+    this.netSend('all', snap);
+  }
+
+  private onNet(from: number, msg: NetMessage): void {
+    const net = this.net;
+    if (!net || !msg || this.match.phase === 'over') return;
+    const heard = this.audio.heardTime();
+    const host = this.isSim();
+    const fromSeat = net.seats.indexOf(from);
+    const makeSession = (id: string) => startSession(id, pointById(id).kind, heard, this.origin);
+    switch (msg.k) {
+      case 'snap': {
+        if (host || fromSeat !== 0) return;
+        msg.pw.forEach((w, i) => {
+          const e = this.pates[i];
+          if (!e) return;
+          if (i === this.me) {
+            // 自分のパテは自分で動かす。ただし置物にされたことだけは親機に従う
+            if (w.fr === 1 && !e.h.frozen) this.becomeStatue(e.h);
+            return;
+          }
+          const wasFrozen = e.h.frozen;
+          this.remoteWalking.set(e.h, applyWireToPawn(e.h, w, makeSession, heard));
+          if (!wasFrozen && e.h.frozen) e.view.setStatue(true);
+        });
+        applyFieldWire(this.field, msg.st, msg.rg, heard);
+        this.match.support = msg.sup;
+        this.netTime = { left: msg.tl, at: heard };
+        this.netPatch = msg.spy.ps;
+        applySpyWire(this.spy, msg.spy, heard, SPY.prankCooldown, this.isPlayerSpy);
+        return;
+      }
+      case 'me': {
+        if (!host || fromSeat <= 0) return;
+        const e = this.pates[fromSeat];
+        // 置物にしたかどうかは親機が決める（子機から届いた古いようすで戻さない）
+        const frozen = e.h.frozen;
+        this.remoteWalking.set(e.h, applyWireToPawn(e.h, msg.p, makeSession, heard));
+        e.h.frozen = frozen;
+        return;
+      }
+      case 'tap': {
+        if (host ? msg.s !== fromSeat : fromSeat !== 0 || msg.s === this.me) return;
+        const e = this.pates[msg.s];
+        const r = RESOURCE_POINTS[msg.p];
+        if (!e || !r) return;
+        if (host) {
+          // 子機が叩いた分だけ、素材ポイントの残りを減らす（空になったら、戻る時刻を決める）
+          const used = Math.min(msg.u, this.field.stock[r.id]);
+          this.field.stock[r.id] -= used;
+          if (used > 0 && this.field.stock[r.id] <= 0) this.field.regenAt[r.id] = heard + STOCK.regenSeconds;
+          if (e === this.spyEntity) observeKotsu(this.match);
+          this.netSend('all', msg);
+        }
+        this.playRemoteTap(e, msg.j, r.id);
+        return;
+      }
+      case 'mis': {
+        if (host ? msg.s !== fromSeat : fromSeat !== 0 || msg.s === this.me) return;
+        const e = this.pates[msg.s];
+        const m = MISSIONS[msg.m];
+        if (!e || !m) return;
+        if (host) this.netSend('all', msg);
+        this.onMissionEvent({ h: e.h, missionId: m.id, kind: msg.kind, time: heard, at: { ...e.h.walker.pos } }, heard);
+        return;
+      }
+      case 'spy': {
+        const ev = this.spyFromWire(msg, heard);
+        if (host) {
+          // 子機のスパイのスキャンの結果を、親機のスパイのようすに写す（勝ち負けの判定に使う）
+          if (fromSeat !== this.pates.indexOf(this.spyEntity) || msg.kind === 'prank') return;
+          if (msg.kind === 'scan' && msg.lm && !this.spy.scanned.has(msg.lm)) {
+            this.spy.scanned.add(msg.lm);
+            this.spy.fragments++;
+          }
+          if (msg.kind === 'scanFail' && msg.lm) this.spy.failed.set(msg.lm, heard + SPY.scanFailLockSeconds);
+          this.spy.log.push(ev);
+          this.netSend('all', msg);
+        } else {
+          if (fromSeat !== 0) return;
+          if (this.isPlayerSpy && msg.kind !== 'prank') return; // 自分のスキャンは、もう自分の画面で出した
+          if (msg.kind === 'prank' && ev.target && !ev.target.frozen) this.becomeStatue(ev.target);
+        }
+        this.onSpyEvent(ev, heard);
+        return;
+      }
+      case 'prank': {
+        // 子機のスパイ：イタズラは親機で行う（相手を置物にするのは親機が決める）
+        if (!host || fromSeat !== this.pates.indexOf(this.spyEntity)) return;
+        const ev = prank(this.spy, this.all, heard);
+        if (ev) {
+          this.onSpyEvent(ev, heard);
+          this.shareSpyEvent(ev);
+        }
+        return;
+      }
+      case 'over': {
+        if (host || fromSeat !== 0) return;
+        this.match.outcome = { winner: msg.winner, reason: msg.reason as OutcomeReason, time: heard };
+        this.match.phase = 'over';
+        this.endMatch();
+        return;
+      }
+    }
+  }
+
+  /** 置物にされた（子機で、親機から知らされたとき） */
+  private becomeStatue(h: Harvester): void {
+    h.frozen = true;
+    h.session = null;
+    h.task = null;
+    h.claim = null;
+    h.waitingFor = null;
+    h.walker.target = null;
+  }
+
+  /** ほかのスマホのパテが叩いた：近くなら音を鳴らし、叩く動きを見せる */
+  private playRemoteTap(e: PateEntity, j: TapEvent['j'], pointId: string): void {
+    const me = this.listenerPos();
+    const d = Math.hypot(e.h.walker.pos.x - me.x, e.h.walker.pos.y - me.y);
+    const volume = Math.max(0, 1 - d / BOT.hearRadius) ** 2;
+    if (volume > 0.02) this.audio.harvestSound(j, volume, undefined, e === this.spyEntity);
+    e.view.playHit();
+    const point = this.resources.get(pointId);
+    if (point) this.reactToHit(point.image, point.chipColor);
+  }
+
+  /** 叩いたことを伝える（自分・Bot） */
+  private shareTap(h: Harvester, j: TapEvent['j'], pointId: string | undefined, used: number): void {
+    if (!this.net || !pointId) return;
+    this.netShare({ k: 'tap', s: this.seatOf(h), j, p: RESOURCE_POINTS.findIndex((r) => r.id === pointId), u: used } satisfies TapEvent);
+  }
+
+  /** ミッションの出来事を伝える（自分・Bot） */
+  private shareMission(ev: MissionEvent): void {
+    if (!this.net) return;
+    this.netShare({ k: 'mis', s: this.seatOf(ev.h), kind: ev.kind, m: MISSIONS.findIndex((m) => m.id === ev.missionId) } satisfies MissionWire);
+  }
+
+  /** スパイの出来事を伝える */
+  private shareSpyEvent(ev: SpyEvent): void {
+    if (!this.net) return;
+    this.netShare({
+      k: 'spy',
+      kind: ev.kind,
+      at: ev.at,
+      lm: ev.landmarkId,
+      tg: ev.target ? this.seatOf(ev.target) : undefined,
+      w: ev.witnesses.map((h) => this.seatOf(h)),
+    } satisfies SpyWire);
+  }
+
+  private spyFromWire(w: SpyWire, heard: number): SpyEvent {
+    return {
+      kind: w.kind,
+      time: heard,
+      at: w.at,
+      landmarkId: w.lm,
+      target: w.tg !== undefined && w.tg >= 0 ? this.pates[w.tg]?.h : undefined,
+      witnesses: w.w.map((i) => this.pates[i]?.h).filter((h): h is Harvester => !!h),
+    };
   }
 
   /** 予約済みでまだ鳴っていない拍の音を取り消し、予約をやり直す */
@@ -769,6 +1064,7 @@ export class FieldScene extends Phaser.Scene {
 
   /** 住民Botが採取したとき：近いほど大きく音が聞こえる。遠いと聞こえない */
   private onBotTap(e: PateEntity, ev: BotTapEvent, heard: number): void {
+    this.shareTap(e.h, ev.result.judgement, ev.pointId, ev.result.used);
     const me = this.listenerPos();
     const d = Math.hypot(e.h.walker.pos.x - me.x, e.h.walker.pos.y - me.y);
     const volume = Math.max(0, 1 - d / BOT.hearRadius) ** 2;
@@ -788,8 +1084,8 @@ export class FieldScene extends Phaser.Scene {
     const index = Math.min(this.spyIndex, this.pates.length - 1);
     this.pates.forEach((e, i) => (e.pawn.isSpy = i === index));
     this.spyEntity = this.pates[index];
-    this.isPlayerSpy = index === 0;
-    this.playerPawn = this.pates[0].pawn;
+    this.isPlayerSpy = index === this.me;
+    this.playerPawn = this.pates[this.me].pawn;
     this.match = createMatch(
       this.pates.map((e) => e.pawn),
       this.audio.heardTime(),
@@ -801,7 +1097,8 @@ export class FieldScene extends Phaser.Scene {
     const king = chooseKing(this.match.pawns);
     king.part = KING_PART;
     this.pates.find((e) => e.pawn === king)!.view.setHeadPart(KING_PART);
-    this.spyMind = this.isPlayerSpy ? null : createSpyBotMind();
+    // スパイが Bot の席なら、スパイBotの頭脳（動かすのは、ひとりのときと親機だけ）
+    this.spyMind = this.spyEntity.bot ? createSpyBotMind() : null;
   }
 
   /** 画面の上：国の仕事ゲージ・残り時間・自分のミッション */
@@ -882,7 +1179,8 @@ export class FieldScene extends Phaser.Scene {
       this.hudPercent = percent;
       this.gaugeText.setText(`${percent}%`);
     }
-    const seconds = Math.floor(timeLeft(this.match, heard));
+    const left = this.netTime ? this.netTime.left - (heard - this.netTime.at) : timeLeft(this.match, heard);
+    const seconds = Math.max(0, Math.floor(left));
     if (seconds !== this.hudSeconds) {
       this.hudSeconds = seconds;
       this.timeText.setText(mmss(seconds));
@@ -929,6 +1227,11 @@ export class FieldScene extends Phaser.Scene {
 
   /** プレイヤーが呼び出しボタンを押した（呼び出せなかったら false） */
   private playerCalls(): boolean {
+    if (this.net) {
+      // 友達と遊ぶときの会議は、M8.5 の次の段階で作る
+      this.popText('友達と遊ぶ会議は じゅんび中', '#2b1d14', 14, 0);
+      return true;
+    }
     const body = reportableBody(this.match, this.playerPawn);
     if (body) this.beginMeeting(this.playerPawn, 'report', body);
     else if (canEmergency(this.match, this.playerPawn)) this.beginMeeting(this.playerPawn, 'emergency', null);
@@ -1220,7 +1523,10 @@ export class FieldScene extends Phaser.Scene {
   private onPlayerMissionStep(step: Step): void {
     const now = this.audio.heardTime();
     const ev = step === 'miss' ? missEvent(this.player, now) : step === 'done' ? finishMission(this.player, now) : null;
-    if (ev) this.onMissionEvent(ev, now);
+    if (ev) {
+      this.onMissionEvent(ev, now);
+      this.shareMission(ev);
+    }
     if (step === 'done' && ev) {
       this.syncMissionView();
     }
@@ -1267,7 +1573,7 @@ export class FieldScene extends Phaser.Scene {
     if (e.h.frozen && !e.view.isStatue) e.view.setStatue(true);
     e.view.setPosition(x, y);
     e.view.setFacing(e.h.walker.facing);
-    e.view.update(dt, isWalking(e.h.walker) || (e.h === this.player && this.driving && !e.h.frozen));
+    e.view.update(dt, isWalking(e.h.walker) || (e.h === this.player && this.driving && !e.h.frozen) || (this.remoteWalking.get(e.h) ?? false));
     e.shadow.setPosition(x, y - 1).setScale(1 - e.view.bounce * PATE.shadowShrink);
     // 下にいるものほど手前に表示する
     e.view.setDepth(y);
