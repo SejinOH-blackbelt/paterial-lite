@@ -12,6 +12,8 @@ export interface Pawn {
   id: string;
   /** 頭のパーツ（見分けるため） */
   part: string;
+  /** エレメント（火・水・土・風。見た目だけ） */
+  element?: string;
   h: Harvester;
   isSpy: boolean;
   isPlayer: boolean;

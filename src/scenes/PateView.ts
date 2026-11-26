@@ -3,6 +3,7 @@
 import Phaser from 'phaser';
 import { PATE } from '../game/config';
 import type { Facing } from '../game/movement';
+import { DECOR_TEX, makeDecorTextures, type Element } from './elementTextures';
 import { PART_ORIGIN_Y, partKey, type HeadPart } from './partTextures';
 import { PATCH_TEX, STATUE_SIZE, STATUE_TEX } from './spyTextures';
 import { PATE_SIZE, TEX } from './textures';
@@ -30,6 +31,13 @@ export class PateView extends Phaser.GameObjects.Container {
   readonly legL: Phaser.GameObjects.Image;
   readonly legR: Phaser.GameObjects.Image;
   private readonly upperBody: Phaser.GameObjects.Container;
+  private readonly bodyDetails: Phaser.GameObjects.Container;
+  private element: Element | null = null;
+  private elementSurface: Phaser.GameObjects.Image | null = null;
+  private elementMotion: Phaser.GameObjects.Image | null = null;
+  private windBehind: Phaser.GameObjects.Image | null = null;
+  private elementPhase = 0;
+  private strikeSign: Phaser.GameObjects.Image | null = null;
   private facing: Facing = 'down';
   private walkPhase = 0;
   private breathPhase = 0;
@@ -48,7 +56,10 @@ export class PateView extends Phaser.GameObjects.Container {
     this.armL = scene.add.image(-L.armX, L.armY, TEX.pateArm).setOrigin(0.5, 0.1).setRotation(L.armAngle);
     this.armR = scene.add.image(L.armX, L.armY, TEX.pateArm).setOrigin(0.5, 0.1).setRotation(-L.armAngle).setFlipX(true);
     this.torso = scene.add.image(0, L.bodyBottom, TEX.pateBody).setOrigin(0.5, 1);
-    this.upperBody = new Phaser.GameObjects.Container(scene, 0, 0, [this.armL, this.armR, this.torso]);
+    this.bodyDetails = new Phaser.GameObjects.Container(scene, 0, L.bodyBottom);
+    this.upperBody = new Phaser.GameObjects.Container(scene, 0, 0, [
+      this.armL, this.armR, this.torso, this.bodyDetails,
+    ]);
     this.add([this.legL, this.legR, this.upperBody]);
     scene.add.existing(this);
   }
@@ -64,19 +75,119 @@ export class PateView extends Phaser.GameObjects.Container {
   setHeadPart(part: HeadPart): void {
     this.headPart?.destroy();
     this.headPart = this.scene.add.image(0, 0, partKey(part)).setOrigin(0.5, PART_ORIGIN_Y);
-    this.upperBody.add(this.headPart);
-    this.placeHeadPart();
+    if (this.isStatue) {
+      this.headPart.setPosition(0, -STATUE_SIZE.h + 4);
+      this.add(this.headPart);
+    } else {
+      this.upperBody.add(this.headPart);
+      this.placeHeadPart();
+    }
   }
 
   private placeHeadPart(): void {
     if (this.isStatue) return; // 置物になったら、パーツは置物のてっぺんに固定
-    const x = this.facing === 'left' ? PATE_LAYOUT.headSideX
+    const x = this.strikeSign ? 0 : this.facing === 'left' ? PATE_LAYOUT.headSideX
       : this.facing === 'right' ? -PATE_LAYOUT.headSideX : 0;
     // 胴体の伸び縮みに合わせ、差し込み位置を頭の表面に固定する。
     this.headPart?.setPosition(
       x * this.torso.scaleX,
       this.torso.y + (PATE_LAYOUT.headInset - PATE_SIZE.h) * this.torso.scaleY,
-    ).setFlipX(this.facing === 'right');
+    ).setFlipX(!this.strikeSign && this.facing === 'right');
+  }
+
+  /** 頭のパーツを残したまま、体の飾りを付け替える。 */
+  setElement(element: Element | null): void {
+    if (this.element === element) return;
+    this.element = element;
+    this.elementSurface?.destroy();
+    this.elementMotion?.destroy();
+    this.windBehind?.destroy();
+    this.elementSurface = this.elementMotion = this.windBehind = null;
+    this.elementPhase = 0;
+    if (!element) return;
+
+    makeDecorTextures(this.scene);
+    const surface = { fire: DECOR_TEX.scorch, water: DECOR_TEX.gloss, earth: DECOR_TEX.earth, wind: null }[element];
+    if (surface) {
+      this.elementSurface = this.scene.add.image(0, 0, surface).setOrigin(0.5, 1);
+      this.elementSurface.setAlpha(element === 'fire' ? 0.52 : 1);
+      // 土肌の飾りの上に塗りムラを残し、炎など空中の飾りはさらに手前に置く。
+      this.bodyDetails.addAt(this.elementSurface, 0);
+    }
+    const motion = { fire: DECOR_TEX.fire, water: DECOR_TEX.drop, earth: null, wind: DECOR_TEX.wind }[element];
+    if (motion) {
+      this.elementMotion = this.scene.add.image(0, 0, motion);
+      this.upperBody.add(this.elementMotion);
+      if (this.headPart && !this.isStatue) this.upperBody.bringToTop(this.headPart);
+    }
+    if (element === 'wind') {
+      this.windBehind = this.scene.add.image(0, 0, DECOR_TEX.wind);
+      this.upperBody.addAt(this.windBehind, 0);
+    }
+    this.placeElement(0);
+  }
+
+  private placeElement(dtSeconds: number): void {
+    const mirror = !this.strikeSign && this.facing === 'right';
+    const direction = mirror ? -1 : 1;
+    this.elementSurface?.setFlipX(mirror);
+    const motion = this.elementMotion;
+    if (!motion) return;
+
+    this.elementPhase += dtSeconds;
+    const { y, scaleX, scaleY } = this.torso;
+    if (this.element === 'fire') {
+      const wave = this.elementPhase * 8;
+      motion.setPosition(15 * direction * scaleX, y - 32 * scaleY)
+        .setOrigin(0.5, 0.9).setRotation(Math.sin(wave) * 0.16)
+        .setScale(1, 1 + Math.cos(wave * 2) * 0.09);
+    } else if (this.element === 'water') {
+      const drip = (this.elementPhase % 1.8 - 1.15) / 0.65;
+      motion.setVisible(drip >= 0);
+      if (drip >= 0) {
+        motion.setPosition(14 * direction * scaleX, y - 16 * scaleY + 19 * drip * drip)
+          .setAlpha(1 - drip * 0.75);
+      }
+    } else if (this.windBehind) {
+      const wave = this.elementPhase * 4.4;
+      const orbit = Math.sin(wave);
+      const across = Math.cos(wave) * (orbit >= 0 ? 1 : -1);
+      const depth = Math.abs(orbit);
+      // 奥と手前の二本が脇ですれ違うよう、胴に沿って楕円を回る。
+      motion.setPosition(across * 20 * scaleX, y + (-20 + depth * 7) * scaleY)
+        .setAlpha(0.55 + depth * 0.35).setRotation(-across * 0.25);
+      this.windBehind.setPosition(-across * 20 * scaleX, y - (20 + depth * 7) * scaleY)
+        .setAlpha(0.55).setRotation(across * 0.25);
+    }
+  }
+
+  /** 座り込んで、頭のパーツの上にプラカードを掲げる。 */
+  setStrike(on: boolean): void {
+    if (on === (this.strikeSign !== null)) return;
+    if (on) {
+      makeDecorTextures(this.scene);
+      this.strikeSign = this.scene.add.image(0, -96, DECOR_TEX.strike).setOrigin(0.5, 0);
+      this.upperBody.addAt(this.strikeSign, 0);
+      this.walkWeight = this.walkPhase = this.stepBounce = this.hitPose = 0;
+      this.hitElapsed = PATE.hitReachSeconds + PATE.hitReturnSeconds;
+      this.placeStrike();
+    } else {
+      this.strikeSign?.destroy();
+      this.strikeSign = null;
+      if (!this.isStatue) this.placeFacing();
+    }
+    this.update(0, false);
+  }
+
+  private placeStrike(): void {
+    this.upperBody.setY(5).setRotation(0);
+    this.torso.setTexture(TEX.pateBody).setFlipX(false).setScale(1.05, 0.86);
+    this.legL.setPosition(-10, 0).setFlipX(false);
+    this.legR.setPosition(10, 0).setFlipX(false);
+    this.armL.setVisible(true).setPosition(-14, -30).setFlipX(false).setRotation(2.84);
+    this.armR.setVisible(true).setPosition(14, -30).setRotation(-2.84);
+    this.upperBody.bringToTop(this.armL);
+    this.upperBody.bringToTop(this.armR);
   }
 
   /** 置物（スパイのイタズラ）。手足のないドーム型のハニワに変わり、もう動かない */
@@ -100,6 +211,12 @@ export class PateView extends Phaser.GameObjects.Container {
         this.headPart.setPosition(0, -STATUE_SIZE.h + 4).setFlipX(false);
         this.add(this.headPart);
       }
+    } else {
+      this.statue?.destroy();
+      this.statue = null;
+      if (this.headPart) this.upperBody.add(this.headPart);
+      if (!this.strikeSign) this.placeFacing();
+      this.update(0, false);
     }
   }
 
@@ -107,17 +224,21 @@ export class PateView extends Phaser.GameObjects.Container {
   setPatch(u: number, v: number, size: number): void {
     if (!this.patch) {
       this.patch = this.scene.add.image(0, 0, PATCH_TEX);
-      this.upperBody.addAt(this.patch, this.upperBody.getIndex(this.torso) + 1);
+      this.bodyDetails.add(this.patch);
     }
     const x = (u - 0.5) * (PATE_SIZE.w - 14);
     const y = 4 - PATE_SIZE.h * (1 - v);
-    this.patch.setPosition(this.torso.x + x * this.torso.scaleX, this.torso.y + y * this.torso.scaleY)
-      .setDisplaySize(size * this.torso.scaleX, size * this.torso.scaleY);
+    this.patch.setPosition(x, y).setDisplaySize(size, size);
   }
 
   setFacing(facing: Facing): void {
     if (this.isStatue || this.facing === facing) return;
     this.facing = facing;
+    if (!this.strikeSign) this.placeFacing();
+  }
+
+  private placeFacing(): void {
+    const facing = this.facing;
     const side = facing === 'left' || facing === 'right';
     const mirror = facing === 'right';
     const direction = mirror ? -1 : 1;
@@ -128,24 +249,36 @@ export class PateView extends Phaser.GameObjects.Container {
       .setFlipX(mirror);
     this.armR.setVisible(!side);
     if (side) this.upperBody.bringToTop(this.armL);
-    else this.upperBody.moveTo(this.armL, 0);
+    else {
+      this.upperBody.moveTo(this.armL, 0);
+      this.upperBody.moveTo(this.armR, 1);
+    }
     if (this.headPart) this.upperBody.bringToTop(this.headPart);
     this.placeHeadPart();
 
     const legX = side ? PATE.sideLegX * direction : L.legX;
     this.legL.setX(-legX).setFlipX(mirror);
     this.legR.setX(legX).setFlipX(mirror);
+    this.placeElement(0);
   }
 
   /** 背中を向けた姿勢から、両腕を素材に振り上げる。 */
   playHit(): void {
-    if (this.isStatue || this.facing !== 'up') return;
+    if (this.isStatue || this.strikeSign || this.facing !== 'up') return;
     this.hitStart = this.hitPose;
     this.hitElapsed = 0;
   }
 
   update(dtSeconds: number, isWalking: boolean): void {
     if (this.isStatue) return; // 置物は動かない
+    if (!this.strikeSign) this.updateMotion(dtSeconds, isWalking);
+    this.bodyDetails.setPosition(this.torso.x, this.torso.y)
+      .setScale(this.torso.scaleX, this.torso.scaleY);
+    this.placeHeadPart();
+    this.placeElement(dtSeconds);
+  }
+
+  private updateMotion(dtSeconds: number, isWalking: boolean): void {
     const turn = 2 * Math.PI;
     const weightChange = dtSeconds / PATE.poseTransitionSeconds;
     this.walkWeight = Phaser.Math.Clamp(this.walkWeight + (isWalking ? weightChange : -weightChange), 0, 1);
@@ -196,7 +329,6 @@ export class PateView extends Phaser.GameObjects.Container {
     this.upperBody.y -= this.hitPose * PATE.hitLean;
     const torsoStretch = stretch - this.hitPose * PATE.hitSquash;
     this.torso.setScale(1 / torsoStretch, torsoStretch);
-    this.placeHeadPart();
   }
 
   /** 見た目の高さ（重なり順の計算などに使う） */

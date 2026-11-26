@@ -82,6 +82,7 @@ export class MeetingScene extends Phaser.Scene {
         .setStrokeStyle(2, COLORS.uiWood);
       const view = new PateView(this, x, y);
       view.setHeadPart(p.part as never);
+      view.setElement((p.element ?? null) as never);
       if (p.h.frozen) view.setStatue(true);
       const done = missionsDone(p.h);
       panel(this, x, y + 22, 98, 23, p.h.frozen ? COLORS.uiSlate : COLORS.uiWood);

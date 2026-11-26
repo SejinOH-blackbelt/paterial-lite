@@ -75,6 +75,12 @@ export class DPad {
     return { forward: (on.has('up') ? 1 : 0) - (on.has('down') ? 1 : 0), turn: (on.has('right') ? 1 : 0) - (on.has('left') ? 1 : 0) };
   }
 
+  /** 見せる・隠す（会議のあいだは隠す） */
+  setVisible(on: boolean): void {
+    this.g.setVisible(on);
+    for (const t of this.labels) t.setVisible(on);
+  }
+
   /** 毎コマ呼ぶ（キーボードで押したときも、ボタンの色を変える） */
   update(): void {
     this.draw();

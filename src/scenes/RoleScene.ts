@@ -50,7 +50,7 @@ export class RoleScene extends Phaser.Scene {
       460,
       isSpy
         ? 'バイキングから来た スパイ。\n茶色に塗って 和の国にまぎれこんだ。\n名物を全部スキャンして、\n自分のミッションも終えよう。'
-        : '和の国の 王様パテ。\nミッションをこなして ゲージを満タンに。\nスパイを当てよう。でも ぬれぎぬは\n支持度が下がる。0 でストライキ！',
+        : '和の国の 王様パテ。\nミッションで ゲージを満タンに。\nスパイを当てよう。でも ぬれぎぬは\n支持度が下がる。0 でストライキ！',
       16,
     );
     const go = () => this.scene.start('Field', { spyIndex } satisfies RoleData);

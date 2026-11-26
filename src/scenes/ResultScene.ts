@@ -46,6 +46,7 @@ export class ResultScene extends Phaser.Scene {
     this.add.ellipse(90, 243, 86, 23, COLORS.uiPaperEdge).setStrokeStyle(2, COLORS.uiWood);
     this.spyView = new PateView(this, 90, 240);
     this.spyView.setHeadPart(spy.part as never);
+    this.spyView.setElement((spy.element ?? null) as never);
     this.spyView.setPatch(match.spy.patch.u, match.spy.patch.v, 6);
     this.spyView.setScale(1.5);
     this.add

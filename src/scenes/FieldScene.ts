@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { BOT, BOT_PROFILES, COLORS, KING_PART, LANDMARKS, MATCH, MISSIONS, PATE, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { BOT, BOT_PROFILES, COLORS, KING_PART, LANDMARKS, MATCH, MISSIONS, PATE, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   approachNearby,
@@ -53,6 +53,7 @@ import type { ResultData } from './ResultScene';
 import type { RoleData } from './RoleScene';
 import { FONT, INK, cssColor, label, mmss, panel, pinToScreen } from './ui';
 import { makePartTextures, type HeadPart } from './partTextures';
+import type { Element } from './elementTextures';
 import { PateView } from './PateView';
 import { LANDMARK_TEX, makeSpyTextures } from './spyTextures';
 import { PAD_TONES, ScanGameView } from './ScanGameView';
@@ -207,10 +208,10 @@ export class FieldScene extends Phaser.Scene {
     // パテ6体：プレイヤー1体 + 住民Bot 5体
     this.rng = createRng(Date.now());
     this.pates = [];
-    this.addPate(createHarvester(createWalker({ ...PLAYER_START })), PLAYER_PART, null, 'player');
+    this.addPate(createHarvester(createWalker({ ...PLAYER_START })), PLAYER_PART, PLAYER_ELEMENT, null, 'player');
     BOT_PROFILES.forEach((profile, i) => {
       const bot = createBot(profile, BOT_STARTS[i]);
-      this.addPate(bot.h, profile.part, bot, profile.id);
+      this.addPate(bot.h, profile.part, profile.element, bot, profile.id);
     });
     this.player = this.pates[0].h;
     this.pateSprite = this.pates[0].view;
@@ -282,11 +283,12 @@ export class FieldScene extends Phaser.Scene {
     for (const e of this.pates) this.syncPate(e, 0);
   }
 
-  private addPate(h: Harvester, part: HeadPart, bot: Bot | null, id: string): void {
+  private addPate(h: Harvester, part: HeadPart, element: Element, bot: Bot | null, id: string): void {
     const shadow = this.add.image(0, 0, TEX.shadow);
     const view = new PateView(this, 0, 0);
     view.setHeadPart(part);
-    const pawn: Pawn = { id, part, h, isSpy: false, isPlayer: bot === null, emergencyLeft: MATCH.emergencyPerPawn };
+    view.setElement(element); // 火・水・土・風の飾り（見た目だけ）
+    const pawn: Pawn = { id, part, element, h, isSpy: false, isPlayer: bot === null, emergencyLeft: MATCH.emergencyPerPawn };
     this.pates.push({ h, view, shadow, bot, pawn });
   }
 
@@ -758,6 +760,7 @@ export class FieldScene extends Phaser.Scene {
     for (const t of this.pendingTicks) t.cancel();
     this.pendingTicks = [];
     this.pad.reset(); // 会議の画面に切りかわると、指を離したことが届かないことがある
+    this.pad.setVisible(false); // 会議の画面の下に透けて見えないように
     const data: MeetingData = {
       match: this.match,
       player: this.playerPawn,
@@ -769,11 +772,13 @@ export class FieldScene extends Phaser.Scene {
         // 会議のあいだは制限時間を進めない
         this.match.pausedSeconds += this.audio.heardTime() - started;
         if (this.match.phase === 'over') {
-          this.endMatch();
+          if (this.match.outcome?.reason === 'strike') this.showStrike();
+          else this.endMatch();
           return;
         }
         this.witnessed = null;
         this.pad.reset();
+        this.pad.setVisible(true);
         this.scene.resume();
         for (const e of this.pates) this.syncPate(e, 0);
         this.updateMaterials(false); // ぬれぎぬの賠償で素材の数が変わっていることがある
@@ -781,6 +786,21 @@ export class FieldScene extends Phaser.Scene {
     };
     this.scene.pause();
     this.scene.launch('Meeting', data);
+  }
+
+  /** 支持度が 0 に：市民パテたちが座り込んでプラカードを掲げる。少し見せてからリザルトへ */
+  private showStrike(): void {
+    this.scene.resume();
+    for (const e of this.pates) {
+      this.syncPate(e, 0);
+      if (e.pawn.isSpy || e.h.frozen) continue;
+      e.view.setStrike(true);
+    }
+    this.drawHud(this.audio.heardTime()); // 支持度 0 を見せる
+    this.hud(label(this, SCREEN.width / 2, 150, 'ストライキ！', 34, '#e03131').setDepth(9600));
+    this.hud(label(this, SCREEN.width / 2, 190, '王様の支持度が 0 に…', 16).setDepth(9600));
+    this.audio.zukoo();
+    this.time.delayedCall(2800, () => this.endMatch());
   }
 
   /** 試合終了：リザルトへ */

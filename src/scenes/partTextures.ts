@@ -93,4 +93,13 @@ export function makePartTextures(scene: Phaser.Scene): void {
     line('M 17 23 Q 20 15 25 8 M 20 16 L 17 14 M 22 13 L 21.5 10', C.partFeatherShade, 1.15);
     line('M 24 12 L 26 7', C.harvestHighlight, 0.9);
   });
+
+  draw('crown', (fill, line) => {
+    const rim = 'M 3 13 L 10 17 L 15 9 Q 16 8 17 9 L 22 17 L 29 13 L 26 25 Q 16 30 6 25 Z';
+    fill(rim, C.terracotta, true);
+    fill('M 18 25 Q 23 24 26 22 L 25 25 Q 22 27 16 27 Z', C.terracottaDark);
+    line('M 4.5 14.8 L 10.3 18.9 L 16 10.5 L 21.7 18.9 L 27.5 14.8 M 7 23.5 Q 16 27 25 23.5', C.landmarkBrass, 1.5);
+    fill('M 16 17 L 18.4 20 L 16 22.8 L 13.6 20 Z', C.terracottaDark);
+    line('M 16 18.5 L 15 20 M 8.5 20.6 L 9.4 21', C.clayLight, 0.85);
+  });
 }

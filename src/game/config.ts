@@ -398,7 +398,7 @@ export const PART_NAMES = {
   flag: '旗',
   sprout: '若葉',
   feather: '羽根',
-  crown: '王冠',
+  crown: '王様', // 王冠をかぶったパテは「王様」と呼ぶ
 } as const;
 
 /** 王様の支持度（国の住民が王様を信じている度合い） */
