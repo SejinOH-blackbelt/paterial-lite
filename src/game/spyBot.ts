@@ -89,7 +89,7 @@ export function updateSpyBot(
   }
 
   // ひと休みが終わったところで、スキャンに行くか決める
-  const idle = !h.session && !h.walker.target && !h.waitingFor && now >= bot.restUntil;
+  const idle = !h.session && !h.task && !h.walker.target && !h.waitingFor && now >= bot.restUntil;
   if (idle && mind.decidedAfterRest !== bot.restUntil) {
     mind.decidedAfterRest = bot.restUntil;
     const left = LANDMARKS.filter((l) => !spy.scanned.has(l.id) && !isLocked(spy, l.id, now));

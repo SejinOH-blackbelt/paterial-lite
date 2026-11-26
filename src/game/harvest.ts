@@ -2,6 +2,7 @@
 
 import { FIELD, RESOURCE, RESOURCE_POINTS, STOCK } from './config';
 import { driveWalker, faceTo, setTarget, type Point, type Walker } from './movement';
+import type { MissionTask } from './missions';
 import type { Rng } from './random';
 import { startSession, tapSession, type HarvestSession, type TapResult } from './rhythm';
 
@@ -25,6 +26,10 @@ export interface Harvester {
   gathered: Record<string, number>;
   /** いま十字ボタンで動かしている（そのあいだは採取を始めない・スキャンは中断） */
   driving: boolean;
+  /** 施設でミッション（加工・お祈り）をしているところ。していなければ null */
+  task: MissionTask | null;
+  /** 終えたミッション */
+  finished: Set<string>;
 }
 
 /** 採取場の素材ポイントの残りの量（全員で共有する） */
@@ -35,7 +40,7 @@ export interface FieldState {
 }
 
 export function createHarvester(walker: Walker): Harvester {
-  return { walker, materials: 0, session: null, claim: null, waitingFor: null, frozen: false, gathered: {}, driving: false };
+  return { walker, materials: 0, session: null, claim: null, waitingFor: null, frozen: false, gathered: {}, driving: false, task: null, finished: new Set() };
 }
 
 export function createFieldState(): FieldState {
@@ -103,6 +108,7 @@ export type MoveResult = 'walk' | 'harvest' | 'wait';
 export function moveHarvester(h: Harvester, p: Point, all: readonly Harvester[]): MoveResult {
   if (h.frozen) return 'walk'; // 置物は動けない
   h.session = null;
+  h.task = null;
   h.claim = null;
   h.waitingFor = null;
   const r = resourceAtTap(p);
@@ -130,6 +136,7 @@ export function moveHarvester(h: Harvester, p: Point, all: readonly Harvester[])
 export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harvester[], earliest: number, origin: number): void {
   if (h.frozen) return; // 置物は採取しない
   if (h.driving) return; // 十字ボタンで動かしているあいだは、素材の前でも採取を始めない（その場で回れるように）
+  if (h.task) return; // 施設でミッション中
   if (h.session) {
     if (f.stock[h.session.pointId] <= 0) {
       h.session = null;
@@ -165,6 +172,7 @@ export function driveHarvester(h: Harvester, forward: number, turn: number, dtSe
   h.driving = !h.frozen && (forward !== 0 || turn !== 0);
   if (!h.driving) return;
   h.session = null;
+  h.task = null; // 施設のミッションも、動いたらやめる
   h.claim = null;
   h.waitingFor = null;
   driveWalker(h.walker, forward, turn, dtSeconds);
@@ -175,7 +183,7 @@ export function driveHarvester(h: Harvester, forward: number, turn: number, dtSe
  * （使用中なら、そばで順番を待つ）。近くになければ何もしない（null）。
  */
 export function approachNearby(h: Harvester, all: readonly Harvester[]): MoveResult | null {
-  if (h.frozen || h.session || h.walker.target) return null;
+  if (h.frozen || h.session || h.task || h.walker.target) return null;
   const p = h.walker.pos;
   const near = RESOURCE_POINTS.map((r) => ({ r, d: Math.hypot(standSpot(r).x - p.x, standSpot(r).y - p.y) }))
     .filter((x) => x.d <= RESOURCE.approachRadius)

@@ -339,12 +339,84 @@ export const SCAN_GAME = {
   gaugeMargin: 0.04,
 } as const;
 
-/** ミッション（いまは採取だけ。M6 で加工とお祈りを足す）。全員に同じものが割り当てられる */
-export const MISSIONS = [
-  { kind: 'clay', need: 6 },
-  { kind: 'bamboo', need: 5 },
-  { kind: 'stone', need: 4 },
+/**
+ * 施設（素材を加工する場所と、お祈りする場所）。x, y は建物の足元の真ん中。
+ * 前に立つと（立つ場所は足元から FACILITY.standOffsetY 下）、そのミッションが始まる。
+ */
+export const FACILITIES = [
+  { id: 'kiln', name: '窯', x: 390, y: 320 },
+  { id: 'workshop', name: '製造所', x: 560, y: 770 },
+  { id: 'foundry', name: '鋳造所', x: 500, y: 1130 },
+  // お祈りする場所：外は和の国らしい神社風、中はどの国も同じ「土の祠」。鈴を鳴らすと緊急の呼び出しもできる
+  { id: 'shrine', name: '土の祠', x: 350, y: 520 },
 ] as const;
+
+export const FACILITY = {
+  /** パテが立つ位置（建物の足元からどれだけ下か） */
+  standOffsetY: 36,
+  /** 立つ位置にこれだけ近ければ、ミッションが始まる */
+  useRadius: 8,
+  /** 十字ボタンを離したとき、立つ位置からこれだけ近ければ、自分で寄っていく */
+  approachRadius: 40,
+} as const;
+
+/**
+ * ミッション。全員に同じものが割り当てられる。
+ * 加工（窯・製造所・鋳造所）：その素材を need 個集めてから施設へ運び、ミニゲームで加工する（加工すると素材を need 個使う）。
+ * お祈り：土の祠で「土のお祈り」をする。
+ * game：施設で遊ぶミニゲーム（drum まねっこ太鼓・jigsaw ジグソー・pegs 杭むすび・prayer 土のお祈り）
+ */
+export const MISSIONS = [
+  { id: 'kiln', name: '窯で焼く', kind: 'clay', need: 8, facility: 'kiln', game: 'drum' },
+  { id: 'workshop', name: '製造所で組み立てる', kind: 'bamboo', need: 7, facility: 'workshop', game: 'jigsaw' },
+  { id: 'foundry', name: '鋳造所で流し込む', kind: 'stone', need: 6, facility: 'foundry', game: 'pegs' },
+  { id: 'prayer', name: '土のお祈り', kind: null, need: 0, facility: 'shrine', game: 'prayer' },
+] as const;
+
+/** 国の仕事ゲージ：素材1個を1として、加工やお祈りを終えたときに、さらにこれだけたまる */
+export const MISSION_WEIGHT = {
+  craft: 4,
+  prayer: 4,
+} as const;
+
+/** 施設のミニゲーム */
+export const MISSION_GAME = {
+  /** まねっこ太鼓：太鼓の数・覚える長さ・お手本で1つ鳴らす間隔（拍の数） */
+  drumCount: 4,
+  drumLength: 4,
+  drumStepBeats: 1,
+  /** 杭むすび：色の数（同じ色の杭が2本ずつ） */
+  pegColors: 3,
+  /** ジグソー：ピースの数（2×2） */
+  jigsawPieces: 4,
+  /** 土のお祈り：手を合わせる長さ（秒）・拍手が拍からどれだけずれてもよいか（秒）・拍手の数 */
+  prayerHoldSeconds: 0.8,
+  clapWindow: 0.14,
+  claps: 2,
+} as const;
+
+/** Botが施設でミッションをするときの時間と、まちがえる確率 */
+export const MISSION_BOT = {
+  /** ミニゲームにかかる秒数 */
+  workSeconds: { drum: 8, jigsaw: 9, pegs: 8, prayer: 8 },
+  /** まちがえる確率（まちがえると音が鳴って、やり直す） */
+  failChance: 0.2,
+  /** まちがえたあと、やり直しにかかる秒数 */
+  retrySeconds: 2.5,
+  /** ひと休みのあと、まだなら土の祠へお祈りに行く確率（加工できるものがないとき） */
+  prayChance: 0.3,
+} as const;
+
+/**
+ * ミッションをまちがえたときの音が聞こえる距離。
+ * 市民は「ブッブー」（ふつうに聞こえる）、スパイは石がこすれる低い「ゴリッ」（小さいので、すぐ近くでないと聞こえない）
+ */
+export const MISS_SOUND = {
+  buzzerRadius: 170,
+  goriRadius: 80,
+  /** 「ゴリッ」を近くで聞いたBotの疑いが上がる量 */
+  heardGori: 12,
+} as const;
 
 /** 試合 */
 export const MATCH = {
@@ -354,8 +426,8 @@ export const MATCH = {
   meetingSeconds: 30,
   /** 置物のそばで「呼び出し」できる距離 */
   reportRadius: 56,
-  /** 緊急の呼び出しができる場所（鳥居。M6 で土の祠に移す）からの距離 */
-  emergencyRadius: 60,
+  /** 緊急の呼び出しができる場所（土の祠の鈴の前）からの距離 */
+  emergencyRadius: 50,
   /** 緊急の呼び出しの回数（1人あたり） */
   emergencyPerPawn: 1,
   /** スパイを当てたとき、スパイの素材から没収する割合（罰金） */

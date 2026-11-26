@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { BOT, BOT_PROFILES, RESOURCE_POINTS, STOCK } from '../src/game/config';
+import { BOT, BOT_PROFILES, MISSIONS, RESOURCE_POINTS, STOCK } from '../src/game/config';
 import { createBot, freePoints, updateBot } from '../src/game/bot';
 import { createFieldState, createHarvester, moveHarvester, standSpot, updateFieldState, updateHarvester, type Harvester } from '../src/game/harvest';
+import { updateBotTask } from '../src/game/missions';
 import { createWalker } from '../src/game/movement';
 import { stepWalker } from '../src/game/movement';
 import { createRng } from '../src/game/random';
@@ -18,6 +19,7 @@ function run(bots: ReturnType<typeof createBot>[], f = createFieldState(), secon
     for (const b of bots) {
       stepWalker(b.h.walker, dt);
       updateHarvester(b.h, f, all, t + 0.2, 0);
+      updateBotTask(b.h, t, rng); // 施設でのミッション（加工・お祈り）を進める
       events.push(...updateBot(b, f, all, t, rng));
     }
   }
@@ -25,6 +27,32 @@ function run(bots: ReturnType<typeof createBot>[], f = createFieldState(), secon
 }
 
 describe('住民Bot', () => {
+  it('ミッションを全部終えたBotは、素材ポイントをふさがない（採取をやめて見回る）', () => {
+    const b = createBot(BOT_PROFILES[0], { x: clay.x + 10, y: clay.y + 80 });
+    for (const m of MISSIONS) {
+      if (m.kind !== null) b.h.gathered[m.kind] = m.need;
+      b.h.finished.add(m.id);
+    }
+    const { events } = run([b], createFieldState(), 20, 1 / 30, 1);
+    expect(events).toHaveLength(0);
+  });
+
+  it('ミッションに必要な素材のポイントが全部使われていたら、そばで順番を待つ', () => {
+    const f = createFieldState();
+    const users = RESOURCE_POINTS.filter((r) => r.kind === 'clay').map((r) => {
+      const u = createHarvester(createWalker(standSpot(r)));
+      u.claim = r.id;
+      return u;
+    });
+    const b = createBot(BOT_PROFILES[0], { x: 350, y: 700 });
+    b.h.finished.add('prayer');
+    b.h.gathered = { bamboo: 99, stone: 99 };
+    b.h.finished.add('workshop');
+    b.h.finished.add('foundry');
+    updateBot(b, f, [...users, b.h], 0, createRng(1));
+    expect(b.h.waitingFor?.startsWith('clay')).toBe(true);
+  });
+
   it('空きポイントを近い順に並べ、そこへ歩いて採取する', () => {
     const b = createBot(BOT_PROFILES[0], { x: clay.x + 10, y: clay.y + 80 });
     expect(freePoints(b, createFieldState(), [b.h])[0].id).toBe('clay');
@@ -37,6 +65,7 @@ describe('住民Bot', () => {
     let nearest = 0;
     for (let seed = 1; seed <= 40; seed++) {
       const b = createBot(BOT_PROFILES[0], { x: clay.x + 10, y: clay.y + 80 });
+      b.h.finished.add('prayer'); // 採取の選び方だけを見るため、お祈りは済ませておく
       const { events } = run([b], createFieldState(), 6, 1 / 30, seed);
       if (events[0]?.pointId === 'clay') nearest++;
     }
@@ -54,7 +83,8 @@ describe('住民Bot', () => {
 
   it('何回か採取したら、別の場所へ移る（ずっと同じ場所にいない）', () => {
     const b = createBot(BOT_PROFILES[2], standSpot(wood));
-    const { events } = run([b], createFieldState(), 40, 1 / 60, 7);
+    // 加工やお祈りにも時間を使うので、長めに見る
+    const { events } = run([b], createFieldState(), 90, 1 / 60, 7);
     const points = new Set(events.map((e) => e.pointId));
     expect(points.size).toBeGreaterThan(1);
   });
@@ -128,6 +158,7 @@ describe('住民Bot', () => {
       updateFieldState(f, t);
       stepWalker(b.h.walker, 1 / 60);
       updateHarvester(b.h, f, all, t + 0.2, 0);
+      updateBotTask(b.h, t, rng);
       for (const e of updateBot(b, f, all, t, rng)) {
         if (!ids.has(b.lastSession as object)) ids.set(b.lastSession as object, ids.size);
         const key = `${ids.get(b.lastSession as object)}-${e.result.pass}`; // 採取ごとに通過の番号は1回だけ

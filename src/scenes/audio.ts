@@ -229,6 +229,95 @@ export class GameAudio {
     this.thud(t, out);
   }
 
+  /** ミッションをまちがえた市民の「ブッブー」（短く2回） */
+  buzzer(volume = 1): void {
+    const t = this.ctx.currentTime;
+    const out = this.ctx.createGain();
+    out.gain.value = volume;
+    out.connect(this.master);
+    for (const start of [0, 0.17]) {
+      const o = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      const lp = this.ctx.createBiquadFilter();
+      o.type = 'square';
+      o.frequency.value = 220;
+      lp.type = 'lowpass';
+      lp.frequency.value = 1200;
+      g.gain.setValueAtTime(0.0001, t + start);
+      g.gain.exponentialRampToValueAtTime(0.2, t + start + 0.01);
+      g.gain.setValueAtTime(0.2, t + start + 0.1);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + start + 0.13);
+      o.connect(lp).connect(g).connect(out);
+      o.start(t + start);
+      o.stop(t + start + 0.15);
+    }
+  }
+
+  /** ミッションをまちがえたスパイの「ゴリッ」（石がこすれる低い音。小さめ） */
+  gori(volume = 1): void {
+    const t = this.ctx.currentTime;
+    const out = this.ctx.createGain();
+    out.gain.value = volume * 0.7;
+    out.connect(this.master);
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(70, t);
+    o.frequency.linearRampToValueAtTime(52, t + 0.16);
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 380;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.35, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+    o.connect(lp).connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 0.2);
+    // ざらっと石がこすれる手ざわり
+    this.noise(t, 0.16, 'bandpass', 420, 1.4, 0.7, out);
+  }
+
+  /** まねっこ太鼓の「ドン」。太鼓ごとに高さが変わる。when（音の時計）に予約できる */
+  drum(index: number, when?: number): void {
+    const t = Math.max(this.ctx.currentTime, when ?? 0);
+    const freq = [98, 131, 175, 233][index % 4];
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(freq * 1.6, t);
+    o.frequency.exponentialRampToValueAtTime(freq, t + 0.06);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.6, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.37);
+    // 皮を打つ「パン」
+    this.noise(t, 0.03, 'bandpass', 1800, 0.9, 0.35, this.master);
+  }
+
+  /** 土の祠の鈴「シャラン」 */
+  suzu(): void {
+    const t = this.ctx.currentTime;
+    const out = this.ctx.createGain();
+    out.gain.value = 0.55;
+    out.connect(this.master);
+    [2637, 3136, 2794, 3520, 2637].forEach((f, i) => this.chime(t + i * 0.035, f, 0.12, out));
+  }
+
+  /** 拍手「パン」。when（音の時計）に予約できる */
+  clap(when?: number, volume = 1): void {
+    const t = Math.max(this.ctx.currentTime, when ?? 0);
+    for (const d of [0, 0.008, 0.017]) this.noise(t + d, 0.05, 'bandpass', 1400, 0.8, 0.5 * volume, this.master);
+  }
+
+  /** 杭を結んだ・ピースをはめたときの「カチッ」 */
+  kachi(): void {
+    const t = this.ctx.currentTime;
+    this.noise(t, 0.02, 'highpass', 3000, 0.7, 0.6, this.master);
+    this.chime(t, 1760, 0.08, this.master);
+  }
+
   /** 低くこもった「ぽすっ」 */
   private thud(t: number, out: AudioNode): void {
     const o = this.ctx.createOscillator();

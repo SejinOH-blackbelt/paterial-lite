@@ -89,7 +89,7 @@ export function scannableLandmark(s: SpyState, p: Point, now: number): Landmark 
 /** スパイがスキャンを始められるか（名物のそば・立ち止まっている・置物でない） */
 export function canScan(s: SpyState, now: number): boolean {
   const h = s.spy;
-  return !h.frozen && !h.walker.target && !h.session && s.scan === null && scannableLandmark(s, h.walker.pos, now) !== null;
+  return !h.frozen && !h.walker.target && !h.session && !h.task && s.scan === null && scannableLandmark(s, h.walker.pos, now) !== null;
 }
 
 /**
@@ -128,7 +128,7 @@ export function updateScan(s: SpyState, all: readonly Harvester[], now: number):
   if (!s.scan) return null;
   const h = s.spy;
   const l = LANDMARKS.find((x) => x.id === s.scan!.landmarkId)!;
-  if (h.frozen || h.walker.target || h.driving || h.session || dist(l, h.walker.pos) > SPY.scanRadius) {
+  if (h.frozen || h.walker.target || h.driving || h.session || h.task || dist(l, h.walker.pos) > SPY.scanRadius) {
     s.scan = null; // 動いた（十字ボタンで回っただけでも）・採取を始めた → 中断
     return null;
   }
@@ -178,6 +178,7 @@ export function prank(s: SpyState, all: readonly Harvester[], now: number): SpyE
   if (!target) return null;
   target.frozen = true;
   target.session = null;
+  target.task = null;
   target.claim = null;
   target.waitingFor = null;
   target.walker.target = null;

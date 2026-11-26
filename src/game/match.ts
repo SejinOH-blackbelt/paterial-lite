@@ -1,8 +1,9 @@
 // 1試合のルール（ミッション・国の仕事ゲージ・勝敗・呼び出し・会議・投票・罰金と賠償・Botの疑い度）。
 // 画面表示（Phaser）には依存しません。
 
-import { BOT, LANDMARKS, MATCH, MISSIONS, SUPPORT, SUSPICION } from './config';
+import { BOT, LANDMARKS, MATCH, MISS_SOUND, SUPPORT, SUSPICION } from './config';
 import { createFieldState, type FieldState, type Harvester } from './harvest';
+import { allMissionsDone, facilityById, facilityStand, TOTAL_UNITS, unitsOf, type MissionEvent } from './missions';
 import { faceTo, type Point } from './movement';
 import type { Rng } from './random';
 import { allScanned, createSpyState, patchSize, type SpyEvent, type SpyState } from './spy';
@@ -113,26 +114,11 @@ const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 
 // ---------- ミッションとゲージ ----------
 
-/** 1つのミッションの進み具合（0〜need） */
-export function missionProgress(h: Harvester, i: number): number {
-  const m = MISSIONS[i];
-  return Math.min(m.need, h.gathered[m.kind] ?? 0);
-}
-
-/** 終わったミッションの数 */
-export function missionsDone(h: Harvester): number {
-  return MISSIONS.filter((_, i) => missionProgress(h, i) >= MISSIONS[i].need).length;
-}
-
-export function allMissionsDone(h: Harvester): boolean {
-  return missionsDone(h) === MISSIONS.length;
-}
-
-const totalNeed = MISSIONS.reduce((n, m) => n + m.need, 0);
-const progressOf = (h: Harvester) => MISSIONS.reduce((n, _, i) => n + missionProgress(h, i), 0);
+// ミッションの進み具合は missions.ts（ここからも使えるように出しておく）
+export { allMissionsDone, missionsDone } from './missions';
 
 /**
- * 国の仕事ゲージ（0〜1）。市民のミッションの進み具合の合計。スパイの分は入らない。
+ * 国の仕事ゲージ（0〜1）。市民のミッションの進み具合の合計（集めた素材・加工・お祈り）。スパイの分は入らない。
  * 置物にされた市民は、それまでに進めた分だけを数える（残りは必要な量からも外す）。
  */
 export function gauge(m: MatchState): number {
@@ -140,9 +126,9 @@ export function gauge(m: MatchState): number {
   let need = 0;
   for (const p of m.pawns) {
     if (p.isSpy) continue;
-    const prog = progressOf(p.h);
+    const prog = unitsOf(p.h);
     done += prog;
-    need += p.h.frozen ? prog : totalNeed;
+    need += p.h.frozen ? prog : TOTAL_UNITS;
   }
   return need === 0 ? 0 : Math.min(1, done / need);
 }
@@ -193,9 +179,14 @@ export function reportableBody(m: MatchState, p: Pawn): Harvester | null {
   );
 }
 
-/** p が緊急の呼び出しをできるか（鳥居のそば・回数が残っている） */
+/** 緊急の呼び出しをする場所：土の祠の鈴の前 */
+export function emergencySpot(): Point {
+  return facilityStand(facilityById('shrine'));
+}
+
+/** p が緊急の呼び出しをできるか（土の祠の鈴の前・回数が残っている） */
 export function canEmergency(m: MatchState, p: Pawn): boolean {
-  return !p.h.frozen && m.phase === 'play' && p.emergencyLeft > 0 && dist(torii, p.h.walker.pos) <= MATCH.emergencyRadius;
+  return !p.h.frozen && m.phase === 'play' && p.emergencyLeft > 0 && dist(emergencySpot(), p.h.walker.pos) <= MATCH.emergencyRadius;
 }
 
 /** 会議を始める。置物は全部、みんなに知られる */
@@ -205,6 +196,7 @@ export function startMeeting(m: MatchState, caller: Pawn, reason: Meeting['reaso
     if (p.h.frozen) m.known.add(p.h);
     // 歩く・採取・スキャンをやめる
     p.h.session = null;
+    p.h.task = null;
     p.h.claim = null;
     p.h.waitingFor = null;
     p.h.walker.target = null;
@@ -372,6 +364,19 @@ export function observeKotsu(m: MatchState): void {
     if (!p.h.frozen && p !== spyPawn && dist(p.h.walker.pos, spyPawn.h.walker.pos) <= BOT.hearRadius * 0.6) {
       addSuspicion(m, p, spyPawn, SUSPICION.heardKotsu);
     }
+  }
+}
+
+/**
+ * ミッションをまちがえたとき：スパイなら小さな「ゴリッ」が鳴り、すぐ近くのBotが少し怪しむ。
+ * （市民の「ブッブー」は、ふつうのまちがいなので、だれも怪しまない）
+ */
+export function observeMissionMiss(m: MatchState, ev: MissionEvent): void {
+  if (ev.kind !== 'miss') return;
+  const who = m.pawns.find((p) => p.h === ev.h);
+  if (!who?.isSpy) return;
+  for (const p of m.pawns) {
+    if (!p.h.frozen && p !== who && dist(p.h.walker.pos, ev.at) <= MISS_SOUND.goriRadius) addSuspicion(m, p, who, MISS_SOUND.heardGori);
   }
 }
 

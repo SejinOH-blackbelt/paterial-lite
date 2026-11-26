@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { BOT, BOT_PROFILES, COLORS, KING_PART, LANDMARKS, MATCH, MISSIONS, PATE, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, MISSIONS, PATE, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   approachNearby,
@@ -22,8 +22,8 @@ import {
   toriiSpot,
   createMatch,
   gauge,
-  missionProgress,
   observeKotsu,
+  observeMissionMiss,
   observePatch,
   observeSpyEvent,
   reportableBody,
@@ -32,6 +32,20 @@ import {
   type MatchState,
   type Pawn,
 } from '../game/match';
+import {
+  approachFacility,
+  facilityAtStand,
+  finishMission,
+  isFinished,
+  materialsShort,
+  missEvent,
+  missionById,
+  missionReady,
+  startMission,
+  updateBotTask,
+  type MissionEvent,
+} from '../game/missions';
+import type { Step } from '../game/missionGames';
 import { createWalker, driveWalker, isWalking, stepWalker, type Walker } from '../game/movement';
 import { createRng, type Rng } from '../game/random';
 import {
@@ -59,6 +73,8 @@ import type { Element } from './elementTextures';
 import { PateView } from './PateView';
 import { LANDMARK_TEX, makeSpyTextures } from './spyTextures';
 import { PAD_TONES, ScanGameView } from './ScanGameView';
+import { MissionGameView } from './MissionGameView';
+import { FACILITY_SIZE, FACILITY_TEX, makeFacilityTextures } from './facilityTextures';
 import { EMPTY_RES_TEX, makeResourceTextures, RES_CHIP_COLOR, RES_SIZE, RES_TEX } from './resourceTextures';
 import { drawGround, drawPart, makeTextures, TEX } from './textures';
 
@@ -115,7 +131,7 @@ export class FieldScene extends Phaser.Scene {
   private gaugeText!: Phaser.GameObjects.Text;
   private hudPercent = -1;
   private hudSeconds = -1;
-  private hudMissionKey = -1;
+  private hudMissionText = '';
   private timeText!: Phaser.GameObjects.Text;
   private missionText!: Phaser.GameObjects.Text;
   /** 王様の支持度（画面の右上・ミッションの下） */
@@ -144,6 +160,12 @@ export class FieldScene extends Phaser.Scene {
   private fragmentsText: Phaser.GameObjects.Text | null = null;
   /** スキャンのミニゲームの画面（遊んでいるあいだだけ） */
   private scanView: ScanGameView | null = null;
+  /** 施設のミニゲームの画面（ミッション中だけ） */
+  private missionView: MissionGameView | null = null;
+  /** 「素材が足りない」などを出した施設（その施設の前を離れるまで、もう一度は出さない） */
+  private hintFacility: string | null = null;
+  /** 施設の上の「！」（自分のミッションがそこでできるとき） */
+  private facilityMarks!: Phaser.GameObjects.Graphics;
   /** 十字ボタン（↑前進・↓後ずさり・←→その場で回る） */
   private pad!: DPad;
   /** 前のコマで十字ボタンを押していたか（離した瞬間に、そばの素材で採取を始めるため） */
@@ -179,6 +201,8 @@ export class FieldScene extends Phaser.Scene {
     this.spyIndex = data?.spyIndex ?? 0;
     this.spirit = null;
     this.scanView = null;
+    this.missionView = null;
+    this.hintFacility = null;
     this.landmarks.clear();
     this.resources.clear();
     this.pendingTicks = [];
@@ -190,6 +214,7 @@ export class FieldScene extends Phaser.Scene {
     makeResourceTextures(this);
     makePartTextures(this);
     makeSpyTextures(this);
+    makeFacilityTextures(this);
     drawGround(this, WORLD.width, WORLD.height);
 
     // 音の時計。Phaser が用意した AudioContext を使う（なければ自分で作る）
@@ -206,6 +231,13 @@ export class FieldScene extends Phaser.Scene {
     for (const l of LANDMARKS) {
       this.landmarks.set(l.id, this.add.image(l.x, l.y, LANDMARK_TEX[l.id]).setOrigin(0.5, 1).setDepth(l.y));
     }
+
+    // 施設（窯・製造所・鋳造所・土の祠）と、その名前の札
+    for (const f of FACILITIES) {
+      this.add.image(f.x, f.y, FACILITY_TEX[f.id]).setOrigin(0.5, 1).setDepth(f.y);
+      label(this, f.x, f.y - FACILITY_SIZE.h - 8, f.name, 12).setDepth(8700);
+    }
+    this.facilityMarks = this.add.graphics().setDepth(8701);
 
     // パテ6体：プレイヤー1体 + 住民Bot 5体
     this.rng = createRng(Date.now());
@@ -255,6 +287,7 @@ export class FieldScene extends Phaser.Scene {
       if (this.match.phase !== 'play') return;
       // スキャンのミニゲームのパネルは十字ボタンの上に重なるので、パネルが先に受けとる
       if (this.scanView?.owns(over)) return;
+      if (this.missionView?.owns(over)) return; // 施設のミニゲームのパネル
       if (this.pad.down(p)) return;
       if (this.player.frozen) return; // 置物にされたら、土の精として十字ボタンで動き回って見るだけ
       if (this.callButton.visible && over.includes(this.callButton)) {
@@ -279,8 +312,14 @@ export class FieldScene extends Phaser.Scene {
       if (this.player.session !== null && over.includes(this.button)) this.hit(p);
     });
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.pad.move(p));
-    this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.pad.up(p));
-    this.input.on('pointerupoutside', (p: Phaser.Input.Pointer) => this.pad.up(p));
+    this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
+      this.pad.up(p);
+      this.missionView?.pointerUp(p); // 土のお祈りで、手を離したとき
+    });
+    this.input.on('pointerupoutside', (p: Phaser.Input.Pointer) => {
+      this.pad.up(p);
+      this.missionView?.pointerUp(p);
+    });
 
     for (const e of this.pates) this.syncPate(e, 0);
   }
@@ -323,9 +362,19 @@ export class FieldScene extends Phaser.Scene {
     }
     if (!this.player.frozen && !this.driving && this.wasDriving) {
       // ほかのパテが使っているポイントなら、そばで順番を待つ（空いたら自動で採取を始める）
-      if (approachNearby(this.player, this.all) === 'wait') this.popText('じゅんばん待ち', '#2b1d14', 15, 0);
+      const r = approachNearby(this.player, this.all);
+      if (r === 'wait') this.popText('じゅんばん待ち', '#2b1d14', 15, 0);
+      // 素材のそばでなければ、施設の前のそばか見る（寄っていって、着いたらミッションが始まる）
+      if (r === null) approachFacility(this.player);
     }
     this.wasDriving = this.driving;
+  }
+
+  /** 指が触れた瞬間の「聞こえている時刻」（ブラウザが記録した時刻を使うので、処理の遅れに左右されない） */
+  private tapTime(p: Phaser.Input.Pointer): number {
+    const ts = p.event?.timeStamp;
+    const perfMs = ts && Math.abs(ts - performance.now()) < 1000 ? ts : performance.now();
+    return this.audio.heardTime(perfMs);
   }
 
   /** 「採取」ボタンを押したとき */
@@ -450,6 +499,11 @@ export class FieldScene extends Phaser.Scene {
       // Botは少し先の時刻で判断する。そうすると採取音を、プレイヤーの拍の音と同じように先に予約でき、
       // 端末の音の遅れがあっても、聞こえる時刻と判定の時刻がそろう
       const ahead = this.audio.now + SCHEDULE_AHEAD;
+      if (e.bot) {
+        // 施設でのミッション（決まった時間で終わる。ときどきまちがえて、やり直す）
+        const mev = updateBotTask(e.h, ahead, this.rng);
+        if (mev) this.onMissionEvent(mev, heard);
+      }
       if (e.bot && e === this.spyEntity && this.spyMind) {
         // スパイBot：市民のふりをして採取しながら、すきを見てスキャンやイタズラをする
         const r = updateSpyBot(e.bot, this.spyMind, this.spy, this.field, this.all, ahead, this.rng);
@@ -465,6 +519,7 @@ export class FieldScene extends Phaser.Scene {
       if (ev) this.onSpyEvent(ev, heard);
       if (!this.spy.scan) this.syncScanView(heard);
     }
+    this.updatePlayerMission(heard);
     observePatch(this.match, heard, dt);
     this.updateSpirit(dt);
     this.scheduleTicks();
@@ -534,7 +589,8 @@ export class FieldScene extends Phaser.Scene {
     const s = this.player.session;
     this.meter.clear();
     this.button.setVisible(s !== null);
-    this.focusCover.setVisible(s !== null);
+    // 採取中も施設のミッション中も、まわりが見えにくくなる
+    this.focusCover.setVisible(s !== null || this.player.task !== null);
     if (!s) return;
     // メーターは (0,0) を中心に描き、グラフィック全体を画面の真ん中に大きく置く
     const x = 0;
@@ -665,7 +721,7 @@ export class FieldScene extends Phaser.Scene {
   private setupHud(): void {
     this.hudPercent = -1;
     this.hudSeconds = -1;
-    this.hudMissionKey = -1;
+    this.hudMissionText = '';
     this.hud(panel(this, 180, 24, 336, 32, COLORS.uiPaper).setDepth(9450));
     this.hud(panel(this, 180, 63, 336, 27, COLORS.uiPaper).setDepth(9450));
     this.hud(panel(this, 306, 23, 71, 24, COLORS.uiWood).setDepth(9451));
@@ -709,17 +765,41 @@ export class FieldScene extends Phaser.Scene {
 
     const me = this.player;
     if (me.frozen) {
-      this.missionText.setText('きみは 置物にされた… 土の精になって 見守ろう');
+      if (this.hudMissionText !== 'frozen') {
+        this.hudMissionText = 'frozen';
+        this.missionText.setText('きみは 置物にされた… 土の精になって 見守ろう');
+        this.drawFacilityMarks();
+      }
       return;
     }
-    const key = MISSIONS.reduce((n, m, i) => n * (m.need + 1) + missionProgress(me, i), 0);
-    if (key === this.hudMissionKey) return;
-    this.hudMissionKey = key;
-    const lines = MISSIONS.map((m, i) => {
-      const prog = missionProgress(me, i);
-      return `${prog >= m.need ? '✔' : '・'}${RESOURCE_NAMES[m.kind]} ${prog}/${m.need}`;
+    const short: Record<string, string> = { kiln: '窯', workshop: '製造所', foundry: '鋳造所', shrine: '祈り' };
+    const lines = MISSIONS.map((m) => {
+      const f = short[m.facility];
+      if (isFinished(me, m.id)) return `✔${f}`;
+      if (m.kind === null) return 'お祈り';
+      if (missionReady(me, m)) return `${f}へ！`;
+      return `${RESOURCE_NAMES[m.kind]}${m.need - materialsShort(me, m)}/${m.need}`;
     });
-    this.missionText.setText(`ミッション  ${lines.join('  ')}`);
+    const text = `ミッション  ${lines.join('  ')}`;
+    if (text === this.hudMissionText) return;
+    this.hudMissionText = text;
+    this.missionText.setText(text);
+    this.drawFacilityMarks();
+  }
+
+  /** 自分のミッションがいまできる施設の上に「！」を出す（暗い場所でも見えるように） */
+  private drawFacilityMarks(): void {
+    const g = this.facilityMarks.clear();
+    if (this.player.frozen) return;
+    for (const f of FACILITIES) {
+      const m = MISSIONS.find((x) => x.facility === f.id)!;
+      if (!missionReady(this.player, m)) continue;
+      const x = f.x + 26;
+      const y = f.y - FACILITY_SIZE.h - 10;
+      g.fillStyle(COLORS.ink).fillCircle(x, y, 10);
+      g.fillStyle(COLORS.uiHoney).fillCircle(x, y, 8);
+      g.fillStyle(COLORS.ink).fillRect(x - 1.5, y - 5, 3, 6).fillCircle(x, y + 4, 1.6);
+    }
   }
 
   /** 呼び出しボタン（左下・スキャンの上） */
@@ -759,6 +839,7 @@ export class FieldScene extends Phaser.Scene {
     const started = this.audio.heardTime();
     startMeeting(this.match, caller, reason, body, started);
     this.syncScanView(started);
+    this.syncMissionView();
     for (const t of this.pendingTicks) t.cancel();
     this.pendingTicks = [];
     this.pad.reset(); // 会議の画面に切りかわると、指を離したことが届かないことがある
@@ -799,6 +880,8 @@ export class FieldScene extends Phaser.Scene {
     this.focusCover.setVisible(false);
     this.scanView?.destroy();
     this.scanView = null;
+    this.missionView?.destroy();
+    this.missionView = null;
     this.fog.setVisible(false);
     this.spirit?.view.setVisible(false);
     this.spirit?.glow.setVisible(false);
@@ -998,6 +1081,87 @@ export class FieldScene extends Phaser.Scene {
         if (volume > 0.02) this.audio.pofu(volume);
         if (ev.target === this.player) this.popText('置物にされた…', '#6f7378', 20, 10);
         else if (ev.witnesses.includes(this.player)) this.popText('見た…！', '#e03131', 20, 10);
+      }
+    });
+  }
+
+  /**
+   * 自分のパテが施設の前で止まったら、そのミッションを始める（ミニゲームの画面を出す）。
+   * 素材が足りない・もう終えたときは、その施設の前を離れるまで1回だけ知らせる
+   */
+  private updatePlayerMission(heard: number): void {
+    const me = this.player;
+    if (!facilityAtStand(me.walker.pos)) this.hintFacility = null;
+    if (!me.task && !this.driving) {
+      const r = startMission(me, heard, this.rng, { origin: this.origin });
+      if (r && r.result !== 'started' && this.hintFacility !== r.mission.facility) {
+        this.hintFacility = r.mission.facility;
+        if (r.result === 'finished') this.popText('ここのミッションは もう できた', '#2b1d14', 14, 0);
+        else this.popText(`${RESOURCE_NAMES[r.mission.kind!]}が あと${materialsShort(me, r.mission)}個 ひつよう`, '#2b1d14', 14, 0);
+      }
+    }
+    this.syncMissionView();
+  }
+
+  /** 施設のミニゲームの画面を、ミッション中だけ出す（動いた・会議・置物にされた、で消える） */
+  private syncMissionView(): void {
+    const game = this.player.task?.game ?? null;
+    if (!game) {
+      this.missionView?.destroy();
+      this.missionView = null;
+      return;
+    }
+    if (!this.missionView) {
+      const m = missionById(this.player.task!.missionId);
+      this.missionView = new MissionGameView(this, game, m.name, {
+        audio: this.audio,
+        now: () => this.audio.heardTime(),
+        tapTime: (p) => this.tapTime(p),
+        origin: this.origin,
+        onStep: (step) => this.onPlayerMissionStep(step),
+      });
+    }
+    this.missionView.update();
+  }
+
+  /** ミニゲームでまちがえた・できたとき */
+  private onPlayerMissionStep(step: Step): void {
+    const now = this.audio.heardTime();
+    const ev = step === 'miss' ? missEvent(this.player, now) : step === 'done' ? finishMission(this.player, now) : null;
+    if (ev) this.onMissionEvent(ev, now);
+    if (step === 'done' && ev) {
+      // その施設の前に立ったままでも「もう できた」は出さない（「できた！」と重ならないように）
+      this.hintFacility = missionById(ev.missionId).facility;
+      this.syncMissionView();
+    }
+  }
+
+  /**
+   * ミッションでまちがえた・できたとき。
+   * まちがえた音：市民は「ブッブー」、スパイは小さな「ゴリッ」。近くにいれば聞こえる（スパイの音はすぐ近くだけ）
+   */
+  private onMissionEvent(ev: MissionEvent, heard: number): void {
+    observeMissionMiss(this.match, ev); // 「ゴリッ」を聞いたBotが怪しむ
+    const e = this.pates.find((x) => x.h === ev.h);
+    if (!e) return;
+    const mine = ev.h === this.player;
+    const spy = e.pawn.isSpy;
+    const me = this.listenerPos();
+    const d = Math.hypot(ev.at.x - me.x, ev.at.y - me.y);
+    const delayMs = Math.max(0, ev.time - heard) * 1000;
+    this.time.delayedCall(delayMs, () => {
+      if (ev.kind === 'miss') {
+        const radius = spy ? MISS_SOUND.goriRadius : MISS_SOUND.buzzerRadius;
+        const volume = mine ? 1 : Math.max(0, 1 - d / radius) ** 2;
+        if (volume > 0.02) {
+          if (spy) this.audio.gori(volume);
+          else this.audio.buzzer(volume);
+        }
+        if (mine) this.popText('まちがえた… もう一度', '#6f7378', 15, 4);
+      } else if (mine) {
+        this.audio.piron();
+        this.popText(`${missionById(ev.missionId).name} できた！`, '#2f9e44', 17, 6);
+        this.updateMaterials(true); // 加工で素材を使った
       }
     });
   }

@@ -11,13 +11,13 @@ import { FONT, INK, cssColor, label, panel, textButton } from './ui';
 const HOW_TO = [
   '和の国に、バイキングのスパイが1体まぎれこんだ！',
   '',
-  '【操作】下の十字ボタン。↑前進 ↓後ずさり ↺↻その場で回る。素材のそばで止まると採取が始まる。',
+  '【操作】下の十字ボタン。↑前進 ↓後ずさり ↺↻その場で回る。素材や施設の前で止まると、採取やミッションが始まる。',
   '',
-  '【王様（市民側）】きみは王冠をかぶった王様パテ。素材を集めてミッションをこなし、国の仕事ゲージを満タンにしよう。置物を見つけたら「呼び出し」で会議。スタンプと投票でスパイを当てよう。ぬれぎぬだと支持度が下がり、0 になると市民がストライキ！',
+  '【王様（市民側）】きみは王冠のパテ。素材を集めて窯・製造所・鋳造所で加工し、土の祠でお祈りして、国の仕事ゲージを満タンに。置物を見つけたら「呼び出し」、土の祠の鈴で「緊急の呼び出し」。投票でスパイを当てよう。ぬれぎぬだと支持度が下がり、0 でストライキ！',
   '',
   '【スパイ】名物をスキャンして、自分のミッションも終えれば勝ち。近くのパテを置物にもできる。動ける市民がスパイと同じ数になっても勝ち。',
   '',
-  '手がかり：スパイを叩くと石の「コツッ」。体のどこかに、グレーの塗りムラ…',
+  '手がかり：スパイは叩くと石の「コツッ」、ミッションをまちがえると小さな「ゴリッ」。体にグレーの塗りムラ…',
 ].join('\n');
 
 export class TitleScene extends Phaser.Scene {
@@ -58,7 +58,7 @@ export class TitleScene extends Phaser.Scene {
     const card = panel(this, SCREEN.width / 2, SCREEN.height / 2, SCREEN.width - 30, 560, COLORS.uiPaper);
     const title = label(this, SCREEN.width / 2, SCREEN.height / 2 - 250, 'あそびかた', 22, cssColor(COLORS.uiHoney));
     const body = this.add
-      .text(SCREEN.width / 2, SCREEN.height / 2 - 222, HOW_TO, { fontFamily: FONT, fontSize: '14px', color: INK, align: 'left', lineSpacing: 5, wordWrap: { width: 300, useAdvancedWrap: true } })
+      .text(SCREEN.width / 2, SCREEN.height / 2 - 222, HOW_TO, { fontFamily: FONT, fontSize: '13px', color: INK, align: 'left', lineSpacing: 4, wordWrap: { width: 300, useAdvancedWrap: true } })
       .setOrigin(0.5, 0);
     const parts: Phaser.GameObjects.GameObject[] = [bg, card, title, body];
     const close = textButton(this, SCREEN.width / 2, SCREEN.height / 2 + 245, 140, 40, 'とじる', COLORS.uiHoney, () => parts.concat(close).forEach((o) => o.destroy()), 16);

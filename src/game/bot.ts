@@ -1,8 +1,10 @@
 // 住民Bot（和の国の住民）の動きのルール。画面表示（Phaser）には依存しません。
-// 近くの空いている素材ポイントへ歩き、何周か採取したら、ひと休みして別の場所へ移ります。
+// 自分のミッションに必要な素材を、近くの空いている素材ポイントで採取します。何周か採取したら、ひと休みして別の場所へ移ります。
+// 素材がそろったら施設へ運んで加工し、ときどき土の祠へお祈りに行きます。
 
-import { BOT, FIELD, RESOURCE, RESOURCE_POINTS } from './config';
+import { BOT, FIELD, MISSION_BOT, MISSIONS, RESOURCE, RESOURCE_POINTS } from './config';
 import { createHarvester, harvestTap, moveHarvester, claimedByOther, type FieldState, type Harvester, type HarvestResult } from './harvest';
+import { facilityById, facilityStand, isFinished, missionReady, startMission } from './missions';
 import { createWalker, setTarget, type Point } from './movement';
 import { between, gaussian, intBetween, type Rng } from './random';
 import { beatInterval, nearestPass, nextPass, passTime } from './rhythm';
@@ -28,7 +30,7 @@ export interface Bot {
   /** lastLap を叩いた採取（別の採取なら周の番号は関係ない） */
   lastSession: unknown;
   /** いま何をしているか（休むタイミングを決めるため） */
-  mode: 'idle' | 'toPoint' | 'wander';
+  mode: 'idle' | 'toPoint' | 'toFacility' | 'wander';
 }
 
 export interface BotTapEvent {
@@ -56,14 +58,57 @@ function stepAside(bot: Bot, rng: Rng): void {
   bot.mode = 'wander';
 }
 
-/** 空いていて素材が残っているポイントを、近い順に */
-export function freePoints(bot: Bot, field: FieldState, all: readonly Harvester[]) {
+/** 空いていて素材が残っているポイントを、近い順に。kinds を渡すと、その素材のポイントだけ */
+export function freePoints(bot: Bot, field: FieldState, all: readonly Harvester[], kinds?: readonly string[]) {
   const { x, y } = bot.h.walker.pos;
   // ほかのパテが使っている・順番を待っているポイントは選ばない（順番待ちのパテを優先する）
   const waited = (id: string) => all.some((o) => o !== bot.h && o.waitingFor === id);
-  return RESOURCE_POINTS.filter((r) => field.stock[r.id] > 0 && !claimedByOther(all, r.id, bot.h) && !waited(r.id)).sort(
+  return RESOURCE_POINTS.filter(
+    (r) => field.stock[r.id] > 0 && !claimedByOther(all, r.id, bot.h) && !waited(r.id) && (!kinds || kinds.includes(r.kind)),
+  ).sort(
     (a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y),
   );
+}
+
+/** まだ集めきっていない、ミッションに必要な素材の種類 */
+export function neededKinds(h: Harvester): string[] {
+  return MISSIONS.flatMap((m) => (m.kind !== null && !isFinished(h, m.id) && (h.gathered[m.kind] ?? 0) < m.need ? [m.kind] : []));
+}
+
+/** 採取場のどこかへ歩く（着いたらひと休み） */
+function wander(bot: Bot, rng: Rng): void {
+  setTarget(bot.h.walker, { x: between(rng, FIELD.left, FIELD.right), y: between(rng, FIELD.top, FIELD.bottom) });
+  bot.h.claim = null;
+  bot.mode = 'wander';
+}
+
+/** 施設へ向かう（着いたら、そこでミッションを始める） */
+function goToFacility(bot: Bot, facilityId: string): void {
+  bot.h.claim = null;
+  setTarget(bot.h.walker, facilityStand(facilityById(facilityId)));
+  bot.mode = 'toFacility';
+}
+
+/**
+ * 次にするミッションを選んで向かう。向かったら true。
+ * 素材がそろった加工があれば、いちばん近い施設へ。なければ、ときどき（加工も採取も残っていなければ必ず）お祈りへ。
+ */
+function chooseFacility(bot: Bot, rng: Rng): boolean {
+  const h = bot.h;
+  const { x, y } = h.walker.pos;
+  const ready = MISSIONS.filter((m) => m.kind !== null && missionReady(h, m))
+    .map((m) => facilityById(m.facility))
+    .sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+  if (ready.length > 0) {
+    goToFacility(bot, ready[0].id);
+    return true;
+  }
+  const prayer = MISSIONS.find((m) => m.kind === null)!;
+  if (!isFinished(h, prayer.id) && (neededKinds(h).length === 0 || rng() < MISSION_BOT.prayChance)) {
+    goToFacility(bot, prayer.facility);
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -73,6 +118,10 @@ export function freePoints(bot: Bot, field: FieldState, all: readonly Harvester[
 export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[], now: number, rng: Rng): BotTapEvent[] {
   const h = bot.h;
   if (h.frozen) return []; // 置物は何もしない
+  if (h.task) {
+    bot.mode = 'idle';
+    return []; // 施設でミッション中（終わるのは missions.ts の updateBotTask）
+  }
   const s = h.session;
   if (s) {
     bot.mode = 'idle';
@@ -105,6 +154,10 @@ export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[]
     if (!result) return [];
     bot.lastLap = Math.max(bot.lastLap, result.pass); // 実際に判定された通過
     bot.tapsLeft--;
+    // ミッションに必要な数が集まったら、加工しに行くため採取を切り上げる
+    const kind = RESOURCE_POINTS.find((r) => r.id === pointId)!.kind;
+    const enough = MISSIONS.some((m) => m.kind === kind && missionReady(h, m)) && !neededKinds(h).includes(kind);
+    if (enough) bot.tapsLeft = 0;
     if (bot.tapsLeft <= 0 && h.session) {
       // じゅうぶん採ったので、別の場所へ
       h.session = null;
@@ -130,19 +183,39 @@ export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[]
     // 着いたのに採取が始まらなかった（先を越された・空になった）→ 選び直す
     bot.mode = 'idle';
   }
+  if (bot.mode === 'toFacility') {
+    // 施設に着いた：ミッションを始める（始められなければ選び直す）
+    bot.mode = 'idle';
+    if (startMission(h, now, rng, null)?.result === 'started') return [];
+  }
   if (now < bot.restUntil) return [];
 
-  const free = freePoints(bot, field, all);
+  if (chooseFacility(bot, rng)) return [];
+  // ミッションに必要な素材を採りに行く
+  const need = neededKinds(h);
+  if (need.length === 0) {
+    // 全部終えたら、素材ポイントをふさがないように、採取場を見回る
+    wander(bot, rng);
+    return [];
+  }
+  const free = freePoints(bot, field, all, need);
   if (free.length > 0) {
     const r = rng() < BOT.nearestChance || free.length === 1 ? free[0] : free[1 + Math.floor(rng() * (free.length - 1))];
     moveHarvester(h, { x: r.x, y: r.y - RESOURCE.tapCenterUp }, all);
     bot.tapsLeft = intBetween(rng, BOT.tapsMin, BOT.tapsMax);
     bot.mode = 'toPoint';
+    return [];
+  }
+  // 空いているポイントがなければ、使われているポイントのそばで順番を待つ（ほかに待っている人がいないところ）
+  const { x, y } = h.walker.pos;
+  const busy = RESOURCE_POINTS.filter(
+    (r) => need.includes(r.kind) && field.stock[r.id] > 0 && !all.some((o) => o !== h && o.waitingFor === r.id),
+  ).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+  if (busy.length > 0) {
+    moveHarvester(h, { x: busy[0].x, y: busy[0].y - RESOURCE.tapCenterUp }, all);
+    bot.mode = 'toPoint';
   } else {
-    // 空いているポイントがなければ、うろうろする
-    setTarget(h.walker, { x: between(rng, FIELD.left, FIELD.right), y: between(rng, FIELD.top, FIELD.bottom) });
-    h.claim = null;
-    bot.mode = 'wander';
+    wander(bot, rng);
   }
   return [];
 }

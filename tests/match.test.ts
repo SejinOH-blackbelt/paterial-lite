@@ -9,6 +9,7 @@ import {
   castVote,
   checkOutcome,
   chooseKing,
+  emergencySpot,
   createMatch,
   everyoneVoted,
   gauge,
@@ -41,16 +42,25 @@ function setup(spyIndex = 5) {
 }
 
 const finishMissions = (p: Pawn) => {
-  for (const ms of MISSIONS) p.h.gathered[ms.kind] = ms.need;
+  for (const ms of MISSIONS) {
+    if (ms.kind !== null) p.h.gathered[ms.kind] = ms.need;
+    p.h.finished.add(ms.id);
+  }
 };
 
 describe('ミッションと国の仕事ゲージ', () => {
-  it('素材を集めるとミッションが進み、決められた数でひとつ終わる', () => {
-    const { pawns } = setup();
+  it('素材を集めただけではミッションは終わらない（施設で加工して終わる）', () => {
+    const { m, pawns } = setup();
     const h = pawns[0].h;
     expect(missionsDone(h)).toBe(0);
-    h.gathered[MISSIONS[0].kind] = MISSIONS[0].need;
+    const kiln = MISSIONS[0];
+    h.gathered[kiln.kind!] = kiln.need;
+    expect(missionsDone(h)).toBe(0);
+    const before = gauge(m);
+    expect(before).toBeGreaterThan(0); // 集めた素材の分は、ゲージにたまる
+    h.finished.add(kiln.id);
     expect(missionsDone(h)).toBe(1);
+    expect(gauge(m)).toBeGreaterThan(before); // 加工するとさらにたまる
     finishMissions(pawns[0]);
     expect(allMissionsDone(h)).toBe(true);
   });
@@ -122,10 +132,12 @@ describe('呼び出し', () => {
     expect(reportableBody(m, pawns[2])).toBeNull();
   });
 
-  it('緊急の呼び出しは鳥居のそばで、1人1回だけ', () => {
+  it('緊急の呼び出しは土の祠の鈴の前で、1人1回だけ（鳥居ではできない）', () => {
     const { m, pawns } = setup();
     expect(canEmergency(m, pawns[0])).toBe(false);
     pawns[0].h.walker.pos = { x: torii.x, y: torii.y + 20 };
+    expect(canEmergency(m, pawns[0])).toBe(false);
+    pawns[0].h.walker.pos = emergencySpot();
     expect(canEmergency(m, pawns[0])).toBe(true);
     startMeeting(m, pawns[0], 'emergency', null, 5);
     m.phase = 'play';
