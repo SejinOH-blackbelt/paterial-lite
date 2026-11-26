@@ -854,10 +854,19 @@ export class FieldScene extends Phaser.Scene {
 
   /** 試合をやめてタイトルへ（予約した音を取り消し、曲を止める） */
   private quitMatch(): void {
+    this.cleanupSounds();
+    this.scene.start('Title');
+  }
+
+  /** 画面を切りかえる前に、予約済みの音（採取の拍・BGM・ミニゲームのお手本や案内の音）をすべて取り消す */
+  private cleanupSounds(): void {
     for (const t of this.pendingTicks) t.cancel();
     this.pendingTicks = [];
     this.bgm.stop();
-    this.scene.start('Title');
+    this.missionView?.destroy();
+    this.missionView = null;
+    this.scanView?.destroy();
+    this.scanView = null;
   }
 
   private drawHud(heard: number): void {
@@ -1010,9 +1019,7 @@ export class FieldScene extends Phaser.Scene {
 
   /** 試合終了：リザルトへ */
   private endMatch(): void {
-    for (const t of this.pendingTicks) t.cancel();
-    this.pendingTicks = [];
-    this.bgm.stop();
+    this.cleanupSounds();
     this.scene.start('Result', { match: this.match, player: this.playerPawn, audio: this.audio } satisfies ResultData);
   }
 
