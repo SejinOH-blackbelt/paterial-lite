@@ -1,0 +1,238 @@
+// 友達と遊ぶ：ルームを作る・合言葉で入る・QR で招待する。集まったら、ルームを作った人（親機）が「はじめる」
+import Phaser from 'phaser';
+import QRCode from 'qrcode';
+import { BOT_PROFILES, COLORS, PLAYER_PART, SCREEN } from '../game/config';
+import { inviteUrl, RelayClient, type JoinError } from '../net/relay';
+import { makePartTextures, type HeadPart } from './partTextures';
+import { PateView } from './PateView';
+import { makeSpyTextures } from './spyTextures';
+import { makeTextures } from './textures';
+import { INK, cssColor, label, panel, textButton } from './ui';
+
+export interface LobbyData {
+  /** URL の ?room= から来たときの合言葉（そのまま入る） */
+  join?: string | null;
+}
+
+/** 合言葉に使う文字（server/rooms.js と同じ） */
+const CODE_CHARS = 'ACDEFGHJKLMNPQRTUVWXY34679';
+const MAX_MEMBERS = 6;
+/** 席ごとのパテの頭の飾り（1番目は親機） */
+const SEAT_PARTS: HeadPart[] = [PLAYER_PART as HeadPart, ...BOT_PROFILES.map((p) => p.part as HeadPart)];
+
+const ERROR_TEXT: Record<JoinError, string> = {
+  'no-room': 'その合言葉のルームは ありません',
+  full: '満員です（6人まで）',
+  started: 'もう試合が 始まっています',
+  bad: 'うまく入れませんでした',
+  network: 'サーバーに つながりませんでした',
+};
+
+export class LobbyScene extends Phaser.Scene {
+  private relay: RelayClient | null = null;
+  /** いまの画面に出している部品（画面を切りかえるときに消す） */
+  private parts: Phaser.GameObjects.GameObject[] = [];
+  private statusText!: Phaser.GameObjects.Text;
+  private seats: { view: PateView; tag: Phaser.GameObjects.Text }[] = [];
+  private startButton: Phaser.GameObjects.Container | null = null;
+  private code = '';
+
+  constructor() {
+    super('Lobby');
+  }
+
+  create(data: LobbyData): void {
+    makeTextures(this);
+    makePartTextures(this);
+    makeSpyTextures(this);
+    this.cameras.main.setBackgroundColor(COLORS.background);
+    this.relay = null;
+    this.parts = [];
+    this.seats = [];
+    this.startButton = null;
+    panel(this, SCREEN.width / 2, 48, 300, 56, COLORS.uiWood);
+    label(this, SCREEN.width / 2, 46, '友達と あそぶ', 24, cssColor(COLORS.uiHoney));
+    this.statusText = label(this, SCREEN.width / 2, 600, '', 13, INK).setStroke(INK, 0).setDepth(10);
+    this.events.once('shutdown', () => this.relay?.close());
+    if (data?.join) void this.connect((r) => r.join(data.join!));
+    else this.showMenu();
+  }
+
+  private clear(): void {
+    for (const o of this.parts) o.destroy();
+    this.parts = [];
+    this.seats = [];
+    this.startButton = null;
+  }
+
+  private add2<T extends Phaser.GameObjects.GameObject>(o: T): T {
+    this.parts.push(o);
+    return o;
+  }
+
+  /** 最初の画面：ルームを作る・合言葉で入る・もどる */
+  private showMenu(message = ''): void {
+    this.clear();
+    this.statusText.setText(message);
+    this.add2(label(this, SCREEN.width / 2, 150, '友達を招待して、いっしょに遊ぼう\n（2〜6人。空いた席は Bot）', 14, INK).setStroke(INK, 0));
+    this.add2(textButton(this, SCREEN.width / 2, 260, 230, 56, 'ルームを作る', COLORS.uiHoney, () => void this.connect((r) => r.create()), 20));
+    this.add2(textButton(this, SCREEN.width / 2, 336, 230, 50, '合言葉で入る', COLORS.uiPaper, () => this.showKeypad(), 18));
+    this.add2(textButton(this, SCREEN.width / 2, 520, 160, 44, 'もどる', COLORS.uiPaper, () => this.scene.start('Title'), 16));
+  }
+
+  /** 合言葉を入れる画面（文字のボタンで入れる） */
+  private showKeypad(): void {
+    this.clear();
+    this.statusText.setText('');
+    this.code = '';
+    this.add2(label(this, SCREEN.width / 2, 106, '合言葉（4文字）', 15, INK).setStroke(INK, 0));
+    const boxes = [0, 1, 2, 3].map((i) => {
+      this.add2(panel(this, SCREEN.width / 2 - 78 + i * 52, 146, 44, 50, COLORS.uiPaper));
+      return this.add2(label(this, SCREEN.width / 2 - 78 + i * 52, 144, '', 26, INK).setStroke(INK, 0));
+    });
+    const refresh = () => boxes.forEach((b, i) => b.setText(this.code[i] ?? ''));
+    [...CODE_CHARS].forEach((ch, i) => {
+      const col = i % 6;
+      const row = Math.floor(i / 6);
+      this.add2(textButton(this, 45 + col * 54, 210 + row * 50, 48, 42, ch, COLORS.uiPaper, () => {
+        if (this.code.length < 4) this.code += ch;
+        refresh();
+      }, 18));
+    });
+    this.add2(textButton(this, 45 + 2 * 54, 210 + 4 * 50, 48, 42, '←', COLORS.uiRose, () => {
+      this.code = this.code.slice(0, -1);
+      refresh();
+    }, 18));
+    this.add2(textButton(this, 250, 470, 150, 50, '入る', COLORS.uiHoney, () => {
+      if (this.code.length === 4) void this.connect((r) => r.join(this.code));
+      else this.statusText.setText('4文字 入れてね');
+    }, 20));
+    this.add2(textButton(this, 95, 470, 120, 44, 'もどる', COLORS.uiPaper, () => this.showMenu(), 16));
+  }
+
+  /** サーバーにつないで、ルームを作る・入る */
+  private async connect(then: (r: RelayClient) => void): Promise<void> {
+    this.clear();
+    const relay = new RelayClient();
+    this.relay = relay;
+    let dots = 0;
+    const tick = this.time.addEvent({
+      delay: 400,
+      loop: true,
+      callback: () => {
+        dots = (dots + 1) % 4;
+        const d = '・'.repeat(dots);
+        if (relay.status === 'waking') this.statusText.setText(`サーバーを 起こしています${d}\n（しばらく使っていないと、最初は1分ほど かかります）`);
+        else if (relay.status === 'connecting') this.statusText.setText(`つないでいます${d}`);
+      },
+    });
+    this.add2(label(this, SCREEN.width / 2, 260, 'つないでいます…', 18, INK).setStroke(INK, 0));
+    relay.onJoined = () => {
+      tick.remove();
+      this.showRoom();
+    };
+    relay.onMembers = () => this.drawSeats();
+    relay.onError = (code) => {
+      tick.remove();
+      relay.close();
+      this.showMenu(ERROR_TEXT[code]);
+    };
+    relay.onClosed = () => {
+      tick.remove();
+      if (this.scene.isActive()) this.showMenu(relay.room ? 'ルームを作った人が ぬけました' : ERROR_TEXT.network);
+    };
+    relay.listen((_from, data) => this.onMessage(data));
+    try {
+      await relay.open();
+    } catch {
+      tick.remove();
+      this.showMenu(ERROR_TEXT.network);
+      return;
+    }
+    then(relay);
+  }
+
+  /** ルームの画面：合言葉・QR・集まった人・はじめる */
+  private showRoom(): void {
+    const relay = this.relay!;
+    this.clear();
+    this.statusText.setText('');
+    const code = relay.room!;
+    this.add2(label(this, SCREEN.width / 2, 98, '合言葉', 14, INK).setStroke(INK, 0));
+    this.add2(panel(this, SCREEN.width / 2, 132, 170, 50, COLORS.uiPaper));
+    this.add2(label(this, SCREEN.width / 2, 130, code.split('').join(' '), 30, INK).setStroke(INK, 0));
+    // QR（読むと、このルームに直接入れる）
+    this.add2(panel(this, SCREEN.width / 2, 258, 176, 176, COLORS.uiPaper));
+    const key = `qr-${code}`;
+    const placeQr = () => {
+      if (this.relay === relay && this.scene.isActive()) this.add2(this.add.image(SCREEN.width / 2, 256, key).setDisplaySize(156, 156));
+    };
+    if (this.textures.exists(key)) placeQr();
+    else {
+      void QRCode.toDataURL(inviteUrl(code), { margin: 1, width: 312, color: { dark: '#2b1d14', light: '#fff8e8' } }).then((url) => {
+        this.textures.once(`addtexture-${key}`, placeQr);
+        this.textures.addBase64(key, url);
+      });
+    }
+    this.add2(label(this, SCREEN.width / 2, 360, 'QR を読むか、合言葉を入れてもらおう', 12, INK).setStroke(INK, 0));
+    // 6つの席（集まった人はパテ、空いた席は Bot）
+    for (let i = 0; i < MAX_MEMBERS; i++) {
+      const x = 40 + i * 56;
+      const view = new PateView(this, x, 448);
+      view.setHeadPart(SEAT_PARTS[i]);
+      view.setScale(0.62);
+      this.add2(view);
+      const tag = this.add2(label(this, x, 466, '', 11, INK).setStroke(INK, 0));
+      this.seats.push({ view, tag });
+    }
+    if (relay.isHost) {
+      this.startButton = this.add2(textButton(this, 230, 530, 170, 50, 'はじめる', COLORS.uiHoney, () => this.start(), 20));
+    } else {
+      this.add2(label(this, 230, 530, 'ルームを作った人が\nはじめるのを 待っています', 12, INK).setStroke(INK, 0));
+    }
+    this.add2(textButton(this, 70, 530, 100, 44, 'ぬける', COLORS.uiPaper, () => {
+      relay.close();
+      this.relay = null;
+      this.showMenu();
+    }, 15));
+    this.drawSeats();
+  }
+
+  /** 席の表示を、いまの顔ぶれに合わせる */
+  private drawSeats(): void {
+    const relay = this.relay;
+    if (!relay || this.seats.length === 0) return;
+    // 親機を先頭に、入った順に並べる
+    const members = [...relay.members].sort((a, b) => Number(b.host) - Number(a.host) || a.id - b.id);
+    this.seats.forEach((seat, i) => {
+      const m = members[i];
+      seat.view.setAlpha(m ? 1 : 0.3);
+      seat.tag.setText(m ? (m.id === relay.you ? 'きみ' : m.host ? '親機' : `${i + 1}P`) : 'Bot');
+    });
+    if (this.startButton) {
+      const ok = members.length >= 2;
+      this.startButton.setAlpha(ok ? 1 : 0.45);
+      this.statusText.setText(ok ? `${members.length}人 と Bot ${MAX_MEMBERS - members.length}体 で遊びます` : '友達が入るのを 待っています');
+    }
+  }
+
+  /** 親機：はじめる（2人以上のとき） */
+  private start(): void {
+    const relay = this.relay;
+    if (!relay?.isHost || relay.members.length < 2) return;
+    relay.lock();
+    relay.send('all', { k: 'start' });
+    this.onMessage({ k: 'start' });
+  }
+
+  private onMessage(data: unknown): void {
+    const msg = data as { k?: string };
+    if (msg?.k === 'start') {
+      // 試合中のやりとりは、M8.5 の次の段階で作る
+      this.clear();
+      this.add2(label(this, SCREEN.width / 2, 240, 'みんな そろいました！', 22, INK).setStroke(INK, 0));
+      this.add2(label(this, SCREEN.width / 2, 290, '（いっしょに遊ぶ試合は、いま作っているところです）', 12, INK).setStroke(INK, 0));
+      this.add2(textButton(this, SCREEN.width / 2, 400, 160, 44, 'もどる', COLORS.uiPaper, () => this.scene.start('Title'), 16));
+    }
+  }
+}

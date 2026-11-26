@@ -1,0 +1,16 @@
+{
+  "name": "paterial-lite-relay",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "PATERIAL Lite の中継サーバー（同じルームの人どうしに伝言を回すだけ）",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

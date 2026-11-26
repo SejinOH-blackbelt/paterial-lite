@@ -1,0 +1,76 @@
+import { describe, expect, it } from 'vitest';
+// @ts-expect-error サーバーは JavaScript で書いている（型の情報はない）
+import { createRooms, MAX_MEMBERS } from '../server/rooms.js';
+
+type Msg = { t: string; [k: string]: unknown };
+
+function setup() {
+  let n = 0;
+  const rooms = createRooms(() => (n++ * 0.137) % 1);
+  const people = Array.from({ length: 8 }, () => {
+    const inbox: Msg[] = [];
+    const client = rooms.connect((m: Msg) => inbox.push(m));
+    return { client, inbox, last: (t: string) => [...inbox].reverse().find((m) => m.t === t) };
+  });
+  return { rooms, people };
+}
+
+describe('中継サーバーのルーム', () => {
+  it('ルームを作ると4文字の合言葉が出て、合言葉で入れる。顔ぶれがみんなに届く', () => {
+    const { rooms, people } = setup();
+    const [a, b] = people;
+    rooms.handle(a.client, { t: 'create' });
+    const code = a.last('joined')!.room as string;
+    expect(code).toMatch(/^[A-Z0-9]{4}$/);
+    rooms.handle(b.client, { t: 'join', room: code.toLowerCase() });
+    expect(b.last('joined')).toMatchObject({ room: code, you: b.client.id, host: a.client.id });
+    expect((a.last('members')!.members as unknown[]).length).toBe(2);
+  });
+
+  it('ない合言葉・満員・試合が始まったルームには入れない', () => {
+    const { rooms, people } = setup();
+    rooms.handle(people[7].client, { t: 'join', room: 'ZZZZ' });
+    expect(people[7].last('error')!.code).toBe('no-room');
+    rooms.handle(people[0].client, { t: 'create' });
+    const code = people[0].last('joined')!.room;
+    for (let i = 1; i < MAX_MEMBERS; i++) rooms.handle(people[i].client, { t: 'join', room: code });
+    rooms.handle(people[6].client, { t: 'join', room: code });
+    expect(people[6].last('error')!.code).toBe('full');
+    rooms.handle(people[0].client, { t: 'lock' });
+    rooms.disconnect(people[5].client);
+    rooms.handle(people[6].client, { t: 'join', room: code });
+    expect(people[6].last('error')!.code).toBe('started');
+  });
+
+  it('伝言は、みんな・親機・特定の人へ届く。中身はそのまま', () => {
+    const { rooms, people } = setup();
+    const [a, b, c] = people;
+    rooms.handle(a.client, { t: 'create' });
+    const code = a.last('joined')!.room;
+    rooms.handle(b.client, { t: 'join', room: code });
+    rooms.handle(c.client, { t: 'join', room: code });
+    rooms.handle(b.client, { t: 'send', to: 'host', data: { x: 1 } });
+    expect(a.last('msg')).toEqual({ t: 'msg', from: b.client.id, data: { x: 1 } });
+    expect(c.last('msg')).toBeUndefined();
+    rooms.handle(a.client, { t: 'send', to: c.client.id, data: 'only-c' });
+    expect(c.last('msg')!.data).toBe('only-c');
+    expect(b.last('msg')).toBeUndefined();
+    rooms.handle(a.client, { t: 'send', to: 'all', data: 'everyone' });
+    expect(b.last('msg')!.data).toBe('everyone');
+    expect(a.inbox.filter((m) => m.t === 'msg')).toHaveLength(1); // 自分には返ってこない
+  });
+
+  it('親機が抜けるとルームがなくなり、残った人に知らせる。ほかの人が抜けたら顔ぶれを知らせる', () => {
+    const { rooms, people } = setup();
+    const [a, b, c] = people;
+    rooms.handle(a.client, { t: 'create' });
+    const code = a.last('joined')!.room;
+    rooms.handle(b.client, { t: 'join', room: code });
+    rooms.handle(c.client, { t: 'join', room: code });
+    rooms.disconnect(c.client);
+    expect((a.last('members')!.members as unknown[]).length).toBe(2);
+    rooms.disconnect(a.client);
+    expect(b.last('closed')).toBeTruthy();
+    expect(rooms.count()).toBe(0);
+  });
+});

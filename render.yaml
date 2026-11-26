@@ -1,0 +1,11 @@
+# Render（render.com）に中継サーバーを置くための設定。
+# Render の画面で「New → Blueprint」からこのリポジトリを選ぶと、この内容で作られる。
+services:
+  - type: web
+    name: paterial-lite-relay
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
