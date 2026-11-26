@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, MISSIONS, NET, PATE, HUD_BUTTONS, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, MISSIONS, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   createHarvester,
@@ -45,6 +45,9 @@ import {
   missionById,
   missionChance,
   missionReady,
+  assignedMissions,
+  hasMaterials,
+  missionAffinity,
   startMission,
   updateBotTask,
   type MissionEvent,
@@ -69,7 +72,10 @@ import { nearestPass, needleAngle, nextPass, passTime, startSession, type Harves
 import { GameAudio } from './audio';
 import { Stick } from './Stick';
 import { HudButton } from './HudButton';
+import { YorishiroView } from './YorishiroView';
+import { finishPossess, kickFromShrine, nearYorishiro, pressCommand, shrineChance, startPossess } from '../game/yorishiro';
 import type { NetGame } from '../net/netGame';
+import { dealMissions, randomElement, type ElementId } from '../game/elements';
 import {
   applyFieldWire,
   applySpyWire,
@@ -101,7 +107,7 @@ import { PateView } from './PateView';
 import { LANDMARK_TEX, makeSpyTextures } from './spyTextures';
 import { PAD_TONES, ScanGameView } from './ScanGameView';
 import { MissionGameView } from './MissionGameView';
-import { FACILITY_SIZE, FACILITY_TEX, makeFacilityTextures } from './facilityTextures';
+import { DRESSING_TEX, FACILITY_SIZE, FACILITY_TEX, makeFacilityTextures } from './facilityTextures';
 import { EMPTY_RES_TEX, makeResourceTextures, RES_CHIP_COLOR, RES_SIZE, RES_TEX } from './resourceTextures';
 import { drawGround, drawPart, makeTextures, TEX } from './textures';
 
@@ -127,7 +133,12 @@ interface PateEntity {
   bot: Bot | null;
   /** 試合の中でのこのパテ（スパイかどうか、緊急の呼び出しの残りなど） */
   pawn: Pawn;
+  /** 絵に出しているエレメント（乗りうつったら絵を変える） */
+  shownElement: string | null;
 }
+
+/** 依代の祠のコマンドのボタンの音（火・水・土・風・雷） */
+const COMMAND_TONES = [523.25, 587.33, 659.25, 783.99, 880] as const;
 
 /** 住民Botの最初の位置（採取場にばらけて立つ） */
 const BOT_STARTS = [
@@ -157,6 +168,8 @@ export class FieldScene extends Phaser.Scene {
   private net: NetGame | null = null;
   /** 自分の席（ひとりなら 0） */
   private me = 0;
+  /** 役の発表で選んだ、自分の最初のエレメント */
+  private myElement: ElementId = PLAYER_ELEMENT;
   /** 次にようすを送る時刻（音の時計） */
   private netSendAt = 0;
   /** ほかのスマホのパテが歩いているか（絵を歩く姿にするため） */
@@ -204,6 +217,8 @@ export class FieldScene extends Phaser.Scene {
   private scanView: ScanGameView | null = null;
   /** 施設のミニゲームの画面（ミッション中だけ） */
   private missionView: MissionGameView | null = null;
+  /** 依代の祠の画面（開いているときだけ） */
+  private yoriView: YorishiroView | null = null;
   /** 「アクション」ボタンを押して向かっている施設（着いたらミッションを始める） */
   private pendingFacility: string | null = null;
   /** 施設の上の「！」（自分のミッションがそこでできるとき） */
@@ -244,6 +259,7 @@ export class FieldScene extends Phaser.Scene {
   init(data: RoleData): void {
     this.spyIndex = data?.spyIndex ?? 0;
     this.net = data?.net ?? null;
+    this.myElement = data?.element ?? PLAYER_ELEMENT;
     this.me = this.net?.mySeat ?? 0;
     this.netSendAt = 0;
     this.remoteWalking.clear();
@@ -253,6 +269,7 @@ export class FieldScene extends Phaser.Scene {
     this.spirit = null;
     this.scanView = null;
     this.missionView = null;
+    this.yoriView = null;
     this.pendingFacility = null;
     this.quitDialog = false;
     this.scanButton = null;
@@ -296,6 +313,9 @@ export class FieldScene extends Phaser.Scene {
       this.add.image(f.x, f.y, FACILITY_TEX[f.id]).setOrigin(0.5, 1).setDepth(f.y);
       label(this, f.x, f.y - FACILITY_SIZE.h - 8, f.name, 12).setDepth(8700);
     }
+    // 依代（よりしろ）の祠：魂が別のエレメントの体に乗りうつる場所（施設から遠いところ）
+    this.add.image(YORISHIRO.x, YORISHIRO.y, DRESSING_TEX).setOrigin(0.5, 1).setDepth(YORISHIRO.y);
+    label(this, YORISHIRO.x, YORISHIRO.y - FACILITY_SIZE.h - 8, '依代の祠', 12).setDepth(8700);
     this.facilityMarks = this.add.graphics().setDepth(8701);
 
     // パテ6体：プレイヤー1体 + 住民Bot 5体
@@ -311,6 +331,7 @@ export class FieldScene extends Phaser.Scene {
     });
     this.player = this.pates[this.me].h;
     this.pateSprite = this.pates[this.me].view;
+    this.dealElementsAndMissions();
     this.all = this.pates.map((e) => e.h);
     this.setupMatch();
 
@@ -353,6 +374,7 @@ export class FieldScene extends Phaser.Scene {
       // スキャンのミニゲームのパネルはスティックの上に重なるので、パネルが先に受けとる
       if (this.scanView?.owns(over)) return;
       if (this.missionView?.owns(over)) return; // 施設のミニゲームのパネル
+      if (this.yoriView?.owns(over)) return; // 依代の祠のパネル
       if (this.pad.down(p)) return;
       if (this.player.frozen) return; // 置物にされたら、土の精としてスティックで動き回って見るだけ
       if (this.callButton.hit(over)) {
@@ -432,7 +454,7 @@ export class FieldScene extends Phaser.Scene {
     view.setHeadPart(part);
     view.setElement(element); // 火・水・土・風の飾り（見た目だけ）
     const pawn: Pawn = { id, part, element, h, isSpy: false, isPlayer: bot === null, emergencyLeft: MATCH.emergencyPerPawn };
-    this.pates.push({ h, view, shadow, bot, pawn });
+    this.pates.push({ h, view, shadow, bot, pawn, shownElement: element });
   }
 
   /** 画面に貼りつける表示（カメラが動いても、画面の同じ場所に出る） */
@@ -476,12 +498,22 @@ export class FieldScene extends Phaser.Scene {
 
   /** 「アクション」ボタン：そばの施設に寄ってミッションを始める。できないときは理由を出す */
   private pressAction(): void {
+    // 依代の祠のそば：乗りうつる体を選ぶ画面を開く
+    const now = this.audio.heardTime();
+    const shrine = shrineChance(this.player, now);
+    if (shrine) {
+      if (shrine.state === 'locked') this.popText(`祠から追い出された… あと${Math.ceil(shrine.wait)}秒 入れない`, '#2b1d14', 14, 0);
+      else this.openYorishiro();
+      return;
+    }
     const r = goToMission(this.player);
     if (!r) {
       if (!this.player.task) this.popText('そばに施設がない', '#2b1d14', 14, 0);
       return;
     }
-    if (r.state === 'finished') this.popText('ここのミッションは もう できた', '#2b1d14', 14, 0);
+    if (r.state === 'notMine') this.popText('ここは きみのミッションではない', '#2b1d14', 14, 0);
+    else if (r.state === 'never') this.popText(`${ELEMENT_NAMES[this.player.element]}の体では 不可… 依代の祠で乗りうつろう`, '#b3322a', 14, 0);
+    else if (r.state === 'finished') this.popText('ここのミッションは もう できた', '#2b1d14', 14, 0);
     else if (r.state === 'notReady') this.popText(`${RESOURCE_NAMES[r.mission.kind!]}が あと${materialsShort(this.player, r.mission)}個 ひつよう`, '#2b1d14', 14, 0);
     else this.pendingFacility = r.facility.id;
   }
@@ -495,8 +527,9 @@ export class FieldScene extends Phaser.Scene {
     // スティックで動かしているあいだは始められないので光らせない（採取中は叩けるので光る）
     this.harvestButton.setLit(me.session !== null || (!this.driving && harvestChance(me, this.field, this.all)?.state === 'ready'));
     const m = missionChance(me);
-    this.actionButton.setLit(!this.driving && m?.state === 'ready' && this.pendingFacility === null);
-    this.actionButton.setLabel(m ? (m.mission.kind === null ? 'お祈り' : '加工') : 'アクション');
+    const shrine = shrineChance(me, this.audio.heardTime());
+    this.actionButton.setLit(!this.driving && this.pendingFacility === null && (m?.state === 'ready' || shrine?.state === 'ready'));
+    this.actionButton.setLabel(shrine ? '乗りうつる' : m ? (m.mission.kind === null ? 'お祈り' : '加工') : 'アクション');
     const body = reportableBody(this.match, this.playerPawn);
     const emergency = canEmergency(this.match, this.playerPawn);
     this.callButton.setVisible(playing);
@@ -669,6 +702,7 @@ export class FieldScene extends Phaser.Scene {
       if (!this.spy.scan) this.syncScanView(heard);
     }
     this.updatePlayerMission(heard);
+    this.syncYorishiro();
     if (this.isSim()) observePatch(this.match, heard, dt);
     this.updateSpirit(dt);
     this.scheduleTicks();
@@ -1003,7 +1037,7 @@ export class FieldScene extends Phaser.Scene {
     this.meter.clear();
     this.button.setVisible(s !== null);
     // 採取中も施設のミッション中も、まわりが見えにくくなる
-    this.focusCover.setVisible(s !== null || this.player.task !== null);
+    this.focusCover.setVisible(s !== null || this.player.task !== null || this.yoriView !== null);
     if (!s) return;
     // メーターは (0,0) を中心に描き、グラフィック全体を画面の真ん中に大きく置く
     const x = 0;
@@ -1117,6 +1151,23 @@ export class FieldScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * 最初のエレメントとミッションを配る。自分は選んだエレメント、ほかの席はたねから決める
+   * （友達と遊ぶときは、どのスマホでも同じになる。友達が選んだエレメントとミッションは、あとから届くようすで直る）。
+   * ミッションは1体に3つ、そのうち1つは苦手か不可
+   */
+  private dealElementsAndMissions(): void {
+    const base = this.net ? this.net.seed : Math.floor(this.rng() * 2 ** 31);
+    this.pates.forEach((e, seat) => {
+      const element = seat === this.me ? this.myElement : randomElement(createRng(base + seat * 7919));
+      e.h.element = element;
+      e.h.missions = dealMissions(element, createRng(base + seat * 104729 + 13));
+      e.pawn.element = element;
+      e.view.setElement(element);
+      e.shownElement = element;
+    });
+  }
+
   /** 試合を始める。スパイは役の発表で決まった番号のパテ */
   private setupMatch(): void {
     const index = Math.min(this.spyIndex, this.pates.length - 1);
@@ -1203,6 +1254,7 @@ export class FieldScene extends Phaser.Scene {
   }
 
   private cleanupSounds(): void {
+    this.closeYorishiro();
     for (const t of this.pendingTicks) t.cancel();
     this.pendingTicks = [];
     this.bgm.stop();
@@ -1242,14 +1294,17 @@ export class FieldScene extends Phaser.Scene {
       return;
     }
     const short: Record<string, string> = { kiln: '窯', workshop: '製造所', foundry: '鋳造所', shrine: '祈り' };
-    const lines = MISSIONS.map((m) => {
+    // 配られたミッションだけ。いまの体との相性の印（得・普・苦・×）をつける
+    const mark: Record<string, string> = { good: '得', plain: '普', weak: '苦', never: '×' };
+    const lines = assignedMissions(me).map((m) => {
       const f = short[m.facility];
       if (isFinished(me, m.id)) return `✔${f}`;
-      if (m.kind === null) return 'お祈り';
-      if (missionReady(me, m)) return `${f}へ！`;
-      return `${RESOURCE_NAMES[m.kind]}${m.need - materialsShort(me, m)}/${m.need}`;
+      const a = mark[missionAffinity(me, m)];
+      if (m.kind === null) return `お祈り[${a}]`;
+      if (hasMaterials(me, m)) return `${f}へ[${a}]`;
+      return `${RESOURCE_NAMES[m.kind]}${m.need - materialsShort(me, m)}/${m.need}[${a}]`;
     });
-    const text = `ミッション  ${lines.join('  ')}`;
+    const text = `${ELEMENT_NAMES[me.element]}  ${lines.join('  ')}`;
     if (text === this.hudMissionText) return;
     this.hudMissionText = text;
     this.missionText.setText(text);
@@ -1298,6 +1353,7 @@ export class FieldScene extends Phaser.Scene {
     startMeeting(this.match, caller, reason, body, started);
     this.syncScanView(started);
     this.syncMissionView();
+    this.closeYorishiro();
     for (const t of this.pendingTicks) t.cancel();
     this.pendingTicks = [];
     this.pad.reset(); // 会議の画面に切りかわると、指を離したことが届かないことがある
@@ -1542,6 +1598,67 @@ export class FieldScene extends Phaser.Scene {
     });
   }
 
+  // ---------- 依代の祠 ----------
+
+  /** 乗りうつる体を選ぶ画面を開く */
+  private openYorishiro(): void {
+    if (this.yoriView) return;
+    const me = this.player;
+    const left = me.missions.filter((id) => !me.finished.has(id));
+    this.yoriView = new YorishiroView(this, {
+      current: me.element,
+      missions: left.length > 0 ? left : me.missions,
+      onChoose: (e) => {
+        const now = this.audio.heardTime();
+        if (!startPossess(me, e, now, this.rng, true)) return;
+        this.yoriView?.startCommands(me.possess!.game!);
+      },
+      onPress: (b) => this.onCommand(b),
+    });
+  }
+
+  private closeYorishiro(): void {
+    this.yoriView?.destroy();
+    this.yoriView = null;
+  }
+
+  /** 毎コマ：祠の画面を閉じるとき（動いた・祠から離れた・置物にされた・乗りうつりが取り消された） */
+  private syncYorishiro(): void {
+    const v = this.yoriView;
+    if (!v) return;
+    const me = this.player;
+    if (me.frozen || (v.isCommanding && !me.possess) || (!v.isCommanding && (this.driving || !nearYorishiro(me.walker.pos)))) {
+      this.closeYorishiro();
+      return;
+    }
+    v.update();
+  }
+
+  /** コマンドのボタンを押した */
+  private onCommand(button: number): void {
+    const me = this.player;
+    const game = me.possess?.game;
+    if (!game) return;
+    const step = pressCommand(game, button);
+    this.audio.tone(COMMAND_TONES[button]);
+    if (step === 'miss') {
+      this.audio.buzzer(0.5);
+      this.yoriView?.shake();
+    } else if (step === 'done') {
+      const to = finishPossess(me);
+      this.closeYorishiro();
+      this.audio.piron();
+      if (to) this.popText(`${ELEMENT_NAMES[to]}の体に 乗りうつった！`, '#2f9e44', 16, 6);
+      this.hudMissionText = ''; // 相性の印を描き直す
+    } else if (step === 'kicked') {
+      kickFromShrine(me, this.audio.heardTime());
+      this.closeYorishiro();
+      this.audio.zukoo();
+      this.popText(`まちがえすぎて 祠から追い出された…（${YORISHIRO.lockSeconds}秒）`, '#b3322a', 14, 6);
+    }
+    this.yoriView?.update();
+  }
+
   /** 「アクション」ボタンで向かった施設の前に着いたら、そのミッションを始める（ミニゲームの画面を出す） */
   private updatePlayerMission(heard: number): void {
     const me = this.player;
@@ -1626,6 +1743,12 @@ export class FieldScene extends Phaser.Scene {
   private syncPate(e: PateEntity, dt: number): void {
     const { x, y } = e.h.walker.pos;
     if (e.h.frozen && !e.view.isStatue) e.view.setStatue(true);
+    // 依代の祠で乗りうつったら、体の絵を変える
+    if (e.h.element !== e.shownElement && !e.h.frozen) {
+      e.shownElement = e.h.element;
+      e.pawn.element = e.h.element;
+      e.view.setElement(e.h.element);
+    }
     e.view.setPosition(x, y);
     e.view.setFacing(e.h.walker.facing);
     e.view.update(dt, isWalking(e.h.walker) || (e.h === this.player && this.driving && !e.h.frozen) || (this.remoteWalking.get(e.h) ?? false));

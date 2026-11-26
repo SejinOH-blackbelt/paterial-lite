@@ -5,7 +5,7 @@
 // ・親機は、全員のようす（スナップショット）を少しずつ（1秒に何回か）みんなに送る。
 // ・時刻はスマホごとに「音の時計」がちがうので、送るときは「いまから何秒後／何秒前」に直して送る。
 
-import { MISSIONS, RESOURCE_POINTS } from '../game/config';
+import { ELEMENTS, MISSIONS, RESOURCE_POINTS } from '../game/config';
 import type { FieldState, Harvester } from '../game/harvest';
 import { missionById } from '../game/missions';
 import type { Facing } from '../game/movement';
@@ -34,6 +34,10 @@ export interface PawnWire {
   g: [number, number, number];
   /** 終えたミッション（MISSIONS の番号のビット） */
   fin: number;
+  /** いまの体のエレメント（ELEMENTS の番号） */
+  e: number;
+  /** 配られたミッション（MISSIONS の番号のビット） */
+  ms: number;
 }
 
 /** 親機 → みんな：試合のようす */
@@ -58,8 +62,10 @@ export function pawnToWire(h: Harvester, walking: boolean): PawnWire {
   const r = h.session ? RESOURCE_POINTS.findIndex((p) => p.id === h.session!.pointId) : -1;
   const tk = h.task ? MISSIONS.findIndex((m) => m.id === h.task!.missionId) : -1;
   let fin = 0;
+  let ms = 0;
   MISSIONS.forEach((m, i) => {
     if (h.finished.has(m.id)) fin |= 1 << i;
+    if (h.missions.includes(m.id)) ms |= 1 << i;
   });
   return {
     x: Math.round(h.walker.pos.x * 10) / 10,
@@ -72,6 +78,8 @@ export function pawnToWire(h: Harvester, walking: boolean): PawnWire {
     m: h.materials,
     g: KINDS.map((k) => h.gathered[k] ?? 0) as [number, number, number],
     fin,
+    e: ELEMENTS.indexOf(h.element),
+    ms,
   };
 }
 
@@ -98,6 +106,8 @@ export function applyWireToPawn(h: Harvester, w: PawnWire, makeSession: (pointId
   h.materials = w.m;
   KINDS.forEach((k, i) => (h.gathered[k] = w.g[i]));
   h.finished = new Set(MISSIONS.filter((_, i) => (w.fin & (1 << i)) !== 0).map((m) => m.id));
+  if (typeof w.e === 'number' && ELEMENTS[w.e]) h.element = ELEMENTS[w.e];
+  if (typeof w.ms === 'number') h.missions = MISSIONS.filter((_, i) => (w.ms & (1 << i)) !== 0).map((m) => m.id);
   return w.w === 1;
 }
 

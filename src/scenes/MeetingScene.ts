@@ -1,7 +1,7 @@
 // 会議の画面。採取場の上に重ねて出します（採取場はそのあいだ止まる）。
 // 6体が輪になって並び、スタンプで話し合って投票します。ルールは src/game/match.ts。
 import Phaser from 'phaser';
-import { COLORS, MISSIONS, PART_NAMES, SCREEN, SUPPORT, SUSPICION } from '../game/config';
+import { COLORS, PART_NAMES, SCREEN, SUPPORT, SUSPICION } from '../game/config';
 import { addNote, botVote, castVote, everyoneVoted, hearStamp, meetingTimeLeft, missionsDone, resolveMeeting, sightingOf, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
 import type { Rng } from '../game/random';
 import type { GameAudio } from './audio';
@@ -149,7 +149,7 @@ export class MeetingScene extends Phaser.Scene {
       const done = missionsDone(p.h);
       panel(this, x, y + 22, 98, 23, p.h.frozen ? COLORS.uiSlate : COLORS.uiWood);
       const name = p === player ? 'きみ' : PART_NAMES[p.part as keyof typeof PART_NAMES];
-      label(this, x, y + 20, `${name}  ${p.h.frozen ? '置物' : '仕事'} ${done}/${MISSIONS.length}`, 11);
+      label(this, x, y + 20, `${name}  ${p.h.frozen ? '置物' : '仕事'} ${done}/${p.h.missions.length}`, 11);
       const voteMark = label(this, x + 28, y - 34, '', 15, cssColor(COLORS.uiHoney)).setDepth(11);
       if (!p.h.frozen) {
         const hit = this.add.zone(x, y - 22, 60, 66).setInteractive();
