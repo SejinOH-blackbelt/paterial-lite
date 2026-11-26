@@ -3,7 +3,7 @@
 
 import { BOT, LANDMARKS, MATCH, MISS_SOUND, SUPPORT, SUSPICION } from './config';
 import { createFieldState, type FieldState, type Harvester } from './harvest';
-import { allMissionsDone, facilityById, facilityNear, facilityStand, TOTAL_UNITS, unitsOf, type MissionEvent } from './missions';
+import { allMissionsDone, facilityById, facilityNear, facilityStand, maxUnitsOf, unitsOf, type MissionEvent } from './missions';
 import { faceTo, type Point } from './movement';
 import type { Rng } from './random';
 import { allScanned, createSpyState, patchSize, type SpyEvent, type SpyState } from './spy';
@@ -143,7 +143,7 @@ export function gauge(m: MatchState): number {
     if (p.isSpy) continue;
     const prog = unitsOf(p.h);
     done += prog;
-    need += p.h.frozen ? prog : TOTAL_UNITS;
+    need += p.h.frozen ? prog : maxUnitsOf(p.h); // 配られたミッションの分だけ
   }
   return need === 0 ? 0 : Math.min(1, done / need);
 }
@@ -213,6 +213,7 @@ export function startMeeting(m: MatchState, caller: Pawn, reason: Meeting['reaso
     // 歩く・採取・スキャンをやめる
     p.h.session = null;
     p.h.task = null;
+    p.h.possess = null;
     p.h.claim = null;
     p.h.waitingFor = null;
     p.h.walker.target = null;

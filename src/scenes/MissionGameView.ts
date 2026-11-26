@@ -19,6 +19,7 @@ import {
   updatePrayer,
   clapTime,
   upcomingClaps,
+  pegColorCount,
   type DrumGame,
   type JigsawGame,
   type MissionGame,
@@ -35,7 +36,8 @@ import { FONT, INK, pinToScreen } from './ui';
 const PANEL = { x: 12, y: 116, w: SCREEN.width - 24, h: 378 } as const;
 const CX = SCREEN.width / 2;
 /** 杭の色（赤・青・黄）。色に加えて、刻んだ点の数でも見分けられる */
-const PEG_COLORS = [COLORS.landmarkVermilion, COLORS.partFlag, COLORS.uiHoney] as const;
+/** 杭の色（苦手だと色の数が増える：AFFINITY.pegColors の最大まで） */
+const PEG_COLORS = [COLORS.landmarkVermilion, COLORS.partFlag, COLORS.uiHoney, COLORS.uiMoss] as const;
 const JIGSAW_TEX = 'mission-jigsaw-art';
 /** 土のお祈りの作法 */
 const PRAYER_STEPS = ['鈴', '合掌', '拍手×2', '鈴'] as const;
@@ -184,14 +186,14 @@ export class MissionGameView {
 
   // ---------- 杭むすび ----------
 
-  private pegAt(i: number): { x: number; y: number } {
-    const a = -Math.PI / 2 + (i * Math.PI * 2) / (MISSION_GAME.pegColors * 2);
+  private pegAt(i: number, count: number): { x: number; y: number } {
+    const a = -Math.PI / 2 + (i * Math.PI * 2) / count;
     return { x: CX + Math.cos(a) * 112, y: PANEL.y + 210 + Math.sin(a) * 112 };
   }
 
   private buildPegs(g: PegGame): void {
     g.colors.forEach((_, i) => {
-      const { x, y } = this.pegAt(i);
+      const { x, y } = this.pegAt(i, g.colors.length);
       this.hotspot(x, y, 30, () => {
         const s = pickPeg(g, i);
         if (s === 'ok' && isLinked(g, i)) this.deps.audio.kachi();
@@ -203,19 +205,19 @@ export class MissionGameView {
   }
 
   private drawPegs(g: PegGame, now: number): void {
-    this.title.setText(`同じ色の杭どうしを むすぼう（杭を2本えらぶ）  ${g.links.length}/${MISSION_GAME.pegColors}`);
+    this.title.setText(`同じ色の杭どうしを むすぼう（杭を2本えらぶ）  ${g.links.length}/${pegColorCount(g)}`);
     const a = this.art;
     // 溶けた金属を流す型の板
     a.fillStyle(COLORS.stoneDark).fillCircle(CX, PANEL.y + 210, 140);
     a.fillStyle(COLORS.stone).fillCircle(CX, PANEL.y + 210, 132);
     for (const [p, q] of g.links) {
-      const A = this.pegAt(p);
-      const B = this.pegAt(q);
+      const A = this.pegAt(p, g.colors.length);
+      const B = this.pegAt(q, g.colors.length);
       a.lineStyle(14, COLORS.ink).lineBetween(A.x, A.y, B.x, B.y);
       a.lineStyle(9, PEG_COLORS[g.colors[p]]).lineBetween(A.x, A.y, B.x, B.y);
     }
     g.colors.forEach((c, i) => {
-      const { x, y } = this.pegAt(i);
+      const { x, y } = this.pegAt(i, g.colors.length);
       if (g.selected === i) {
         a.lineStyle(5, COLORS.uiCream, 0.6 + 0.4 * Math.sin(now * 10)).strokeCircle(x, y, 28);
       }
@@ -386,7 +388,7 @@ export class MissionGameView {
     const hints = [
       '① 鈴を鳴らそう（鈴をタップ）',
       '② 手を合わせよう（手を長押し）',
-      `③ 縮む輪が 重なった瞬間に 拍手（${g.claps}/${MISSION_GAME.claps}）`,
+      `③ 縮む輪が 重なった瞬間に 拍手（${g.claps}/${g.clapsNeeded}）`,
       '④ もう一度 鈴を鳴らそう',
     ];
     this.title.setText(`すべての国で同じ「土のお祈り」\n${hints[g.stage]}`);
@@ -415,7 +417,7 @@ export class MissionGameView {
       a.lineStyle(4, COLORS.uiHoney).strokeCircle(hx, hy, RING);
       for (const k of upcomingClaps(g)) {
         const until = clapTime(g, k) - now;
-        if (until > approach || until < -MISSION_GAME.clapWindow) continue;
+        if (until > approach || until < -g.window) continue;
         const r = RING + (Math.max(0, until) / approach) * RING_GROW;
         const fade = Math.min(1, (approach - until) / (approach * 0.3)); // 出てくるときは、ふわっと
         a.lineStyle(8, COLORS.ink, 0.6 * fade).strokeCircle(hx, hy, r);

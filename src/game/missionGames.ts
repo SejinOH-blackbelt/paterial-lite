@@ -3,7 +3,8 @@
 //   まちがえても、やり直せば済むようにする（失敗でパテが転んだりはしない）
 // ・最後までできたら 'done'
 
-import { MISSION_GAME } from './config';
+import { AFFINITY, MISSION_GAME } from './config';
+import type { Affinity } from './elements';
 import type { Rng } from './random';
 import { beatInterval } from './rhythm';
 
@@ -40,9 +41,9 @@ function nextBeat(now: number, origin: number): number {
   return origin + Math.ceil((now + 0.3 - origin) / b) * b;
 }
 
-export function createDrumGame(now: number, origin: number, rng: Rng): DrumGame {
+export function createDrumGame(now: number, origin: number, rng: Rng, length: number = MISSION_GAME.drumLength): DrumGame {
   const sequence: number[] = [];
-  while (sequence.length < MISSION_GAME.drumLength) {
+  while (sequence.length < length) {
     const d = Math.floor(rng() * MISSION_GAME.drumCount);
     // 同じ太鼓が3回続くと分かりにくいので避ける
     if (sequence.length >= 2 && sequence[sequence.length - 1] === d && sequence[sequence.length - 2] === d) continue;
@@ -97,10 +98,15 @@ export interface PegGame {
   result: 'playing' | 'success';
 }
 
-export function createPegGame(rng: Rng): PegGame {
+/** 色の数（杭は2倍） */
+export function pegColorCount(g: PegGame): number {
+  return g.colors.length / 2;
+}
+
+export function createPegGame(rng: Rng, colorCount: number = MISSION_GAME.pegColors): PegGame {
   const colors = shuffle(
     rng,
-    Array.from({ length: MISSION_GAME.pegColors * 2 }, (_, i) => i % MISSION_GAME.pegColors),
+    Array.from({ length: colorCount * 2 }, (_, i) => i % colorCount),
   );
   return { kind: 'pegs', colors, links: [], selected: null, result: 'playing' };
 }
@@ -124,7 +130,7 @@ export function pickPeg(g: PegGame, peg: number): Step {
   g.selected = null;
   if (g.colors[first] !== g.colors[peg]) return 'miss';
   g.links.push([first, peg]);
-  if (g.links.length < MISSION_GAME.pegColors) return 'ok';
+  if (g.links.length < pegColorCount(g)) return 'ok';
   g.result = 'success';
   return 'done';
 }
@@ -194,11 +200,14 @@ export interface PrayerGame {
   missed: { beat: number; claps: number } | null;
   /** 0拍目の時刻（拍の基準。音の時計） */
   origin: number;
+  /** 拍手の数と、拍手が拍からどれだけずれてもよいか（秒）。得意・苦手で変わる */
+  clapsNeeded: number;
+  window: number;
   result: 'playing' | 'success';
 }
 
-export function createPrayerGame(origin: number): PrayerGame {
-  return { kind: 'prayer', stage: 0, holdStart: null, claps: 0, clapBeat: 0, missed: null, origin, result: 'playing' };
+export function createPrayerGame(origin: number, clapsNeeded: number = MISSION_GAME.claps, window: number = MISSION_GAME.clapWindow): PrayerGame {
+  return { kind: 'prayer', stage: 0, holdStart: null, claps: 0, clapBeat: 0, missed: null, origin, clapsNeeded, window, result: 'playing' };
 }
 
 function missPrayer(g: PrayerGame): Step {
@@ -232,16 +241,16 @@ export function pressHands(g: PrayerGame, t: number): Step {
   }
   if (g.stage !== 2) return missPrayer(g);
   // 決め直す前の拍に合っていたタップなら、決め直しを取り消してそちらで判定する
-  if (g.missed && Math.abs(t - clapTime(g, g.missed.beat)) <= MISSION_GAME.clapWindow) {
+  if (g.missed && Math.abs(t - clapTime(g, g.missed.beat)) <= g.window) {
     g.clapBeat = g.missed.beat;
     g.claps = g.missed.claps;
   }
   g.missed = null;
   // 拍手：決めておいた拍から、ずれが小さければ OK（早すぎ・遅すぎは miss）
-  if (Math.abs(t - clapTime(g, g.clapBeat)) > MISSION_GAME.clapWindow) return missPrayer(g);
+  if (Math.abs(t - clapTime(g, g.clapBeat)) > g.window) return missPrayer(g);
   g.claps++;
   g.clapBeat++;
-  if (g.claps >= MISSION_GAME.claps) g.stage = 3;
+  if (g.claps >= g.clapsNeeded) g.stage = 3;
   return 'ok';
 }
 
@@ -265,7 +274,7 @@ function leadBeat(g: PrayerGame, t: number): number {
 /** これから叩く拍手の拍の番号（まだ叩いていない分） */
 export function upcomingClaps(g: PrayerGame): number[] {
   if (g.stage !== 2) return [];
-  return Array.from({ length: MISSION_GAME.claps - g.claps }, (_, i) => g.clapBeat + i);
+  return Array.from({ length: g.clapsNeeded - g.claps }, (_, i) => g.clapBeat + i);
 }
 
 /**
@@ -280,7 +289,7 @@ export function updatePrayer(g: PrayerGame, now: number): Step {
     g.clapBeat = leadBeat(g, now);
     return 'ok';
   }
-  if (g.stage === 2 && now > clapTime(g, g.clapBeat) + MISSION_GAME.clapWindow) {
+  if (g.stage === 2 && now > clapTime(g, g.clapBeat) + g.window) {
     g.missed = { beat: g.clapBeat, claps: g.claps };
     g.claps = 0;
     g.clapBeat = leadBeat(g, now);
@@ -297,16 +306,20 @@ export function holdProgress(g: PrayerGame, now: number): number {
 export type MissionGame = DrumGame | PegGame | JigsawGame | PrayerGame;
 export type MissionGameKind = MissionGame['kind'];
 
-/** ミニゲームを始める */
-export function createMissionGame(kind: MissionGameKind, now: number, origin: number, rng: Rng): MissionGame {
+/**
+ * ミニゲームを始める。aff：そのミッションへの向き不向き（得意ほど短く・やさしく、苦手ほど長く・きびしく）。
+ * 不可のミッションは始められないので、ここには来ない（来たら苦手として扱う）
+ */
+export function createMissionGame(kind: MissionGameKind, now: number, origin: number, rng: Rng, aff: Affinity = 'plain'): MissionGame {
+  const a = aff === 'never' ? 'weak' : aff;
   switch (kind) {
     case 'drum':
-      return createDrumGame(now, origin, rng);
+      return createDrumGame(now, origin, rng, AFFINITY.drumLength[a]);
     case 'pegs':
-      return createPegGame(rng);
+      return createPegGame(rng, AFFINITY.pegColors[a]);
     case 'jigsaw':
       return createJigsawGame(rng);
     case 'prayer':
-      return createPrayerGame(origin);
+      return createPrayerGame(origin, AFFINITY.claps[a], AFFINITY.clapWindow[a]);
   }
 }

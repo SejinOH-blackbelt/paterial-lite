@@ -2,9 +2,11 @@
 // 自分のミッションに必要な素材を、近くの空いている素材ポイントで採取します。何周か採取したら、ひと休みして別の場所へ移ります。
 // 素材がそろったら施設へ運んで加工し、ときどき土の祠へお祈りに行きます。
 
-import { BOT, FIELD, MISSION_BOT, MISSIONS, RESOURCE, RESOURCE_POINTS } from './config';
+import { BOT, FIELD, MISSION_BOT, MISSIONS, RESOURCE, RESOURCE_POINTS, YORISHIRO } from './config';
+import { bestElementFor, type ElementId } from './elements';
+import { startPossess, updateBotPossess } from './yorishiro';
 import { createHarvester, harvestTap, moveHarvester, claimedByOther, type FieldState, type Harvester, type HarvestResult } from './harvest';
-import { facilityById, facilityStand, isFinished, materialsShort, missionReady, startMission } from './missions';
+import { assignedMissions, facilityById, facilityStand, hasMaterials, isAssigned, isFinished, materialsShort, missionAffinity, missionReady, startMission } from './missions';
 import { createWalker, setTarget, type Point } from './movement';
 import { between, gaussian, intBetween, type Rng } from './random';
 import { beatInterval, nearestPass, nextPass, passTime } from './rhythm';
@@ -30,7 +32,9 @@ export interface Bot {
   /** lastLap を叩いた採取（別の採取なら周の番号は関係ない） */
   lastSession: unknown;
   /** いま何をしているか（休むタイミングを決めるため） */
-  mode: 'idle' | 'toPoint' | 'toFacility' | 'wander';
+  mode: 'idle' | 'toPoint' | 'toFacility' | 'toShrine' | 'wander';
+  /** 依代の祠で乗りうつるエレメント（向かっているとき） */
+  changeTo: ElementId | null;
 }
 
 export interface BotTapEvent {
@@ -42,7 +46,7 @@ export interface BotTapEvent {
 }
 
 export function createBot(profile: BotProfile, pos: Point): Bot {
-  return { profile, h: createHarvesterLike(pos), tapsLeft: 0, nextTap: null, restUntil: 0, lastLap: -Infinity, lastSession: null, mode: 'idle' };
+  return { profile, h: createHarvesterLike(pos), tapsLeft: 0, nextTap: null, restUntil: 0, lastLap: -Infinity, lastSession: null, mode: 'idle', changeTo: null };
 }
 
 function createHarvesterLike(pos: Point): Harvester {
@@ -72,7 +76,7 @@ export function freePoints(bot: Bot, field: FieldState, all: readonly Harvester[
 
 /** まだ足りない、ミッションに必要な素材の種類（集めた数か手持ちが、加工に足りない） */
 export function neededKinds(h: Harvester): string[] {
-  return MISSIONS.flatMap((m) => (m.kind !== null && !isFinished(h, m.id) && materialsShort(h, m) > 0 ? [m.kind] : []));
+  return MISSIONS.flatMap((m) => (m.kind !== null && isAssigned(h, m.id) && !isFinished(h, m.id) && materialsShort(h, m) > 0 ? [m.kind] : []));
 }
 
 /** 採取場のどこかへ歩く（着いたらひと休み） */
@@ -91,11 +95,23 @@ function goToFacility(bot: Bot, facilityId: string): void {
 
 /**
  * 次にするミッションを選んで向かう。向かったら true。
- * 素材がそろった加工があれば、いちばん近い施設へ。なければ、ときどき（加工も採取も残っていなければ必ず）お祈りへ。
+ * 配られたミッションで、素材がそろっているのに不可のものがあれば、先に依代の祠へ（得意が多いエレメントに乗りうつる）。
+ * 素材がそろった加工があれば、いちばん近い施設へ。なければ、ときどき（加工も採取も残っていなければ必ず）素材のいらないミッションへ。
  */
-function chooseFacility(bot: Bot, rng: Rng): boolean {
+function chooseFacility(bot: Bot, now: number, rng: Rng): boolean {
   const h = bot.h;
   const { x, y } = h.walker.pos;
+  const left = assignedMissions(h).filter((m) => !isFinished(h, m.id));
+  const blocked = left.some((m) => missionAffinity(h, m) === 'never' && hasMaterials(h, m));
+  if (blocked && now >= h.shrineLockUntil) {
+    const to = bestElementFor(left.map((m) => m.id), h.element);
+    if (to !== h.element) {
+      bot.changeTo = to;
+      setTarget(h.walker, { x: YORISHIRO.x, y: YORISHIRO.y + 34 });
+      bot.mode = 'toShrine';
+      return true;
+    }
+  }
   const ready = MISSIONS.filter((m) => m.kind !== null && missionReady(h, m))
     .map((m) => facilityById(m.facility))
     .sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
@@ -103,8 +119,8 @@ function chooseFacility(bot: Bot, rng: Rng): boolean {
     goToFacility(bot, ready[0].id);
     return true;
   }
-  const prayer = MISSIONS.find((m) => m.kind === null)!;
-  if (!isFinished(h, prayer.id) && (neededKinds(h).length === 0 || rng() < MISSION_BOT.prayChance)) {
+  const prayer = MISSIONS.find((m) => m.kind === null && missionReady(h, m));
+  if (prayer && (neededKinds(h).length === 0 || rng() < MISSION_BOT.prayChance)) {
     goToFacility(bot, prayer.facility);
     return true;
   }
@@ -118,6 +134,12 @@ function chooseFacility(bot: Bot, rng: Rng): boolean {
 export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[], now: number, rng: Rng): BotTapEvent[] {
   const h = bot.h;
   if (h.frozen) return []; // 置物は何もしない
+  if (h.possess) {
+    // 依代の祠で乗りうつり中（決まった時間で終わる）
+    bot.mode = 'idle';
+    updateBotPossess(h, now);
+    return [];
+  }
   if (h.task) {
     bot.mode = 'idle';
     return []; // 施設でミッション中（終わるのは missions.ts の updateBotTask）
@@ -183,6 +205,13 @@ export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[]
     // 着いたのに採取が始まらなかった（先を越された・空になった）→ 選び直す
     bot.mode = 'idle';
   }
+  if (bot.mode === 'toShrine') {
+    // 依代の祠に着いた：乗りうつる（入れなければ選び直す）
+    bot.mode = 'idle';
+    const to = bot.changeTo;
+    bot.changeTo = null;
+    if (to && startPossess(h, to, now, rng, false)) return [];
+  }
   if (bot.mode === 'toFacility') {
     // 施設に着いた：ミッションを始める（始められなければ選び直す）
     bot.mode = 'idle';
@@ -190,7 +219,7 @@ export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[]
   }
   if (now < bot.restUntil) return [];
 
-  if (chooseFacility(bot, rng)) return [];
+  if (chooseFacility(bot, now, rng)) return [];
   // ミッションに必要な素材を採りに行く
   const need = neededKinds(h);
   if (need.length === 0) {

@@ -1,6 +1,8 @@
 // 素材ポイントと採取の流れのルール。画面表示（Phaser）には依存しません。
 
-import { FIELD, RESOURCE, RESOURCE_POINTS, STOCK } from './config';
+import { FIELD, MISSIONS, RESOURCE, RESOURCE_POINTS, STOCK } from './config';
+import type { ElementId, MissionId } from './elements';
+import type { Possession } from './yorishiro';
 import { faceTo, facingFor, steerWalker, setTarget, type Point, type Walker } from './movement';
 import type { MissionTask } from './missions';
 import type { Rng } from './random';
@@ -30,6 +32,16 @@ export interface Harvester {
   task: MissionTask | null;
   /** 終えたミッション */
   finished: Set<string>;
+  /** いまやどっているエレメントの体（パテは魂） */
+  element: ElementId;
+  /** 配られたミッション（このパテがするもの） */
+  missions: MissionId[];
+  /** 依代の祠で乗りうつっているところ（していなければ null） */
+  possess: Possession | null;
+  /** 依代の祠から追い出されて、この時刻まで入れない */
+  shrineLockUntil: number;
+  /** この時刻まで視界がまるい（雷のミッションを終えたあと） */
+  lightUntil: number;
 }
 
 /** 採取場の素材ポイントの残りの量（全員で共有する） */
@@ -39,8 +51,25 @@ export interface FieldState {
   regenAt: Record<string, number | null>;
 }
 
-export function createHarvester(walker: Walker): Harvester {
-  return { walker, materials: 0, session: null, claim: null, waitingFor: null, frozen: false, gathered: {}, driving: false, task: null, finished: new Set() };
+/** element：最初のエレメント、missions：配られたミッション（省くと全部） */
+export function createHarvester(walker: Walker, element: ElementId = 'earth', missions: MissionId[] = MISSIONS.map((m) => m.id)): Harvester {
+  return {
+    walker,
+    materials: 0,
+    session: null,
+    claim: null,
+    waitingFor: null,
+    frozen: false,
+    gathered: {},
+    driving: false,
+    task: null,
+    finished: new Set(),
+    element,
+    missions: [...missions],
+    possess: null,
+    shrineLockUntil: -Infinity,
+    lightUntil: -Infinity,
+  };
 }
 
 export function createFieldState(): FieldState {
@@ -153,7 +182,7 @@ export function harvestingOther(all: readonly Harvester[], id: string, me: Harve
 export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harvester[], earliest: number, origin: number): 'taken' | 'empty' | null {
   if (h.frozen) return null; // 置物は採取しない
   if (h.driving) return null; // スティックで動かしているあいだは採取を始めない
-  if (h.task) return null; // 施設でミッション中
+  if (h.task || h.possess) return null; // 施設でミッション中・依代の祠で乗りうつり中
   if (h.session) {
     if (f.stock[h.session.pointId] <= 0) {
       h.session = null;
@@ -192,6 +221,7 @@ export function driveHarvester(h: Harvester, dx: number, dy: number, dtSeconds: 
   if (!h.driving) return;
   h.session = null;
   h.task = null;
+  h.possess = null;
   h.claim = null;
   h.waitingFor = null;
   steerWalker(h.walker, dx, dy, dtSeconds);
@@ -202,7 +232,7 @@ export function driveHarvester(h: Harvester, dx: number, dy: number, dtSeconds: 
  * ready：始められる、busy：ほかのパテが採取中、empty：素材が残っていない、null：そばに素材がない・いまはできない
  */
 export function harvestChance(h: Harvester, f: FieldState, all: readonly Harvester[]): { point: ResourcePoint; state: 'ready' | 'busy' | 'empty' } | null {
-  if (h.frozen || h.session || h.task) return null;
+  if (h.frozen || h.session || h.task || h.possess) return null;
   const r = nearbyPoint(h.walker.pos);
   if (!r) return null;
   if (f.stock[r.id] <= 0) return { point: r, state: 'empty' };
