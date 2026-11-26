@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>五つ浜の道しるべ｜PATERIAL Lite</title>
+  <style>
+    :root { color-scheme: light; --ink:#263d38; --paper:#f9f1dd; --line:#baad8e; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:#eae0c5; font:16px/1.55 system-ui,sans-serif; }
+    main { max-width:1160px; margin:auto; padding:20px clamp(10px,3vw,32px) 26px; }
+    header { display:flex; flex-wrap:wrap; gap:4px 18px; align-items:baseline; margin-bottom:14px; }
+    h1 { margin:0; font:700 clamp(26px,5vw,39px)/1.2 serif; letter-spacing:.08em; }
+    header span { font-size:.8rem; font-weight:700; letter-spacing:.12em; }
+    .layout { display:grid; grid-template-columns:minmax(0,1fr) 295px; gap:16px; align-items:start; }
+    figure { margin:0; border:1px solid #66817b; padding:4px; background:#c5d6cd; }
+    canvas { display:block; width:100%; height:auto; }
+    aside { padding:16px; background:var(--paper); border:1px solid var(--line); }
+    h2 { margin:0 0 10px; font-size:1.06rem; }
+    label { display:block; margin:10px 0 3px; font-size:.86rem; font-weight:700; }
+    select,button { min-height:44px; font:inherit; color:inherit; border:1px solid #8d8e76; border-radius:4px; background:#fffaf0; padding:6px 9px; }
+    select { width:100%; }
+    button { cursor:pointer; margin-top:10px; }
+    button[aria-pressed="true"] { color:#fff; background:#284943; }
+    :focus-visible { outline:3px solid #266f93; outline-offset:2px; }
+    output { display:block; margin-top:12px; font-size:.88rem; min-height:3em; }
+    .routes { display:flex; flex-wrap:wrap; gap:5px 12px; font-size:.8rem; }
+    .sample { display:inline-block; width:19px; border-top:4px solid #193b59; vertical-align:middle; }
+    .sample.dashed { border-top:4px dashed #846127; }
+    .legend { margin:16px 0 0; padding:12px 0 0; border-top:1px solid var(--line); list-style:none; display:grid; grid-template-columns:1fr 1fr; gap:3px 6px; font-size:.82rem; }
+    .legend strong { display:inline-block; width:1.6em; text-align:center; }
+    @media (max-width:760px) {
+      .layout { grid-template-columns:1fr; }
+      aside { padding:12px; }
+      .legend { grid-template-columns:repeat(auto-fit,minmax(125px,1fr)); }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header><h1>五つ浜の道しるべ</h1><span>PATERIAL Lite</span></header>
+  <div class="layout">
+    <figure><canvas id="map" role="img" aria-label="中央広場から5つの岬へ道が伸びる五つ浜の地図"></canvas></figure>
+    <aside>
+      <h2>中央広場からの経路</h2>
+      <label for="body">パテの体</label>
+      <select id="body"></select>
+      <label for="destination">目的地の灯籠</label>
+      <select id="destination"></select>
+      <button id="toggle" type="button" aria-pressed="true">経路を表示</button>
+      <output id="time" aria-live="polite"></output>
+      <div class="routes"><span><i class="sample"></i> 選んだ体</span><span><i class="sample dashed"></i> 道と橋だけ</span></div>
+      <ul class="legend">
+        <li><strong>１</strong> スイッチ候補</li><li><strong>◆</strong> 採取場</li>
+        <li><strong>鈴</strong> 土の祠</li><li><strong>依</strong> 依代の祠</li>
+        <li><strong>⛩</strong> 鳥居</li><li><strong>櫓</strong> 歯車の櫓</li>
+        <li><strong>釜</strong> 茶釜</li><li><strong>蔵</strong> 宝物庫候補</li>
+        <li><strong>出</strong> 出口候補</li><li><strong>▤</strong> 橋</li>
+      </ul>
+    </aside>
+  </div>
+</main>
+<script type="module" src="./map.ts"></script>
+</body>
+</html>

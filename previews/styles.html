@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PATERIAL Lite｜国の絵柄見本</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #312822; background: #efe8db; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { width: min(100% - 2rem, 68rem); margin: 0 auto; padding: 2.5rem 0 3rem; }
+    header { border-top: 5px solid #362923; padding: 1rem 0 1.4rem; }
+    header p { margin: 0 0 .35rem; font-size: .8rem; font-weight: 800; letter-spacing: .14em; }
+    h1 { margin: 0; font-family: Georgia, "Yu Mincho", serif; font-size: clamp(1.5rem, 5vw, 2.5rem); }
+    .scroll { overflow: auto; max-height: 78dvh; border: 1px solid #bcb1a2; background: #fffaf0; }
+    .scroll:focus-visible { outline: 3px solid #6f4939; outline-offset: 2px; }
+    table { width: 100%; min-width: 39rem; border-spacing: 0; table-layout: fixed; }
+    thead th { position: sticky; top: 0; z-index: 3; padding: .7rem .25rem; color: #fffaf0; background: #41332b; }
+    thead th:first-child { left: 0; z-index: 4; width: 6.25rem; }
+    thead th:nth-child(3) { background: #863b32; }
+    thead th:nth-child(4) { background: #49615a; }
+    thead th:nth-child(5) { background: #343e65; }
+    tbody th, td { border-bottom: 1px solid #e2d9ca; }
+    .group th { text-align: left; background: #e2d7c3; padding: .55rem .7rem; }
+    .group th span { position: sticky; left: .7rem; }
+    th[scope="row"] { position: sticky; left: 0; z-index: 1; background: #f5eee0; font-size: .8rem; padding: .45rem; }
+    th small { display: block; margin-top: .2rem; font-weight: 500; }
+    td { padding: .35rem; text-align: center; border-left: 1px solid #e2d9ca; }
+    figure { margin: 0; display: grid; justify-items: center; gap: .25rem; }
+    figcaption { font-size: .74rem; font-weight: 600; }
+    canvas { display: block; }
+    #phaser { position: absolute; width: 1px; height: 1px; overflow: hidden; }
+    .missing { color: #716557; }
+    @media (max-width: 600px) {
+      main { width: calc(100% - 1rem); padding-top: 1rem; }
+      .scroll { max-height: 80dvh; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header><p>PATERIAL LITE</p><h1>国の絵柄見本</h1></header>
+    <p id="status" role="status">絵を描画しています。</p>
+    <div class="scroll" tabindex="0" role="region" aria-label="国の絵柄比較表。横と縦にスクロールできます">
+      <table aria-label="国の絵柄比較">
+        <thead><tr>
+          <th scope="col">種類</th><th scope="col">和</th><th scope="col">中華風</th>
+          <th scope="col">洋風</th><th scope="col">アメコミ風</th>
+        </tr></thead>
+      </table>
+    </div>
+    <div id="phaser" aria-hidden="true"></div>
+  </main>
+  <script type="module" src="./styles.ts"></script>
+</body>
+</html>
