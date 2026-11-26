@@ -77,6 +77,7 @@ describe('住民Bot', () => {
     const a = createBot(BOT_PROFILES[0], standSpot(clay));
     const b = createBot(BOT_PROFILES[1], { x: clay.x, y: clay.y + 90 });
     const all = [a.h, b.h];
+    a.h.claim = clay.id;
     updateHarvester(a.h, f, all, 1, 0);
     expect(freePoints(b, f, all).map((r) => r.id)).not.toContain('clay');
   });

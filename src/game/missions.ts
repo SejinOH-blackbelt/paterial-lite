@@ -173,17 +173,36 @@ export function updateBotTask(h: Harvester, now: number, rng: Rng): MissionEvent
   return finishMission(h, now);
 }
 
-/**
- * スティックを離したとき：施設の前のすぐそばなら、自分で寄っていく（着いたらミッションが始まる）。
- * 寄っていく施設を返す（近くになければ null）
- */
-export function approachFacility(h: Harvester): Facility | null {
-  if (h.frozen || h.task || h.session || h.walker.target) return null;
-  const p = h.walker.pos;
+/** そばにある施設（施設の前まで approachRadius 以内でいちばん近いもの。なければ null） */
+export function nearbyFacility(p: Point): Facility | null {
   const near = FACILITIES.map((f) => ({ f, d: dist(facilityStand(f), p) }))
     .filter((x) => x.d <= FACILITY.approachRadius)
     .sort((a, b) => a.d - b.d)[0];
-  if (!near) return null;
-  if (near.d > FACILITY.useRadius) setTarget(h.walker, facilityStand(near.f));
-  return near.f;
+  return near?.f ?? null;
+}
+
+/**
+ * 「アクション」ボタンで、そばの施設のミッションを始められるか。
+ * ready：始められる、notReady：素材が足りない、finished：もう終えた、null：そばに施設がない・いまはできない
+ */
+export function missionChance(h: Harvester): { facility: Facility; mission: Mission; state: 'ready' | 'notReady' | 'finished' } | null {
+  if (h.frozen || h.task || h.session) return null;
+  const f = nearbyFacility(h.walker.pos);
+  if (!f) return null;
+  const m = missionAt(f.id);
+  const state = isFinished(h, m.id) ? 'finished' : hasMaterials(h, m) ? 'ready' : 'notReady';
+  return { facility: f, mission: m, state };
+}
+
+/**
+ * 「アクション」ボタンを押した：始められるなら施設の前へ寄る（着いたら startMission で始める）。
+ * 結果は missionChance と同じ（ready 以外のときは何もしない）
+ */
+export function goToMission(h: Harvester): ReturnType<typeof missionChance> {
+  const c = missionChance(h);
+  if (!c || c.state !== 'ready') return c;
+  h.claim = null;
+  h.waitingFor = null;
+  setTarget(h.walker, facilityStand(c.facility));
+  return c;
 }

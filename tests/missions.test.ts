@@ -5,8 +5,9 @@ import { createFieldState, createHarvester, driveHarvester, updateFieldState, up
 import { checkOutcome, createMatch, observeMissionMiss, suspicionOf, type Pawn } from '../src/game/match';
 import {
   allMissionsDone,
-  approachFacility,
   facilityStand,
+  goToMission,
+  missionChance,
   materialsShort,
   missEvent,
   missionsDone,
@@ -57,7 +58,7 @@ describe('施設のミッション', () => {
     expect(h.task?.game?.kind).toBe('prayer');
   });
 
-  it('施設の前でなければ始まらない。十字ボタンで動くとミッションをやめる', () => {
+  it('施設の前でなければ始まらない。スティックで動くとミッションをやめる', () => {
     const h = createHarvester(createWalker({ x: 100, y: 100 }));
     expect(startMission(h, 0, createRng(3), null)).toBeNull();
     h.walker.pos = facilityStand(fac('shrine'));
@@ -77,13 +78,18 @@ describe('施設のミッション', () => {
     expect(h.task!.endsAt).toBeCloseTo(MISSION_BOT.workSeconds.prayer + MISSION_BOT.retrySeconds, 5);
   });
 
-  it('十字ボタンを離したとき、施設の前のそばなら自分で寄っていく', () => {
+  it('施設のそばで「アクション」を押すと、施設の前へ寄る。素材が足りない・終えたときは寄らずに理由を返す', () => {
     const stand = facilityStand(fac('workshop'));
     const h = createHarvester(createWalker({ x: stand.x + 20, y: stand.y + 10 }));
-    expect(approachFacility(h)?.id).toBe('workshop');
-    expect(h.walker.target).toEqual(stand);
+    expect(missionChance(h)?.state).toBe('notReady');
+    expect(goToMission(h)?.state).toBe('notReady');
+    expect(h.walker.target).toBeNull();
+    const shrine = facilityStand(fac('shrine'));
+    const p = createHarvester(createWalker({ x: shrine.x - 25, y: shrine.y }));
+    expect(goToMission(p)?.state).toBe('ready');
+    expect(p.walker.target).toEqual(shrine);
     const far = createHarvester(createWalker({ x: stand.x + 200, y: stand.y }));
-    expect(approachFacility(far)).toBeNull();
+    expect(missionChance(far)).toBeNull();
   });
 });
 

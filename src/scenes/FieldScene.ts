@@ -1,13 +1,14 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { BOT, BOT_PROFILES, COLORS, FACILITIES, FACILITY, KING_PART, LANDMARKS, MATCH, MISS_SOUND, MISSIONS, PATE, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, MISSIONS, PATE, HUD_BUTTONS, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
-  approachNearby,
   createHarvester,
   driveHarvester,
+  harvestChance,
   harvestTap,
+  startHarvest,
   updateFieldState,
   updateHarvester,
   type FieldState,
@@ -33,15 +34,14 @@ import {
   type Pawn,
 } from '../game/match';
 import {
-  approachFacility,
   facilityAtStand,
-  facilityById,
-  facilityStand,
   finishMission,
+  goToMission,
   isFinished,
   materialsShort,
   missEvent,
   missionById,
+  missionChance,
   missionReady,
   startMission,
   updateBotTask,
@@ -66,10 +66,11 @@ import { createSpyBotMind, updateSpyBot, type SpyBotMind } from '../game/spyBot'
 import { nearestPass, needleAngle, nextPass, passTime, type HarvestSession, type Judgement } from '../game/rhythm';
 import { GameAudio } from './audio';
 import { Stick } from './Stick';
+import { HudButton } from './HudButton';
 import type { MeetingData } from './MeetingScene';
 import type { ResultData } from './ResultScene';
 import type { RoleData } from './RoleScene';
-import { FONT, INK, cssColor, label, mmss, panel, pinToScreen } from './ui';
+import { INK, label, mmss, panel, pinToScreen } from './ui';
 import { makePartTextures, type HeadPart } from './partTextures';
 import type { Element } from './elementTextures';
 import { PateView } from './PateView';
@@ -141,8 +142,10 @@ export class FieldScene extends Phaser.Scene {
   private supportText!: Phaser.GameObjects.Text;
   private hudSupport = -1;
   /** 呼び出しボタン（置物のそば・鳥居のそばでだけ出る） */
-  private callButton!: Phaser.GameObjects.Container;
-  private callLabel!: Phaser.GameObjects.Text;
+  /** 画面に出しておくボタン（押せるときだけ光る） */
+  private harvestButton!: HudButton;
+  private actionButton!: HudButton;
+  private callButton!: HudButton;
   /** プレイヤーが目撃した最後のイタズラ（会議の画面に引き継ぐ。会議が終わったら消す） */
   private witnessed: { spy: Pawn; target: Pawn } | null = null;
   /** 置物にされたプレイヤーの「土の精」（ほかのパテからは見えない） */
@@ -156,24 +159,20 @@ export class FieldScene extends Phaser.Scene {
   /** 見える範囲の外を暗くする霧 */
   private fog!: Phaser.GameObjects.Image;
   /** スパイ用のボタン（プレイヤーがスパイのときだけ） */
-  private scanButton: Phaser.GameObjects.Container | null = null;
-  private prankButton: Phaser.GameObjects.Container | null = null;
+  private scanButton: HudButton | null = null;
+  private prankButton: HudButton | null = null;
   private spyUi!: Phaser.GameObjects.Graphics;
   private fragmentsText: Phaser.GameObjects.Text | null = null;
   /** スキャンのミニゲームの画面（遊んでいるあいだだけ） */
   private scanView: ScanGameView | null = null;
   /** 施設のミニゲームの画面（ミッション中だけ） */
   private missionView: MissionGameView | null = null;
-  /** 「素材が足りない」などを出した施設（その施設の前を離れるまで、もう一度は出さない） */
-  private hintFacility: string | null = null;
-  /** スティックでやめた施設（その施設の前のそばを離れるまで、自分で寄ったり始め直したりしない） */
-  private leftFacility: string | null = null;
+  /** 「アクション」ボタンを押して向かっている施設（着いたらミッションを始める） */
+  private pendingFacility: string | null = null;
   /** 施設の上の「！」（自分のミッションがそこでできるとき） */
   private facilityMarks!: Phaser.GameObjects.Graphics;
   /** スティック（倒した方向へ進む） */
   private pad!: Stick;
-  /** 前のコマでスティックを押していたか（離した瞬間に、そばの素材で採取を始めるため） */
-  private wasDriving = false;
   /** いまスティックで動かしているか（歩く絵にするため） */
   private driving = false;
   private audio!: GameAudio;
@@ -206,8 +205,9 @@ export class FieldScene extends Phaser.Scene {
     this.spirit = null;
     this.scanView = null;
     this.missionView = null;
-    this.hintFacility = null;
-    this.leftFacility = null;
+    this.pendingFacility = null;
+    this.scanButton = null;
+    this.prankButton = null;
     this.landmarks.clear();
     this.resources.clear();
     this.pendingTicks = [];
@@ -277,13 +277,15 @@ export class FieldScene extends Phaser.Scene {
     this.setupHud();
     this.spyUi = this.add.graphics().setDepth(9150);
     if (this.isPlayerSpy) this.setupSpyButtons();
-    this.callButton = this.hud(this.makeCallButton());
+    // 右下のボタン：採取・アクション（施設のミッション）・呼び出し
+    this.harvestButton = new HudButton(this, HUD_BUTTONS.harvest, '採取', COLORS.uiHoney, 17);
+    this.actionButton = new HudButton(this, HUD_BUTTONS.action, 'アクション', COLORS.uiMoss, 10);
+    this.callButton = new HudButton(this, HUD_BUTTONS.call, '呼び出し', COLORS.landmarkVermilion, 10);
 
 
     // スティックで動く。スティックを倒しながらボタンも押せるように、指を3本まで受けつける
     if (this.input.manager.pointersTotal < 3) this.input.addPointer(3 - this.input.manager.pointersTotal);
     this.pad = new Stick(this);
-    this.wasDriving = false;
     this.driving = false;
 
     // タップ：スティック・採取ボタン・呼び出し・スパイのボタン（地面をタップしても歩かない）
@@ -295,23 +297,36 @@ export class FieldScene extends Phaser.Scene {
       if (this.missionView?.owns(over)) return; // 施設のミニゲームのパネル
       if (this.pad.down(p)) return;
       if (this.player.frozen) return; // 置物にされたら、土の精としてスティックで動き回って見るだけ
-      if (this.callButton.visible && over.includes(this.callButton)) {
+      if (this.callButton.hit(over)) {
+        this.callButton.squash();
         this.playerCalls();
         return;
       }
-      if (this.scanButton && over.includes(this.scanButton)) {
+      if (this.scanButton?.hit(over)) {
         // スキャン：その国の状態からクイズを作る（または、まねっこ）
         if (startScan(this.spy, this.audio.heardTime(), { ctx: { gauge: gauge(this.match) }, rng: this.rng })) {
-          this.squash(this.scanButton, 0.9);
+          this.scanButton.squash();
         }
         return;
       }
-      if (this.prankButton && over.includes(this.prankButton)) {
+      if (this.prankButton?.hit(over)) {
         const ev = prank(this.spy, this.all, this.audio.heardTime());
         if (ev) {
-          this.squash(this.prankButton, 0.9);
+          this.prankButton.squash();
           this.onSpyEvent(ev, this.audio.heardTime());
         }
+        return;
+      }
+      if (this.harvestButton.hit(over)) {
+        this.harvestButton.squash();
+        // 採取中なら、下の「採取」ボタンでもメーターを叩ける（親指で押しやすいように）
+        if (this.player.session !== null) this.hit(p);
+        else this.pressHarvest();
+        return;
+      }
+      if (this.actionButton.hit(over)) {
+        this.actionButton.squash();
+        this.pressAction();
         return;
       }
       if (this.player.session !== null && over.includes(this.button)) this.hit(p);
@@ -354,7 +369,7 @@ export class FieldScene extends Phaser.Scene {
     return c;
   }
 
-  /** スティックで動かす。離した瞬間、素材のそばなら自分で寄って採取を始める */
+  /** スティックで動かす（動かすと、採取・施設のミッション・向かっていた先はやめる） */
   private drive(dt: number): void {
     this.pad.update();
     const { x: dx, y: dy } = this.pad.state();
@@ -363,19 +378,47 @@ export class FieldScene extends Phaser.Scene {
       // 土の精は、ふつうより少し速く動ける
       if (this.spirit && this.driving) steerWalker(this.spirit.walker, dx, dy, dt, PATE.speed * 1.3);
     } else {
-      const task = this.player.task;
       driveHarvester(this.player, dx, dy, dt); // 押していないときも呼ぶ（動かしているかの印を消すため）
-      // スティックでミッションをやめたら、その施設の前を離れるまで始め直さない（少しだけ動かしてやめても、離した瞬間に始め直さないように）
-      if (task && !this.player.task) this.leftFacility = missionById(task.missionId).facility;
+      if (this.driving) this.pendingFacility = null;
     }
-    if (!this.player.frozen && !this.driving && this.wasDriving) {
-      // ほかのパテが使っているポイントなら、そばで順番を待つ（空いたら自動で採取を始める）
-      const r = approachNearby(this.player, this.all);
-      if (r === 'wait') this.popText('じゅんばん待ち', '#2b1d14', 15, 0);
-      // 素材のそばでなければ、施設の前のそばか見る（寄っていって、着いたらミッションが始まる）
-      if (r === null && !this.nearLeftFacility()) approachFacility(this.player);
+  }
+
+  /** 「採取」ボタン：そばの素材ポイントに寄って採取を始める。できないときは理由を出す */
+  private pressHarvest(): void {
+    const r = startHarvest(this.player, this.field, this.all);
+    if (!r) this.popText('そばに素材がない', '#2b1d14', 14, 0);
+    else if (r.state === 'busy') this.popText('ほかのパテが採取中', '#2b1d14', 14, 0);
+    else if (r.state === 'empty') this.popText('からっぽ（少し待つと戻る）', '#6f7378', 14, 0);
+    else this.pendingFacility = null;
+  }
+
+  /** 「アクション」ボタン：そばの施設に寄ってミッションを始める。できないときは理由を出す */
+  private pressAction(): void {
+    const r = goToMission(this.player);
+    if (!r) {
+      if (!this.player.task) this.popText('そばに施設がない', '#2b1d14', 14, 0);
+      return;
     }
-    this.wasDriving = this.driving;
+    if (r.state === 'finished') this.popText('ここのミッションは もう できた', '#2b1d14', 14, 0);
+    else if (r.state === 'notReady') this.popText(`${RESOURCE_NAMES[r.mission.kind!]}が あと${materialsShort(this.player, r.mission)}個 ひつよう`, '#2b1d14', 14, 0);
+    else this.pendingFacility = r.facility.id;
+  }
+
+  /** 毎コマ：ボタンを、押せるときだけ光らせる */
+  private updateButtons(): void {
+    const me = this.player;
+    const playing = !me.frozen;
+    this.harvestButton.setVisible(playing);
+    this.actionButton.setVisible(playing);
+    this.harvestButton.setLit(me.session !== null || harvestChance(me, this.field, this.all)?.state === 'ready');
+    const m = missionChance(me);
+    this.actionButton.setLit(m?.state === 'ready' && this.pendingFacility === null);
+    this.actionButton.setLabel(m ? (m.mission.kind === null ? 'お祈り' : '加工') : 'アクション');
+    const body = reportableBody(this.match, this.playerPawn);
+    const emergency = canEmergency(this.match, this.playerPawn);
+    this.callButton.setVisible(playing);
+    this.callButton.setLit(!!body || emergency);
+    this.callButton.setLabel(body ? '呼び出し' : emergency ? '緊急の\n呼び出し' : '呼び出し');
   }
 
   /** 指が触れた瞬間の「聞こえている時刻」（ブラウザが記録した時刻を使うので、処理の遅れに左右されない） */
@@ -538,7 +581,7 @@ export class FieldScene extends Phaser.Scene {
     this.updateFog();
     this.drawSpyUi(heard);
     this.drawHud(heard);
-    this.updateCallButton();
+    this.updateButtons();
     // 勝ち負けが決まったら、リザルトへ（Botの呼び出しより先に判定する）
     if (checkOutcome(this.match, heard)) {
       this.endMatch();
@@ -810,31 +853,6 @@ export class FieldScene extends Phaser.Scene {
     }
   }
 
-  /** 呼び出しボタン（左下・スキャンの上） */
-  private makeCallButton(): Phaser.GameObjects.Container {
-    const r = 30;
-    const art = this.add.graphics();
-    art.fillStyle(COLORS.ink).fillCircle(0, 0, r + 2);
-    art.fillStyle(COLORS.terracottaDark).fillCircle(0, 0, r - 1);
-    art.fillStyle(COLORS.landmarkVermilion).fillEllipse(0, -3, 56, 51);
-    art.lineStyle(2, COLORS.landmarkVermilionLight).lineBetween(-18, -14, 18, -14);
-    art.fillStyle(COLORS.uiHoney).fillCircle(0, 23, 4);
-    this.callLabel = this.add
-      .text(0, -1, '呼び出し', { fontFamily: FONT, fontSize: '12px', fontStyle: 'bold', color: cssColor(COLORS.uiCream), align: 'center' })
-      .setOrigin(0.5).setStroke(INK, 3);
-    const c = this.add.container(48, 524, [art, this.callLabel]).setDepth(9100).setVisible(false);
-    c.setSize(r * 2, r * 2);
-    c.setInteractive(new Phaser.Geom.Circle(r, r, r + 6), Phaser.Geom.Circle.Contains);
-    return c;
-  }
-
-  private updateCallButton(): void {
-    const body = reportableBody(this.match, this.playerPawn);
-    const emergency = canEmergency(this.match, this.playerPawn);
-    this.callButton.setVisible(!!body || emergency);
-    this.callLabel.setText(body ? '呼び出し' : '緊急の\n呼び出し');
-  }
-
   /** プレイヤーが呼び出しボタンを押した */
   private playerCalls(): void {
     const body = reportableBody(this.match, this.playerPawn);
@@ -896,6 +914,9 @@ export class FieldScene extends Phaser.Scene {
     this.scanButton?.setVisible(false);
     this.prankButton?.setVisible(false);
     this.callButton.setVisible(false);
+    this.harvestButton.setVisible(false);
+    this.actionButton.setVisible(false);
+    this.pad.setVisible(false);
     regroup(this.match);
     const { x, y } = toriiSpot();
     this.camTarget.setPosition(x, y);
@@ -979,21 +1000,10 @@ export class FieldScene extends Phaser.Scene {
     this.camTarget.setPosition(x, y - 20);
   }
 
-  /** スパイ用のボタン：スキャン（左下）とイタズラ（右下） */
+  /** スパイ用のボタン：スキャンとイタズラ（左、スティックの上） */
   private setupSpyButtons(): void {
-    const make = (x: number, label: string, color: number) => {
-      const r = 30;
-      const bg = this.add.circle(0, 0, r, color).setStrokeStyle(4, 0x2b1d14);
-      const t = this.add
-        .text(0, 0, label, { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#2b1d14', align: 'center' })
-        .setOrigin(0.5);
-      const c = this.hud(this.add.container(x, 596, [bg, t]).setDepth(9100));
-      c.setSize(r * 2, r * 2);
-      c.setInteractive(new Phaser.Geom.Circle(r, r, r + 6), Phaser.Geom.Circle.Contains);
-      return c;
-    };
-    this.scanButton = make(48, 'スキャン', 0x9fd3e6);
-    this.prankButton = make(SCREEN.width - 48, 'イタズラ', 0xf2a7a0);
+    this.scanButton = new HudButton(this, HUD_BUTTONS.scan, 'スキャン', 0x9fd3e6, 11);
+    this.prankButton = new HudButton(this, HUD_BUTTONS.prank, 'イタズラ', 0xf2a7a0, 11);
     this.fragmentsText = this.add
       .text(16, 95, '', { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#ffd43b' })
       .setOrigin(0, 0.5)
@@ -1008,12 +1018,12 @@ export class FieldScene extends Phaser.Scene {
     g.clear();
     if (!this.isPlayerSpy || !this.scanButton || !this.prankButton) return;
     const scanning = this.spy.scan !== null;
-    this.scanButton.setAlpha(canScan(this.spy, heard) || scanning ? 1 : 0.4);
+    this.scanButton.setLit(canScan(this.spy, heard) || scanning);
     const target = prankTarget(this.spy, this.all, heard);
-    this.prankButton.setAlpha(target ? 1 : 0.4);
+    this.prankButton.setLit(!!target);
     // イタズラが使えるまでの秒数をボタンに出す
     const wait = prankWait(this.spy, heard);
-    (this.prankButton.list[1] as Phaser.GameObjects.Text).setText(wait > 0 ? `イタズラ\n${Math.ceil(wait)}` : 'イタズラ');
+    this.prankButton.setLabel(wait > 0 ? `イタズラ\n${Math.ceil(wait)}` : 'イタズラ');
     this.fragmentsText?.setText(`設計図のカケラ ${this.spy.fragments} / ${SPY.fragmentsToWin}`);
     if (scanning) {
       // スキャン中：パテの頭の上に進み具合の輪
@@ -1093,31 +1103,15 @@ export class FieldScene extends Phaser.Scene {
     });
   }
 
-  /**
-   * 自分のパテが施設の前で止まったら、そのミッションを始める（ミニゲームの画面を出す）。
-   * 素材が足りない・もう終えたときは、その施設の前を離れるまで1回だけ知らせる
-   */
+  /** 「アクション」ボタンで向かった施設の前に着いたら、そのミッションを始める（ミニゲームの画面を出す） */
   private updatePlayerMission(heard: number): void {
     const me = this.player;
-    if (!facilityAtStand(me.walker.pos)) this.hintFacility = null;
-    if (!this.nearLeftFacility()) this.leftFacility = null;
-    if (!me.task && !this.driving && !this.leftFacility) {
-      const r = startMission(me, heard, this.rng, { origin: this.origin });
-      if (r && r.result !== 'started' && this.hintFacility !== r.mission.facility) {
-        this.hintFacility = r.mission.facility;
-        if (r.result === 'finished') this.popText('ここのミッションは もう できた', '#2b1d14', 14, 0);
-        else this.popText(`${RESOURCE_NAMES[r.mission.kind!]}が あと${materialsShort(me, r.mission)}個 ひつよう`, '#2b1d14', 14, 0);
-      }
+    if (this.pendingFacility && !me.walker.target) {
+      const at = facilityAtStand(me.walker.pos);
+      if (at?.id === this.pendingFacility) startMission(me, heard, this.rng, { origin: this.origin });
+      this.pendingFacility = null;
     }
     this.syncMissionView();
-  }
-
-  /** スティックでやめた施設の前のそばに、まだいるか */
-  private nearLeftFacility(): boolean {
-    if (!this.leftFacility) return false;
-    const s = facilityStand(facilityById(this.leftFacility));
-    const p = this.player.walker.pos;
-    return Math.hypot(s.x - p.x, s.y - p.y) <= FACILITY.approachRadius;
   }
 
   /** 施設のミニゲームの画面を、ミッション中だけ出す（動いた・会議・置物にされた、で消える） */
@@ -1147,8 +1141,6 @@ export class FieldScene extends Phaser.Scene {
     const ev = step === 'miss' ? missEvent(this.player, now) : step === 'done' ? finishMission(this.player, now) : null;
     if (ev) this.onMissionEvent(ev, now);
     if (step === 'done' && ev) {
-      // その施設の前に立ったままでも「もう できた」は出さない（「できた！」と重ならないように）
-      this.hintFacility = missionById(ev.missionId).facility;
       this.syncMissionView();
     }
   }

@@ -126,16 +126,23 @@ export function moveHarvester(h: Harvester, p: Point, all: readonly Harvester[])
   return 'harvest';
 }
 
+/** ほかのパテが、そのポイントでいま採取している（使う予定で歩いているだけなら数えない） */
+export function harvestingOther(all: readonly Harvester[], id: string, me: Harvester): boolean {
+  return all.some((o) => o !== me && o.session?.pointId === id);
+}
+
 /**
  * 毎コマ呼ぶ。
  * - 採取中にポイントが空になったら（ほかのパテが取りきったときなど）採取をやめる。
- * - 待っていたポイントが空いたら、立つ場所へ向かう。
- * - 立ち止まった場所が素材ポイントで、空いていて素材が残っていれば採取を始める。
+ * - 待っていたポイントが空いたら、立つ場所へ向かう（Botの順番待ち）。
+ * - 使うと決めた（claim した）ポイントの立つ場所に着いたら、採取を始める。
+ *   ただ立ち止まっただけでは始めない（プレイヤーは「採取」ボタンを押したときだけ）。
+ *   先にほかのパテが採取を始めていたら、あきらめる（早い者勝ち）。
  * earliest：最初の判定に使ってよい一番早い時刻（画面側の音の予約の締め切り）。
  */
 export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harvester[], earliest: number, origin: number): void {
   if (h.frozen) return; // 置物は採取しない
-  if (h.driving) return; // スティックで動かしているあいだは、素材の前でも採取を始めない（その場で回れるように）
+  if (h.driving) return; // スティックで動かしているあいだは採取を始めない
   if (h.task) return; // 施設でミッション中
   if (h.session) {
     if (f.stock[h.session.pointId] <= 0) {
@@ -154,12 +161,13 @@ export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harve
     }
     return;
   }
+  if (!h.claim) return;
   const r = resourceAtStand(h.walker.pos);
-  if (!r || claimedByOther(all, r.id, h) || f.stock[r.id] <= 0) {
-    if (h.claim === r?.id) h.claim = null;
+  if (!r || r.id !== h.claim) return;
+  if (harvestingOther(all, r.id, h) || f.stock[r.id] <= 0) {
+    h.claim = null; // 先を越された・空だった
     return;
   }
-  h.claim = r.id;
   h.session = startSession(r.id, r.kind, earliest, origin);
   faceTo(h.walker, 'up'); // 素材のほうを向く
 }
@@ -178,19 +186,39 @@ export function driveHarvester(h: Harvester, dx: number, dy: number, dtSeconds: 
   steerWalker(h.walker, dx, dy, dtSeconds);
 }
 
-/**
- * スティックを離したとき：素材ポイントの立つ場所のすぐそばなら、自分で寄って採取を始める
- * （使用中なら、そばで順番を待つ）。近くになければ何もしない（null）。
- */
-export function approachNearby(h: Harvester, all: readonly Harvester[]): MoveResult | null {
-  if (h.frozen || h.session || h.task || h.walker.target) return null;
-  const p = h.walker.pos;
+/** そばにある素材ポイント（立つ場所まで approachRadius 以内でいちばん近いもの。なければ null） */
+export function nearbyPoint(p: Point): ResourcePoint | null {
   const near = RESOURCE_POINTS.map((r) => ({ r, d: Math.hypot(standSpot(r).x - p.x, standSpot(r).y - p.y) }))
     .filter((x) => x.d <= RESOURCE.approachRadius)
     .sort((a, b) => a.d - b.d)[0];
-  if (!near) return null;
-  // 素材そのものを指したのと同じ扱いにする（空いていれば立つ場所へ、使用中なら待つ場所へ）
-  return moveHarvester(h, { x: near.r.x, y: near.r.y - RESOURCE.tapCenterUp }, all);
+  return near?.r ?? null;
+}
+
+/**
+ * 「採取」ボタンで採取を始められるか。
+ * ready：始められる、busy：ほかのパテが採取中、empty：素材が残っていない、null：そばに素材がない・いまはできない
+ */
+export function harvestChance(h: Harvester, f: FieldState, all: readonly Harvester[]): { point: ResourcePoint; state: 'ready' | 'busy' | 'empty' } | null {
+  if (h.frozen || h.session || h.task) return null;
+  const r = nearbyPoint(h.walker.pos);
+  if (!r) return null;
+  if (f.stock[r.id] <= 0) return { point: r, state: 'empty' };
+  if (harvestingOther(all, r.id, h)) return { point: r, state: 'busy' };
+  return { point: r, state: 'ready' };
+}
+
+/**
+ * 「採取」ボタンを押した：そばの素材ポイントを使うと決めて、立つ場所へ寄る（着いたら採取が始まる）。
+ * 始められないときは、その理由（harvestChance と同じ）を返し、何もしない。
+ */
+export function startHarvest(h: Harvester, f: FieldState, all: readonly Harvester[]): ReturnType<typeof harvestChance> {
+  const c = harvestChance(h, f, all);
+  if (!c || c.state !== 'ready') return c;
+  h.claim = c.point.id;
+  h.waitingFor = null;
+  const s = standSpot(c.point);
+  if (Math.hypot(s.x - h.walker.pos.x, s.y - h.walker.pos.y) > RESOURCE.harvestRadius) setTarget(h.walker, s);
+  return c;
 }
 
 export interface HarvestResult extends TapResult {
