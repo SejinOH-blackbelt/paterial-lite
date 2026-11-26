@@ -43,6 +43,8 @@ export class MeetingScene extends Phaser.Scene {
   /** スタンプのボタン（結果発表のときは隠す） */
   private stampButtons: Phaser.GameObjects.Container[] = [];
   private cancelRoll: (() => void) | null = null;
+  /** 正体を発表する時刻（音の時計。ドラムロールが鳴り終わる時刻）と、その発表 */
+  private reveal: { at: number; show: () => void } | null = null;
   /** 見出しの下の「○○が呼び出し！」（結果発表のときは、ここに開票の様子を出す） */
   private whyText!: Phaser.GameObjects.Text;
 
@@ -58,6 +60,7 @@ export class MeetingScene extends Phaser.Scene {
     this.botPlans = [];
     this.stampButtons = [];
     this.cancelRoll = null;
+    this.reveal = null;
   }
 
   private now(): number {
@@ -288,6 +291,13 @@ export class MeetingScene extends Phaser.Scene {
 
   update(_time: number, deltaMs: number): void {
     for (const seat of this.seats.values()) seat.view.update(deltaMs / 1000, false);
+    // 正体の発表は、ドラムロールの音が鳴り終わる時刻（音の時計）に合わせる。
+    // 画面の更新が止まっていて遅れたときは、戻ったらすぐ発表する
+    if (this.reveal && this.now() >= this.reveal.at) {
+      const r = this.reveal;
+      this.reveal = null;
+      r.show();
+    }
     if (this.finished) return;
     const { match } = this.ctx;
     const now = this.now();
@@ -386,9 +396,10 @@ export class MeetingScene extends Phaser.Scene {
       this.pop(head);
       this.spotlight(target);
       this.cancelRoll = this.ctx.audio.drumroll(ROLL);
+      this.reveal = { at: this.now() + ROLL + 0.1, show: () => showTruth() };
     });
     // ③ 正体
-    this.time.delayedCall(afterVotes + ROLL * 1000 + 100, () => {
+    const showTruth = () => {
       this.showSupport();
       if (result.wasSpy) {
         head.setText('');
@@ -414,7 +425,7 @@ export class MeetingScene extends Phaser.Scene {
         this.pop(this.supportText);
       }
       this.time.delayedCall(4000, () => this.ctx.onDone(result));
-    });
+    };
   }
 
   /** 大きな見出しと、その下の説明（ポンと出る） */

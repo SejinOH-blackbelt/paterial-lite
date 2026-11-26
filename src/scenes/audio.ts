@@ -218,9 +218,15 @@ export class GameAudio {
       this.noise(t0 + t, 0.04, 'bandpass', 1500 + 900 * k, 0.8, 0.12 + 0.3 * k, out);
       t += 0.09 - 0.05 * k; // 間隔がだんだん詰まる
     }
-    return () => {
-      if (this.ctx.currentTime < t0 + seconds) out.disconnect();
+    // 鳴り終わったら外す（取り消したときは、その場で外す）
+    let done = false;
+    const off = () => {
+      if (done) return;
+      done = true;
+      out.disconnect();
     };
+    setTimeout(off, (seconds + 0.5) * 1000);
+    return off;
   }
 
   /** はずれの「ズコー」（音がずり落ちる） */
