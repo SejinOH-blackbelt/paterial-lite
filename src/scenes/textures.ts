@@ -373,7 +373,8 @@ export function drawGround(scene: Phaser.Scene, width: number, height: number): 
     }
   });
 
-  bake('ground-hedge', 5000, (ctx) => {
+  // 外周の飾りは地面のすぐ上（パテ・置物・名物より奥）に描く。歩ける範囲に張り出しても、パテを隠さないように
+  bake('ground-hedge', 1, (ctx) => {
     const { left, right, top, bottom } = FIELD;
     // 左右の岩、松、竹、梅を外側から差し込む。
     const onBank = (x: number, y: number, scale: number, side: number, draw: () => void) => {
