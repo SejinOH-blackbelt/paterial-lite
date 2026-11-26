@@ -63,6 +63,10 @@ export class MissionGameView {
   /** 土のお祈り：拍の音を予約した最後の拍 */
   private guideBeat = -Infinity;
   private pieces = new Map<number, Phaser.GameObjects.Image>();
+  /** 先に予約した音（お手本の太鼓・拍の音）の取り消し方法。パネルを閉じたら、まだ鳴っていない音を取り消す */
+  private scheduled: (() => void)[] = [];
+  /** 土のお祈りで、手を合わせはじめた指（ほかの指を離しても、長押しは続く） */
+  private holdPointer: number | null = null;
 
   constructor(scene: Phaser.Scene, private readonly game: MissionGame, heading: string, private readonly deps: MissionViewDeps) {
     this.scene = scene;
@@ -98,7 +102,9 @@ export class MissionGameView {
 
   /** 指を離した（土のお祈りで、手を合わせるのをやめたとき） */
   pointerUp(p: Phaser.Input.Pointer): void {
-    if (this.game.kind === 'prayer') this.step(releaseHands(this.game, this.deps.tapTime(p)));
+    if (this.game.kind !== 'prayer' || p.id !== this.holdPointer) return;
+    this.holdPointer = null;
+    this.step(releaseHands(this.game, this.deps.tapTime(p)));
   }
 
   /** 押せる場所を作る（円） */
@@ -143,7 +149,7 @@ export class MissionGameView {
     // お手本の音は、拍にそろえて先に予約する（画面の処理が遅れても音はずれない）
     if (this.demoScheduled !== g.demoStart) {
       this.demoScheduled = g.demoStart;
-      g.sequence.forEach((d, i) => this.deps.audio.drum(d, drumDemoTime(g, i)));
+      g.sequence.forEach((d, i) => this.scheduled.push(this.deps.audio.drum(d, drumDemoTime(g, i))));
     }
     const showing = drumShowing(g, now);
     const hit = this.hitFlash && now < this.hitFlash.until ? this.hitFlash.drum : null;
@@ -351,6 +357,7 @@ export class MissionGameView {
     });
     this.hotspot(this.handsAt.x, this.handsAt.y, 58, (p) => {
       const t = this.deps.tapTime(p);
+      this.holdPointer = p.id;
       if (g.stage === 2) this.deps.audio.clap();
       this.clapFlash = this.deps.now() + 0.12;
       this.step(pressHands(g, t));
@@ -414,7 +421,7 @@ export class MissionGameView {
     const b = beatInterval();
     const next = Math.ceil((now - g.origin) / b);
     for (let k = Math.max(next, this.guideBeat + 1); g.origin + k * b < now + 0.25; k++) {
-      this.deps.audio.tick(g.origin + k * b, false);
+      this.scheduled.push(this.deps.audio.tick(g.origin + k * b, false));
       this.guideBeat = k;
     }
   }
@@ -435,6 +442,8 @@ export class MissionGameView {
 
   destroy(): void {
     this.destroyed = true;
+    for (const cancel of this.scheduled) cancel(); // まだ鳴っていない予約の音は鳴らさない
+    this.scheduled = [];
     this.root.destroy();
   }
 }

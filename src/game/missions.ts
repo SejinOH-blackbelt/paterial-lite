@@ -66,9 +66,13 @@ export function isFinished(h: Harvester, id: MissionId): boolean {
   return h.finished.has(id);
 }
 
-/** 加工に必要な素材がそろっているか（お祈りはいつでもできる） */
+/**
+ * 加工に必要な素材がそろっているか（お祈りはいつでもできる）。
+ * その素材を need 個集めたうえで、手持ちの素材も need 個以上あること
+ * （会議のお詫びで素材を払って手持ちが減ったら、採り足してから加工する）
+ */
 export function hasMaterials(h: Harvester, m: Mission): boolean {
-  return m.kind === null || (h.gathered[m.kind] ?? 0) >= m.need;
+  return materialsShort(h, m) === 0;
 }
 
 /** まだ終わっていなくて、いま始められるミッションか */
@@ -76,9 +80,10 @@ export function missionReady(h: Harvester, m: Mission): boolean {
   return !isFinished(h, m.id) && hasMaterials(h, m);
 }
 
-/** 加工に足りない素材の数（足りていれば 0） */
+/** 加工に足りない素材の数（足りていれば 0）。集めた数と手持ちの、足りないほう */
 export function materialsShort(h: Harvester, m: Mission): number {
-  return m.kind === null ? 0 : Math.max(0, m.need - (h.gathered[m.kind] ?? 0));
+  if (m.kind === null) return 0;
+  return Math.max(0, m.need - (h.gathered[m.kind] ?? 0), m.need - h.materials);
 }
 
 /** 1つのミッションの、国の仕事ゲージに入る量（素材1個で1、終えるとさらに MISSION_WEIGHT） */
@@ -142,7 +147,7 @@ export function finishMission(h: Harvester, now: number): MissionEvent | null {
   if (!task) return null;
   const m = missionById(task.missionId);
   h.finished.add(m.id);
-  if (m.kind !== null) h.materials -= Math.min(m.need, h.materials);
+  if (m.kind !== null) h.materials -= m.need; // 始めるときに手持ちを確かめているので、足りている
   h.task = null;
   return { h, missionId: m.id, kind: 'done', time: now, at: { ...h.walker.pos } };
 }

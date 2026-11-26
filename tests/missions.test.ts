@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BOT_PROFILES, FACILITIES, MATCH, MISS_SOUND, MISSION_BOT, MISSIONS } from '../src/game/config';
-import { createBot, updateBot } from '../src/game/bot';
+import { createBot, neededKinds, updateBot } from '../src/game/bot';
 import { createFieldState, createHarvester, driveHarvester, updateFieldState, updateHarvester, type Harvester } from '../src/game/harvest';
 import { checkOutcome, createMatch, observeMissionMiss, suspicionOf, type Pawn } from '../src/game/match';
 import {
@@ -36,6 +36,18 @@ describe('施設のミッション', () => {
     expect(missionsDone(h)).toBe(1);
     expect(h.materials).toBe(2);
     expect(startMission(h, 101, rng, null)?.result).toBe('finished');
+  });
+
+  it('会議のお詫びで素材を払って手持ちが減ったら、採り足すまで加工できない（Botは採り足しに行く）', () => {
+    const b = createBot(BOT_PROFILES[0], facilityStand(fac('kiln')));
+    const h = b.h;
+    h.gathered.clay = kiln.need;
+    h.materials = kiln.need - 3; // お詫びに3個払った
+    expect(materialsShort(h, kiln)).toBe(3);
+    expect(startMission(h, 0, createRng(1), null)?.result).toBe('notReady');
+    expect(neededKinds(h)).toContain('clay');
+    h.materials = kiln.need;
+    expect(startMission(h, 0, createRng(1), null)?.result).toBe('started');
   });
 
   it('お祈りは素材なしで、土の祠の前でできる', () => {

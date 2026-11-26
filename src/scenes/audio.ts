@@ -277,8 +277,11 @@ export class GameAudio {
     this.noise(t, 0.16, 'bandpass', 420, 1.4, 0.7, out);
   }
 
-  /** まねっこ太鼓の「ドン」。太鼓ごとに高さが変わる。when（音の時計）に予約できる */
-  drum(index: number, when?: number): void {
+  /**
+   * まねっこ太鼓の「ドン」。太鼓ごとに高さが変わる。when（音の時計）に予約できる。
+   * 戻り値の関数を呼ぶと、まだ鳴っていなければ取り消せる
+   */
+  drum(index: number, when?: number): () => void {
     const t = Math.max(this.ctx.currentTime, when ?? 0);
     const freq = [98, 131, 175, 233][index % 4];
     const o = this.ctx.createOscillator();
@@ -289,11 +292,16 @@ export class GameAudio {
     g.gain.setValueAtTime(0.0001, t);
     g.gain.exponentialRampToValueAtTime(0.6, t + 0.004);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
-    o.connect(g).connect(this.master);
+    const out = this.ctx.createGain();
+    out.connect(this.master);
+    o.connect(g).connect(out);
     o.start(t);
     o.stop(t + 0.37);
     // 皮を打つ「パン」
-    this.noise(t, 0.03, 'bandpass', 1800, 0.9, 0.35, this.master);
+    this.noise(t, 0.03, 'bandpass', 1800, 0.9, 0.35, out);
+    return () => {
+      if (this.ctx.currentTime < t) out.disconnect();
+    };
   }
 
   /** 土の祠の鈴「シャラン」 */

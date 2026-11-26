@@ -4,7 +4,7 @@
 
 import { BOT, FIELD, MISSION_BOT, MISSIONS, RESOURCE, RESOURCE_POINTS } from './config';
 import { createHarvester, harvestTap, moveHarvester, claimedByOther, type FieldState, type Harvester, type HarvestResult } from './harvest';
-import { facilityById, facilityStand, isFinished, missionReady, startMission } from './missions';
+import { facilityById, facilityStand, isFinished, materialsShort, missionReady, startMission } from './missions';
 import { createWalker, setTarget, type Point } from './movement';
 import { between, gaussian, intBetween, type Rng } from './random';
 import { beatInterval, nearestPass, nextPass, passTime } from './rhythm';
@@ -70,9 +70,9 @@ export function freePoints(bot: Bot, field: FieldState, all: readonly Harvester[
   );
 }
 
-/** まだ集めきっていない、ミッションに必要な素材の種類 */
+/** まだ足りない、ミッションに必要な素材の種類（集めた数か手持ちが、加工に足りない） */
 export function neededKinds(h: Harvester): string[] {
-  return MISSIONS.flatMap((m) => (m.kind !== null && !isFinished(h, m.id) && (h.gathered[m.kind] ?? 0) < m.need ? [m.kind] : []));
+  return MISSIONS.flatMap((m) => (m.kind !== null && !isFinished(h, m.id) && materialsShort(h, m) > 0 ? [m.kind] : []));
 }
 
 /** 採取場のどこかへ歩く（着いたらひと休み） */

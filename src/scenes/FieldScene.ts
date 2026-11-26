@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, MISSIONS, PATE, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { BOT, BOT_PROFILES, COLORS, FACILITIES, FACILITY, KING_PART, LANDMARKS, MATCH, MISS_SOUND, MISSIONS, PATE, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   approachNearby,
@@ -35,6 +35,8 @@ import {
 import {
   approachFacility,
   facilityAtStand,
+  facilityById,
+  facilityStand,
   finishMission,
   isFinished,
   materialsShort,
@@ -164,6 +166,8 @@ export class FieldScene extends Phaser.Scene {
   private missionView: MissionGameView | null = null;
   /** 「素材が足りない」などを出した施設（その施設の前を離れるまで、もう一度は出さない） */
   private hintFacility: string | null = null;
+  /** 十字ボタンでやめた施設（その施設の前のそばを離れるまで、自分で寄ったり始め直したりしない） */
+  private leftFacility: string | null = null;
   /** 施設の上の「！」（自分のミッションがそこでできるとき） */
   private facilityMarks!: Phaser.GameObjects.Graphics;
   /** 十字ボタン（↑前進・↓後ずさり・←→その場で回る） */
@@ -203,6 +207,7 @@ export class FieldScene extends Phaser.Scene {
     this.scanView = null;
     this.missionView = null;
     this.hintFacility = null;
+    this.leftFacility = null;
     this.landmarks.clear();
     this.resources.clear();
     this.pendingTicks = [];
@@ -358,14 +363,17 @@ export class FieldScene extends Phaser.Scene {
       // 土の精は、ふつうより少し速く動ける
       if (this.spirit && this.driving) driveWalker(this.spirit.walker, forward, turn, dt, PATE.speed * 1.3);
     } else {
+      const task = this.player.task;
       driveHarvester(this.player, forward, turn, dt); // 押していないときも呼ぶ（動かしているかの印を消すため）
+      // 十字ボタンでミッションをやめたら、その施設の前を離れるまで始め直さない（その場で向きを変えて立ち去れるように）
+      if (task && !this.player.task) this.leftFacility = missionById(task.missionId).facility;
     }
     if (!this.player.frozen && !this.driving && this.wasDriving) {
       // ほかのパテが使っているポイントなら、そばで順番を待つ（空いたら自動で採取を始める）
       const r = approachNearby(this.player, this.all);
       if (r === 'wait') this.popText('じゅんばん待ち', '#2b1d14', 15, 0);
       // 素材のそばでなければ、施設の前のそばか見る（寄っていって、着いたらミッションが始まる）
-      if (r === null) approachFacility(this.player);
+      if (r === null && !this.nearLeftFacility()) approachFacility(this.player);
     }
     this.wasDriving = this.driving;
   }
@@ -1092,7 +1100,8 @@ export class FieldScene extends Phaser.Scene {
   private updatePlayerMission(heard: number): void {
     const me = this.player;
     if (!facilityAtStand(me.walker.pos)) this.hintFacility = null;
-    if (!me.task && !this.driving) {
+    if (!this.nearLeftFacility()) this.leftFacility = null;
+    if (!me.task && !this.driving && !this.leftFacility) {
       const r = startMission(me, heard, this.rng, { origin: this.origin });
       if (r && r.result !== 'started' && this.hintFacility !== r.mission.facility) {
         this.hintFacility = r.mission.facility;
@@ -1101,6 +1110,14 @@ export class FieldScene extends Phaser.Scene {
       }
     }
     this.syncMissionView();
+  }
+
+  /** 十字ボタンでやめた施設の前のそばに、まだいるか */
+  private nearLeftFacility(): boolean {
+    if (!this.leftFacility) return false;
+    const s = facilityStand(facilityById(this.leftFacility));
+    const p = this.player.walker.pos;
+    return Math.hypot(s.x - p.x, s.y - p.y) <= FACILITY.approachRadius;
   }
 
   /** 施設のミニゲームの画面を、ミッション中だけ出す（動いた・会議・置物にされた、で消える） */
