@@ -85,6 +85,8 @@ import {
   type Snapshot,
   type SpyWire,
   type TapEvent,
+  type TapFix,
+  overGain,
 } from '../net/sync';
 import type { Bgm } from './bgm';
 import type { MeetingData } from './MeetingScene';
@@ -516,7 +518,7 @@ export class FieldScene extends Phaser.Scene {
     const pointId = this.player.session?.pointId;
     const t = this.audio.heardTime(perfMs);
     const res = harvestTap(this.player, this.field, t, t, this.rng);
-    this.shareTap(this.player, res?.judgement ?? null, pointId, res?.used ?? 0);
+    this.shareTap(this.player, res?.judgement ?? null, pointId, res?.used ?? 0, res?.gain ?? 0);
     // タップで次の1周の速さが変わるので、時刻が変わった拍の音だけ予約を取り直す
     if (res) this.refreshTicks();
     // 判定はその場で一瞬で終わるので、判定に合った音をすぐ鳴らす
@@ -803,11 +805,22 @@ export class FieldScene extends Phaser.Scene {
           // 子機が叩いた分だけ、素材ポイントの残りを減らす（空になったら、戻る時刻を決める）
           const used = Math.min(msg.u, this.field.stock[r.id]);
           this.field.stock[r.id] -= used;
+          // ほかのパテと同時に叩いて残りが足りなかったら、もらいすぎた素材を子機に返してもらう
+          const lost = overGain(msg.g, used);
+          if (lost > 0) this.netSend(from, { k: 'tapFix', kind: r.kind, lost } satisfies TapFix);
           if (used > 0 && this.field.stock[r.id] <= 0) this.field.regenAt[r.id] = heard + STOCK.regenSeconds;
           if (e === this.spyEntity) observeKotsu(this.match);
           this.netSend('all', msg);
         }
         this.playRemoteTap(e, msg.j, r.id);
+        return;
+      }
+      case 'tapFix': {
+        if (host || fromSeat !== 0) return;
+        const lost = Math.min(msg.lost, this.player.materials, this.player.gathered[msg.kind] ?? 0);
+        this.player.materials -= lost;
+        this.player.gathered[msg.kind] = (this.player.gathered[msg.kind] ?? 0) - lost;
+        if (lost > 0) this.updateMaterials(true);
         return;
       }
       case 'mis': {
@@ -881,9 +894,9 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /** 叩いたことを伝える（自分・Bot） */
-  private shareTap(h: Harvester, j: TapEvent['j'], pointId: string | undefined, used: number): void {
+  private shareTap(h: Harvester, j: TapEvent['j'], pointId: string | undefined, used: number, gain: number): void {
     if (!this.net || !pointId) return;
-    this.netShare({ k: 'tap', s: this.seatOf(h), j, p: RESOURCE_POINTS.findIndex((r) => r.id === pointId), u: used } satisfies TapEvent);
+    this.netShare({ k: 'tap', s: this.seatOf(h), j, p: RESOURCE_POINTS.findIndex((r) => r.id === pointId), u: used, g: gain } satisfies TapEvent);
   }
 
   /** ミッションの出来事を伝える（自分・Bot） */
@@ -1064,7 +1077,7 @@ export class FieldScene extends Phaser.Scene {
 
   /** 住民Botが採取したとき：近いほど大きく音が聞こえる。遠いと聞こえない */
   private onBotTap(e: PateEntity, ev: BotTapEvent, heard: number): void {
-    this.shareTap(e.h, ev.result.judgement, ev.pointId, ev.result.used);
+    this.shareTap(e.h, ev.result.judgement, ev.pointId, ev.result.used, ev.result.gain);
     const me = this.listenerPos();
     const d = Math.hypot(e.h.walker.pos.x - me.x, e.h.walker.pos.y - me.y);
     const volume = Math.max(0, 1 - d / BOT.hearRadius) ** 2;
@@ -1152,10 +1165,18 @@ export class FieldScene extends Phaser.Scene {
   /** 試合をやめてタイトルへ（予約した音を取り消し、曲を止める） */
   private quitMatch(): void {
     this.cleanupSounds();
+    this.leaveNet();
     this.scene.start('Title');
   }
 
   /** 画面を切りかえる前に、予約済みの音（採取の拍・BGM・ミニゲームのお手本や案内の音）をすべて取り消す */
+  /** 友達と遊ぶ試合を抜ける・終わる：中継の接続を閉じる（親機が閉じると、子機にも終わりが伝わる） */
+  private leaveNet(): void {
+    this.netUnlisten?.();
+    this.netUnlisten = null;
+    this.net?.relay.close();
+  }
+
   private cleanupSounds(): void {
     for (const t of this.pendingTicks) t.cancel();
     this.pendingTicks = [];
@@ -1323,6 +1344,7 @@ export class FieldScene extends Phaser.Scene {
   /** 試合終了：リザルトへ */
   private endMatch(): void {
     this.cleanupSounds();
+    this.leaveNet(); // 親機は「終わった」を送ったあとに閉じる
     this.scene.start('Result', { match: this.match, player: this.playerPawn, audio: this.audio } satisfies ResultData);
   }
 

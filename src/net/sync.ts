@@ -155,6 +155,22 @@ export interface TapEvent {
   p: number;
   /** 減った残り */
   u: number;
+  /** もらった素材の数（親機が、実際に残っていた量に合わせて直す） */
+  g: number;
+}
+
+/** 親機 → 叩いた子機：同時に叩いて残りが足りなかったので、もらいすぎた素材を返してもらう */
+export interface TapFix {
+  k: 'tapFix';
+  /** 素材の種類 */
+  kind: string;
+  /** 減らす数 */
+  lost: number;
+}
+
+/** 実際に減らせた残り（used）から、もらいすぎた数を出す。gain：子機がもらった数 */
+export function overGain(gain: number, used: number): number {
+  return Math.max(0, gain - Math.min(gain, used));
 }
 
 /** ミッションでまちがえた・できた（親機が「ゴリッ」を聞いたBotの疑いを上げ、ほかの人に音を伝える） */
@@ -197,7 +213,7 @@ export interface StartWire {
   seed: number;
 }
 
-export type NetMessage = Snapshot | SelfState | TapEvent | MissionWire | SpyWire | PrankRequest | OverWire | StartWire;
+export type NetMessage = Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | OverWire | StartWire;
 
 /**
  * 親機が席を決める：親機は 0 番、ほかの人は入った順に 1 番から。残りは Bot。

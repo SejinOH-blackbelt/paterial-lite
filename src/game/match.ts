@@ -99,8 +99,8 @@ export interface MatchState {
  * スパイを決めたあとに呼ぶ。
  */
 export function chooseKing(pawns: Pawn[]): Pawn {
-  const player = pawns.find((p) => p.isPlayer);
-  const king = player && !player.isSpy ? player : pawns.find((p) => !p.isSpy && !p.isPlayer)!;
+  // 人が動かす市民（先頭から）がいればその人、いなければ（ひとりでスパイのとき）最初の市民
+  const king = pawns.find((p) => p.isPlayer && !p.isSpy) ?? pawns.find((p) => !p.isSpy)!;
   for (const p of pawns) p.isKing = p === king;
   return king;
 }

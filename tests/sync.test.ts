@@ -4,8 +4,9 @@ import { createFieldState, createHarvester } from '../src/game/harvest';
 import { createWalker } from '../src/game/movement';
 import { createRng } from '../src/game/random';
 import { startSession } from '../src/game/rhythm';
+import { chooseKing } from '../src/game/match';
 import { createSpyState, prankWait } from '../src/game/spy';
-import { applyFieldWire, applySpyWire, applyWireToPawn, assignSeats, fieldToWire, pawnToWire, spyToWire } from '../src/net/sync';
+import { applyFieldWire, applySpyWire, applyWireToPawn, assignSeats, fieldToWire, overGain, pawnToWire, spyToWire } from '../src/net/sync';
 
 const makeSession = (id: string) => startSession(id, RESOURCE_POINTS.find((r) => r.id === id)!.kind, 0, 0);
 
@@ -68,6 +69,25 @@ describe('友達と遊ぶときの、ようすの伝え方', () => {
     expect(prankWait(guest, 9000)).toBeCloseTo(prankWait(host, hostNow), 1);
     expect(guest.fragments).toBe(2);
     expect([...guest.scanned]).toEqual(['torii']);
+  });
+
+  it('同時に叩いて残りが足りなかったら、もらいすぎた数を返す', () => {
+    expect(overGain(2, 2)).toBe(0);
+    expect(overGain(2, 1)).toBe(1);
+    expect(overGain(2, 0)).toBe(2);
+    expect(overGain(0, 0)).toBe(0);
+  });
+
+  it('6人とも人で、親機がスパイでも、王様（人の市民の先頭）を選べる', () => {
+    const pawns = Array.from({ length: 6 }, (_, i) => ({
+      id: `p${i}`,
+      part: 'flower',
+      h: createHarvester(createWalker({ x: 0, y: 0 })),
+      isSpy: i === 0,
+      isPlayer: true,
+      emergencyLeft: 1,
+    }));
+    expect(chooseKing(pawns).id).toBe('p1');
   });
 
   it('席：親機が 0 番、ほかの人は入った順、残りは Bot（0）', () => {
