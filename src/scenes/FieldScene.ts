@@ -71,7 +71,7 @@ import type { Bgm } from './bgm';
 import type { MeetingData } from './MeetingScene';
 import type { ResultData } from './ResultScene';
 import type { RoleData } from './RoleScene';
-import { INK, label, mmss, panel, pinToScreen } from './ui';
+import { INK, label, mmss, panel, pinToScreen, textButton } from './ui';
 import { makePartTextures, type HeadPart } from './partTextures';
 import type { Element } from './elementTextures';
 import { PateView } from './PateView';
@@ -177,6 +177,8 @@ export class FieldScene extends Phaser.Scene {
   /** いまスティックで動かしているか（歩く絵にするため） */
   private driving = false;
   private audio!: GameAudio;
+  /** 「やめる」の確認を出しているあいだ（ほかのタップは受けつけない） */
+  private quitDialog = false;
   /** BGM（採取と同じ音の時計・同じ0拍目で鳴らす） */
   private bgm!: Bgm;
   /** 0拍目の時刻（音の時計） */
@@ -209,6 +211,7 @@ export class FieldScene extends Phaser.Scene {
     this.scanView = null;
     this.missionView = null;
     this.pendingFacility = null;
+    this.quitDialog = false;
     this.scanButton = null;
     this.prankButton = null;
     this.landmarks.clear();
@@ -299,7 +302,7 @@ export class FieldScene extends Phaser.Scene {
     // タップ：スティック・採取ボタン・呼び出し・スパイのボタン（地面をタップしても歩かない）
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
       this.audio.resume();
-      if (this.match.phase !== 'play') return;
+      if (this.match.phase !== 'play' || this.quitDialog) return;
       // スキャンのミニゲームのパネルはスティックの上に重なるので、パネルが先に受けとる
       if (this.scanView?.owns(over)) return;
       if (this.missionView?.owns(over)) return; // 施設のミニゲームのパネル
@@ -826,6 +829,35 @@ export class FieldScene extends Phaser.Scene {
     this.supportFill = this.hud(this.add.rectangle(270, 91, 68, 8, COLORS.uiRose).setOrigin(0).setDepth(9452));
     this.hud(label(this, 247, 94, '支持度', 11, INK).setStroke(INK, 0).setDepth(9500));
     this.supportText = this.hud(label(this, 304, 94, '', 10, INK).setStroke(INK, 0).setDepth(9500));
+    // 試合をやめてタイトルに戻るボタン（押すと確認が出る）
+    this.hud(textButton(this, 196, 95, 52, 24, 'やめる', COLORS.uiPaper, () => this.askQuit(), 11).setDepth(9500));
+  }
+
+  /** 「やめる」：本当にやめるか確かめる。確認のあいだも試合は進む */
+  private askQuit(): void {
+    if (this.quitDialog || this.match.phase !== 'play') return;
+    const cover = this.hud(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.6).setOrigin(0).setDepth(9900).setInteractive());
+    const card = this.hud(panel(this, SCREEN.width / 2, 300, 280, 150, COLORS.uiPaper).setDepth(9901));
+    const text = this.hud(label(this, SCREEN.width / 2, 270, '本当にやめますか？\n（タイトルに戻ります）', 17, INK).setStroke(INK, 0).setDepth(9902));
+    const close = () => {
+      for (const o of parts) o.destroy();
+      this.quitDialog = false;
+    };
+    const yes = this.hud(textButton(this, SCREEN.width / 2 - 68, 335, 120, 42, 'やめる', COLORS.uiRose, () => {
+      close();
+      this.quitMatch();
+    }, 15).setDepth(9902));
+    const no = this.hud(textButton(this, SCREEN.width / 2 + 68, 335, 120, 42, 'つづける', COLORS.uiHoney, close, 15).setDepth(9902));
+    const parts: Phaser.GameObjects.GameObject[] = [cover, card, text, yes, no];
+    this.quitDialog = true;
+  }
+
+  /** 試合をやめてタイトルへ（予約した音を取り消し、曲を止める） */
+  private quitMatch(): void {
+    for (const t of this.pendingTicks) t.cancel();
+    this.pendingTicks = [];
+    this.bgm.stop();
+    this.scene.start('Title');
   }
 
   private drawHud(heard: number): void {
