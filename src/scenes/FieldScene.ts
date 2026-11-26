@@ -185,7 +185,7 @@ export class FieldScene extends Phaser.Scene {
   private scheduledLap = 0;
   /** 予約済みでまだ鳴っていない拍の音の取り消し方法 */
   private pendingTicks: { when: number; pass: number; cancel: () => void }[] = [];
-  private resources = new Map<string, { image: Phaser.GameObjects.Image; chipColor: number }>();
+  private resources = new Map<string, { image: Phaser.GameObjects.Image; chipColor: number; emptyText: Phaser.GameObjects.Text }>();
   private button!: Phaser.GameObjects.Container;
   private meter!: Phaser.GameObjects.Graphics;
   private stockBars!: Phaser.GameObjects.Graphics;
@@ -230,7 +230,9 @@ export class FieldScene extends Phaser.Scene {
 
     for (const r of RESOURCE_POINTS) {
       const img = this.add.image(r.x, r.y, RES_TEX[r.kind]).setOrigin(0.5, 1).setDepth(r.y);
-      this.resources.set(r.id, { image: img, chipColor: RES_CHIP_COLOR[r.kind] });
+      // 空のあいだだけ出す札（「からっぽ」と、元に戻るまでの秒数）
+      const emptyText = label(this, r.x, r.y - RES_SIZE.h - 26, '', 12).setDepth(8001).setVisible(false);
+      this.resources.set(r.id, { image: img, chipColor: RES_CHIP_COLOR[r.kind], emptyText });
     }
 
     for (const l of LANDMARKS) {
@@ -739,12 +741,19 @@ export class FieldScene extends Phaser.Scene {
           g.lineBetween(bx + 2, by + 1.5, bx + fillWidth - 2, by + 1.5);
         }
       }
-      const { image } = this.resources.get(r.id)!;
+      const { image, emptyText } = this.resources.get(r.id)!;
       const texture = empty ? EMPTY_RES_TEX[r.kind] : RES_TEX[r.kind];
       if (image.texture.key !== texture) {
         image.setTexture(texture);
-        if (!empty) this.squash(image, RESOURCE_REACTION.squash);
+        // 空のあいだは、色をぬいて薄くする（まだ残っているように見えないように）
+        if (empty) image.setTint(0x9a948c).setAlpha(0.55);
+        else {
+          image.clearTint().setAlpha(1);
+          this.squash(image, RESOURCE_REACTION.squash);
+        }
       }
+      emptyText.setVisible(empty);
+      if (empty) emptyText.setText(`からっぽ ${Math.max(1, Math.ceil(regenAt - heard))}秒`);
     }
   }
 
@@ -889,6 +898,7 @@ export class FieldScene extends Phaser.Scene {
     this.pendingTicks = [];
     this.pad.reset(); // 会議の画面に切りかわると、指を離したことが届かないことがある
     this.pad.setVisible(false); // 会議の画面の下に透けて見えないように
+    for (const b of [this.harvestButton, this.actionButton, this.callButton, this.scanButton, this.prankButton]) b?.setVisible(false);
     const data: MeetingData = {
       match: this.match,
       player: this.playerPawn,
@@ -907,6 +917,8 @@ export class FieldScene extends Phaser.Scene {
         this.witnessed = null;
         this.pad.reset();
         this.pad.setVisible(true);
+        this.scanButton?.setVisible(!this.player.frozen);
+        this.prankButton?.setVisible(!this.player.frozen);
         this.scene.resume();
         for (const e of this.pates) this.syncPate(e, 0);
         this.updateMaterials(false); // ぬれぎぬの賠償で素材の数が変わっていることがある

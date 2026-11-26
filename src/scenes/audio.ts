@@ -203,6 +203,26 @@ export class GameAudio {
     [1046.5, 1318.5, 1568, 2093].forEach((f, i) => this.chime(t + 0.12 + i * 0.07, f, 0.16, out));
   }
 
+  /**
+   * 結果発表の前の「ドゥルルル…」（だんだん速く、大きく）。seconds 秒続く。
+   * 音の時計に先に全部予約するので、処理が重くてもリズムが崩れない。戻り値で取り消せる
+   */
+  drumroll(seconds: number): () => void {
+    const t0 = this.ctx.currentTime + 0.02;
+    const out = this.ctx.createGain();
+    out.gain.value = 0.8;
+    out.connect(this.master);
+    let t = 0;
+    while (t < seconds) {
+      const k = t / seconds; // 0→1
+      this.noise(t0 + t, 0.04, 'bandpass', 1500 + 900 * k, 0.8, 0.12 + 0.3 * k, out);
+      t += 0.09 - 0.05 * k; // 間隔がだんだん詰まる
+    }
+    return () => {
+      if (this.ctx.currentTime < t0 + seconds) out.disconnect();
+    };
+  }
+
   /** はずれの「ズコー」（音がずり落ちる） */
   zukoo(): void {
     const t = this.ctx.currentTime;

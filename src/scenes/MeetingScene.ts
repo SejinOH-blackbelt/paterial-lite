@@ -36,6 +36,15 @@ export class MeetingScene extends Phaser.Scene {
   /** Bot がスタンプを押す・投票する予定の時刻 */
   private botPlans: { at: number; pawn: Pawn; kind: 'stamp' | 'vote' }[] = [];
   private finished = false;
+  /** 選んでいるパテに当てるスポットライト（光の筋と足元の光）と、まわりの枠・矢印 */
+  private spot!: Phaser.GameObjects.Graphics;
+  private frame!: Phaser.GameObjects.Graphics;
+  private arrow!: Phaser.GameObjects.Text;
+  /** スタンプのボタン（結果発表のときは隠す） */
+  private stampButtons: Phaser.GameObjects.Container[] = [];
+  private cancelRoll: (() => void) | null = null;
+  /** 見出しの下の「○○が呼び出し！」（結果発表のときは、ここに開票の様子を出す） */
+  private whyText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('Meeting');
@@ -47,6 +56,8 @@ export class MeetingScene extends Phaser.Scene {
     this.selected = null;
     this.finished = false;
     this.botPlans = [];
+    this.stampButtons = [];
+    this.cancelRoll = null;
   }
 
   private now(): number {
@@ -64,12 +75,15 @@ export class MeetingScene extends Phaser.Scene {
     this.add.ellipse(CENTER.x, 316, 236, 184, COLORS.uiPaper)
       .setStrokeStyle(2, COLORS.uiWood, 0.5);
     this.add.image(CENTER.x, 354, LANDMARK_TEX.torii).setOrigin(0.5, 1).setScale(1.3);
+    // スポットライトは、パテより先に（後ろに）描く
+    this.spot = this.add.graphics();
+    this.events.once('shutdown', () => this.cancelRoll?.());
     const why =
       meeting.reason === 'emergency'
         ? `${meeting.caller === player ? 'きみ' : nameOf(meeting.caller)}が 緊急の呼び出し！`
         : `${meeting.caller === player ? 'きみ' : nameOf(meeting.caller)}が 置物を見つけた！`;
     label(this, SCREEN.width / 2, 40, '会議', 30, cssColor(COLORS.uiHoney));
-    label(this, SCREEN.width / 2, 78, why, 16);
+    this.whyText = label(this, SCREEN.width / 2, 78, why, 16);
     // 王様の支持度（いまの値。次のぬれぎぬで 0 になるかが分かるように）
     this.supportText = label(this, SCREEN.width - 64, 40, '', 12).setDepth(20);
     this.showSupport();
@@ -99,10 +113,16 @@ export class MeetingScene extends Phaser.Scene {
       this.seats.set(p, { x, y, view, ring, voteMark });
     });
 
+    // 選んでいるパテのまわりの枠と、上で弾む矢印（パテより手前）
+    this.frame = this.add.graphics().setDepth(8).setVisible(false);
+    this.arrow = label(this, 0, 0, '▼', 18, cssColor(COLORS.uiHoney)).setDepth(9).setVisible(false);
+    this.tweens.add({ targets: this.frame, scale: { from: 1, to: 1.07 }, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+
     // スタンプ（文字チャットはなし）
     const stampColors = [COLORS.uiRose, COLORS.uiPaper, COLORS.uiMoss];
     STAMPS.forEach((s, i) => {
-      textButton(this, 70 + i * 110, 520, 100, 40, s, stampColors[i], () => this.playerStamp(s), 15).setAlpha(player.h.frozen ? 0.4 : 1);
+      const b = textButton(this, 70 + i * 110, 520, 100, 40, s, stampColors[i], () => this.playerStamp(s), 15).setAlpha(player.h.frozen ? 0.4 : 1);
+      this.stampButtons.push(b);
     });
     this.voteButton = textButton(this, 110, 585, 150, 46, '投票する', COLORS.uiHoney, () => this.playerVote(), 18);
     this.skipButton = textButton(this, 260, 585, 120, 46, 'スキップ', COLORS.uiPaper, () => this.voteFor(player, null), 16);
@@ -134,12 +154,52 @@ export class MeetingScene extends Phaser.Scene {
 
   private select(p: Pawn): void {
     const { match, player } = this.ctx;
-    if (player.h.frozen || match.meeting?.votes.has(player)) return;
+    if (player.h.frozen || match.meeting?.votes.has(player) || this.finished) return;
     this.selected = p;
+    this.ctx.audio.kachi();
+    this.spotlight(p);
+    const name = p === player ? 'じぶん' : PART_NAMES[p.part as keyof typeof PART_NAMES];
+    this.setButtonText(this.voteButton, `${name}に投票`);
+  }
+
+  /** そのパテにスポットライトを当てて、枠と矢印で囲む（ほかのパテは少し暗く）。null なら消す */
+  private spotlight(p: Pawn | null, color: number = COLORS.uiHoney): void {
+    this.spot.clear();
+    this.frame.clear().setVisible(false);
+    this.arrow.setVisible(false);
+    this.tweens.killTweensOf(this.arrow);
     for (const [q, seat] of this.seats) {
-      seat.ring.setFillStyle(q === p ? COLORS.uiHoney : q.h.frozen ? COLORS.uiSlate : COLORS.uiPaperEdge);
+      seat.view.setAlpha(p === null || q === p ? 1 : 0.55);
+      seat.ring.setFillStyle(q === p ? color : q.h.frozen ? COLORS.uiSlate : COLORS.uiPaperEdge);
       seat.ring.setStrokeStyle(q === p ? 4 : 2, q === p ? COLORS.ink : COLORS.uiWood);
     }
+    if (!p) return;
+    const { x, y } = this.seats.get(p)!;
+    // 上から差しこむ光の筋と、足元の明るい輪
+    this.spot.fillStyle(0xfff6d8, 0.28).fillTriangle(x - 8, 118, x + 8, 118, x + 40, y + 4);
+    this.spot.fillTriangle(x - 8, 118, x - 40, y + 4, x + 40, y + 4);
+    this.spot.fillStyle(0xfff6d8, 0.55).fillEllipse(x, y, 84, 28);
+    // 四すみのカギ形の枠
+    const w = 74;
+    const h = 92;
+    const c = 14;
+    const g = this.frame.setPosition(x, y - 30).setVisible(true);
+    for (const [lw, col] of [[7, COLORS.ink], [4, color]] as const) {
+      g.lineStyle(lw, col);
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const cx = (sx * w) / 2;
+        const cy = (sy * h) / 2;
+        g.beginPath().moveTo(cx, cy - sy * c).lineTo(cx, cy).lineTo(cx - sx * c, cy).strokePath();
+      }
+    }
+    this.arrow.setPosition(x, y - 92).setVisible(true).setColor(cssColor(color));
+    this.tweens.add({ targets: this.arrow, y: y - 84, duration: 300, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+  }
+
+  /** textButton の文字を変える */
+  private setButtonText(button: Phaser.GameObjects.Container, text: string): void {
+    const face = button.list[0] as Phaser.GameObjects.Container;
+    (face.list[1] as Phaser.GameObjects.Text).setText(text);
   }
 
   /** プレイヤーの「投票する」：パテを選んでいなければ、選ぶように案内する（スキップは別のボタン） */
@@ -183,7 +243,9 @@ export class MeetingScene extends Phaser.Scene {
   private pointAt(target: Pawn): void {
     const seat = this.seats.get(target)!;
     seat.ring.setStrokeStyle(3, COLORS.landmarkVermilion, 1);
-    this.time.delayedCall(900, () => seat.ring.setStrokeStyle(target === this.selected ? 4 : 2, target === this.selected ? COLORS.ink : COLORS.uiWood));
+    this.time.delayedCall(900, () => {
+      if (!this.finished) seat.ring.setStrokeStyle(target === this.selected ? 4 : 2, target === this.selected ? COLORS.ink : COLORS.uiWood);
+    });
   }
 
   /** スタンプ：パテの頭の上にふきだし */
@@ -250,42 +312,142 @@ export class MeetingScene extends Phaser.Scene {
     this.supportText.setText(`支持度 ${s}`).setColor(cssColor(s <= SUPPORT.wrongAccusation ? COLORS.uiRose : COLORS.uiCream));
   }
 
-  /** 結果発表：票を見せて、スパイだったか・ぬれぎぬかを伝える */
+  /**
+   * 結果発表。
+   * ① 開票：1票ずつ、投票した人から相手へ票が飛んでいき、数が増える
+   * ② いちばん票が多いパテにスポットライト。「○○は……」でドラムロール
+   * ③ スパイだった（クラッカーと紙吹雪）／ぬれぎぬ（ズコーとしょんぼり）／だれも調べない
+   */
   private finish(): void {
     this.finished = true;
-    const { match, player } = this.ctx;
+    const { match } = this.ctx;
     // まだ投票していない Bot は、ここで投票する（プレイヤーはスキップ扱い）
     for (const p of match.pawns) if (!p.h.frozen && !match.meeting!.votes.has(p)) castVote(match, p, p.isPlayer ? null : botVote(match, p, this.ctx.rng));
-    const votes = new Map(match.meeting!.votes);
+    const votes = [...match.meeting!.votes.entries()];
     const result = resolveMeeting(match, this.now());
-    this.showSupport();
-    // 票数を表示
-    for (const [p, seat] of this.seats) {
-      const n = [...votes.values()].filter((t) => t === p).length;
-      seat.voteMark.setText(n > 0 ? `${n}票` : '');
-    }
-    const skips = [...votes.values()].filter((t) => t === null).length;
-    let text: string;
-    let color = cssColor(COLORS.uiCream);
+    // 話し合いのボタンを片づけて、開票の場所を出す
+    for (const b of [...this.stampButtons, this.voteButton, this.skipButton]) b.setVisible(false);
+    this.spotlight(null);
+    this.timerBar.clear();
+    this.whyText.setVisible(false);
+    const head = label(this, CENTER.x, 80, '開票！', 22, cssColor(COLORS.uiHoney)).setDepth(20);
+    this.pop(head);
+    panel(this, CENTER.x, 520, 120, 40, COLORS.uiPaper).setDepth(19);
+    const skipText = label(this, CENTER.x, 518, 'スキップ 0', 14, INK).setStroke(INK, 0).setDepth(20);
+
+    const counts = new Map<Pawn | null, number>();
+    const STEP = 0.35;
+    votes.forEach(([voter, target], i) => {
+      this.time.delayedCall(600 + i * STEP * 1000, () => {
+        const from = this.seats.get(voter)!;
+        const to = target ? this.seats.get(target)! : { x: CENTER.x, y: 540 };
+        const token = this.add.circle(from.x, from.y - 40, 8, COLORS.uiHoney).setStrokeStyle(2, COLORS.ink).setDepth(18);
+        this.tweens.add({
+          targets: token,
+          x: to.x,
+          y: target ? to.y - 40 : 518,
+          duration: 300,
+          ease: 'Quad.InOut',
+          onComplete: () => {
+            token.destroy();
+            const n = (counts.get(target) ?? 0) + 1;
+            counts.set(target, n);
+            this.ctx.audio.pon();
+            if (target) {
+              const mark = this.seats.get(target)!.voteMark;
+              mark.setText(`${n}票`);
+              this.pop(mark);
+            } else {
+              skipText.setText(`スキップ ${n}`);
+              this.pop(skipText);
+            }
+          },
+        });
+      });
+    });
+
+    const afterVotes = 600 + votes.length * STEP * 1000 + 600;
+    const nm = (p: Pawn) => (p === this.ctx.player ? 'きみ' : nameOf(p));
     if (!result.target) {
-      text = `だれも 調べられなかった（スキップ ${skips}票）`;
-    } else if (result.wasSpy) {
-      text = `${result.target === player ? 'きみ' : nameOf(result.target)}は スパイだった！\nてへぺろ… 強制送還（罰金 ${result.fine}）`;
-      color = cssColor(COLORS.uiHoney);
-      this.ctx.audio.cracker();
-    } else {
-      text = `ぬれぎぬ！ ${result.target === player ? 'きみ' : nameOf(result.target)}は 市民だった\n賠償 ${result.compensation}・王様の支持度 -${result.supportLost}`;
-      if (match.support <= 0) text = `ぬれぎぬ！ 王様の支持度が 0 に…\n市民たちが ストライキを 始めた！`;
-      color = cssColor(COLORS.uiRose);
-      this.ctx.audio.zukoo();
+      this.time.delayedCall(afterVotes, () => {
+        head.setText('同じ票・スキップが多い');
+        this.showVerdict('だれも 調べられなかった', `スパイは まだ どこかに…`, cssColor(COLORS.uiCream));
+        this.ctx.audio.bubu(0.6);
+        this.time.delayedCall(3200, () => this.ctx.onDone(result));
+      });
+      return;
     }
-    panel(this, CENTER.x, 480, 322, 40, COLORS.uiWood).setDepth(19);
-    const box = label(this, CENTER.x, 478, text, 14, color);
-    box.setDepth(20);
-    if (result.target) {
-      const seat = this.seats.get(result.target)!;
-      seat.ring.setStrokeStyle(4, result.wasSpy ? COLORS.uiHoney : COLORS.landmarkVermilion, 1);
+    const target = result.target;
+    const seat = this.seats.get(target)!;
+    // ② スポットライトとドラムロール
+    const ROLL = 1.8;
+    this.time.delayedCall(afterVotes, () => {
+      head.setText(`${nm(target)}は……`);
+      this.pop(head);
+      this.spotlight(target);
+      this.cancelRoll = this.ctx.audio.drumroll(ROLL);
+    });
+    // ③ 正体
+    this.time.delayedCall(afterVotes + ROLL * 1000 + 100, () => {
+      this.showSupport();
+      if (result.wasSpy) {
+        head.setText('');
+        this.spotlight(target, COLORS.uiHoney);
+        this.ctx.audio.cracker();
+        this.confetti();
+        // 正体がばれて、体に塗りムラが浮かび上がる。ぴょんと跳ねて「てへぺろ」
+        seat.view.setPatch(0.5, 0.55, 26);
+        this.tweens.add({ targets: seat.view, y: seat.y - 16, duration: 180, yoyo: true, repeat: 2, ease: 'Quad.Out' });
+        this.showVerdict('スパイだった！', `${nm(target)}は てへぺろ… 強制送還（罰金 ${result.fine}）`, cssColor(COLORS.uiHoney));
+      } else {
+        head.setText('');
+        this.spotlight(target, COLORS.uiSlate);
+        this.ctx.audio.zukoo();
+        // しょんぼり：ぷるぷる震えて、少し縮む
+        this.tweens.add({ targets: seat.view, x: seat.x + 4, duration: 50, yoyo: true, repeat: 7 });
+        this.tweens.add({ targets: seat.view, scaleY: 0.9, duration: 300, delay: 400, ease: 'Quad.Out' });
+        const sub =
+          match.support <= 0
+            ? '王様の支持度が 0 に… 市民たちが ストライキ！'
+            : `${nm(target)}は 市民だった（賠償 ${result.compensation}・支持度 -${result.supportLost}）`;
+        this.showVerdict('ぬれぎぬ…！', sub, cssColor(COLORS.uiRose));
+        this.pop(this.supportText);
+      }
+      this.time.delayedCall(4000, () => this.ctx.onDone(result));
+    });
+  }
+
+  /** 大きな見出しと、その下の説明（ポンと出る） */
+  private showVerdict(title: string, sub: string, color: string): void {
+    panel(this, CENTER.x, 586, 330, 84, COLORS.uiWood).setDepth(19);
+    const t = label(this, CENTER.x, 568, title, 24, color).setDepth(20);
+    label(this, CENTER.x, 604, sub, 12).setDepth(20).setWordWrapWidth(310);
+    this.pop(t, 0.3);
+  }
+
+  /** 文字をポンと大きく出す */
+  private pop(obj: Phaser.GameObjects.Text, from = 0.6): void {
+    this.tweens.killTweensOf(obj);
+    obj.setScale(from);
+    this.tweens.add({ targets: obj, scale: 1, duration: 260, ease: 'Back.Out' });
+  }
+
+  /** 紙吹雪（スパイを当てたとき） */
+  private confetti(): void {
+    const colors = [COLORS.uiHoney, COLORS.uiRose, COLORS.uiMoss, 0x9fd3e6, COLORS.uiCream];
+    for (let i = 0; i < 40; i++) {
+      const x = Phaser.Math.Between(20, SCREEN.width - 20);
+      const bit = this.add.rectangle(x, Phaser.Math.Between(-60, 0), 6, 10, colors[i % colors.length]).setDepth(30);
+      this.tweens.add({
+        targets: bit,
+        y: SCREEN.height + 20,
+        x: x + Phaser.Math.Between(-40, 40),
+        angle: Phaser.Math.Between(-360, 360),
+        duration: Phaser.Math.Between(1600, 2600),
+        delay: Phaser.Math.Between(0, 400),
+        ease: 'Quad.In',
+        onComplete: () => bit.destroy(),
+      });
     }
-    this.time.delayedCall(3800, () => this.ctx.onDone(result));
   }
 }
