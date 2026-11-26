@@ -36,8 +36,8 @@ export class MeetingMap {
     const g = scene.add.graphics();
     // 地面（和紙の色）と、外周の植え込み
     g.fillStyle(COLORS.ink).fillRoundedRect(-2, -2, this.width + 4, this.height + 4, 6);
-    g.fillStyle(0x7d8f62).fillRoundedRect(0, 0, this.width, this.height, 5);
-    g.fillStyle(0xf1e2c0).fillRect(FIELD.left * s, FIELD.top * s, (FIELD.right - FIELD.left) * s, (FIELD.bottom - FIELD.top) * s);
+    g.fillStyle(0x2f4a6b).fillRoundedRect(0, 0, this.width, this.height, 5); // ふちは浮世絵の藍
+    g.fillStyle(0xe6bb6a).fillRect(FIELD.left * s, FIELD.top * s, (FIELD.right - FIELD.left) * s, (FIELD.bottom - FIELD.top) * s);
     const parts: Phaser.GameObjects.GameObject[] = [g];
     // 小さな地図は絵が小さすぎて見えないので、絵を少し大きめに描く
     const icon = big ? s * 1.25 : s * 2.4;

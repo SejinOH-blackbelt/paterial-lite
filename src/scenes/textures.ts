@@ -208,7 +208,24 @@ export function seeded(seed: number): () => number {
   };
 }
 
-/** 採取場の地面と外周の植え込みを描く */
+function printLine(ctx: CanvasRenderingContext2D, path: string, ink: string, width: number): void {
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = width;
+  ctx.stroke(new Path2D(path));
+}
+
+function printShape(ctx: CanvasRenderingContext2D, path: string, fill: string, edge = 0): void {
+  const shape = new Path2D(path);
+  ctx.fillStyle = fill;
+  ctx.fill(shape);
+  if (edge) {
+    ctx.strokeStyle = '#252621';
+    ctx.lineWidth = edge;
+    ctx.stroke(shape);
+  }
+}
+
+/** 採取場の砂地、石畳と外周を木版画風に描く */
 export function drawGround(scene: Phaser.Scene, width: number, height: number): void {
   const bake = (key: string, depth: number, draw: (ctx: CanvasRenderingContext2D) => void) => {
     const old = scene.textures.exists(key) ? scene.textures.get(key).getSourceImage() : null;
@@ -221,69 +238,74 @@ export function drawGround(scene: Phaser.Scene, width: number, height: number): 
 
   bake('ground-base', -1000, (ctx) => {
     const rand = seeded(7);
-    ctx.fillStyle = '#f1ecde';
+    ctx.fillStyle = '#cf9d52';
     ctx.fillRect(0, 0, width, height);
 
-    // 墨が紙に広がる淡いぼかしと、水が引いた縁のにじみ。
+    // 砂の山吹色に、ぼかした黄土や茶のにじみを刷り重ねる。
     const area = width * height;
-    const pigments = ['#343836', '#66645c', '#51687b', '#687663'];
-    for (let i = 0; i < area / 12300; i++) {
+    const pigments = ['#97502d', '#a56532', '#76582f', '#f9cb6a', '#edb95f'];
+    for (let i = 0; i < area / 21300; i++) {
       const pigment = pigments[i % pigments.length];
       ctx.save();
       ctx.translate(rand() * width, rand() * height);
       ctx.rotate((rand() - 0.5) * 1.1);
-      ctx.scale(58 + rand() * 112, 16 + rand() * 65);
+      ctx.scale(58 + rand() * 112, 35 + rand() * 85);
       const wash = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
-      wash.addColorStop(0, pigment + '25');
-      wash.addColorStop(0.53, pigment + '18');
-      wash.addColorStop(0.76, pigment + '0d');
-      wash.addColorStop(0.85, pigment + '13');
+      wash.addColorStop(0, pigment + '79');
+      wash.addColorStop(0.53, pigment + '54');
+      wash.addColorStop(0.76, pigment + '2b');
+      wash.addColorStop(0.85, pigment + '23');
       wash.addColorStop(1, pigment + '00');
       ctx.fillStyle = wash;
       ctx.fillRect(-1, -1, 2, 2);
       ctx.restore();
     }
 
-    // 蛇行する砂利道に、濃さと筆圧の違う飛び石を置く。
-    const stone = new Path2D('M-19 3 Q-17 -5 -10 -8 L5 -9 Q16 -9 19 -2 L18 4 Q10 10 -2 8 L-13 7 Z');
-    const stoneEdge = new Path2D('M-19 3 Q-17 -5 -10 -8 L5 -9 Q16 -9 19 -2 M17 4 Q7 10 -4 8 L-13 7');
-    const stoneGrain = new Path2D('M-15 2 Q-11 -4 -5 -4 M-3 -5 L6 -6 M1 5 Q7 6 13 2');
-    for (let y = 0; y < height; y += 22) {
+    // 朱の空と藍の遠山。山裾から石畳が始まるようにする。
+    ctx.save();
+    ctx.scale(width / 720, 1);
+    const sky = ctx.createLinearGradient(0, 0, 0, FIELD.top);
+    sky.addColorStop(0, '#713b4c');
+    sky.addColorStop(0.33, '#ad433c');
+    sky.addColorStop(0.71, '#db704b');
+    sky.addColorStop(1, '#cf9d52');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, 720, FIELD.top);
+    printShape(ctx, 'M0 53 L60 38 L91 19 L113 26 L154 7 L169 15 L181 12 L225 38 L279 53 L332 46 L377 26 L404 36 L464 50 L520 37 L551 15 L569 22 L597 9 L619 21 L650 46 L720 46 V58 H0 Z', '#3f6176');
+    printShape(ctx, 'M0 49 L42 42 L65 29 L84 35 L94 32 L131 46 L184 55 L220 55 L264 37 L283 29 L329 48 L377 54 L432 52 L477 32 L496 21 L511 26 L521 23 L558 45 L590 51 L631 43 L653 28 L678 35 L720 48 V64 L655 59 L570 65 L520 58 L459 64 L400 60 L303 60 L260 65 L209 60 L148 64 L83 57 L0 65 Z', '#28475f');
+    printShape(ctx, 'M0 58 L52 50 L68 37 L64 49 L80 51 L115 57 L148 64 L83 57 L0 65 Z M218 59 L268 40 L283 29 L272 45 L291 53 L313 60 L260 65 Z M445 61 L470 48 L496 21 L490 40 L481 50 L513 58 L459 64 Z M605 58 L641 44 L653 28 L650 45 L675 55 L690 61 L655 59 Z', '#527786');
+    ctx.restore();
+
+    // いまの蛇行に沿って、目地の見える石畳を敷く。
+    const stone = new Path2D('M-19 -2 Q-18 -7 -12 -8 L9 -8 Q17 -8 19 -3 L18 3 Q17 7 10 8 L-11 8 Q-18 7 -19 3 Z');
+    const stoneFace = new Path2D('M-16 1 Q-16 -5 -11 -6 L9 -6 Q14 -6 16 -3 L12 -3 L-7 -3 Z');
+    const stoneColors = ['#b1a897', '#c8bba1', '#a09f92', '#d4c6a9', '#bbb3a1'];
+    const stoneSpacing = 22;
+    const roadStart = Math.floor(FIELD.top / stoneSpacing) * stoneSpacing;
+    for (let y = roadStart; y < height; y += stoneSpacing) {
       const center = width / 2 + Math.sin(y / 90) * 70;
-      for (let i = 0; i < 32; i++) {
-        ctx.fillStyle = i % 3 ? '#4d4b412e' : '#5a60534d';
-        ctx.fillRect(center + (rand() - 0.5) * 93, y + rand() * 22, 0.6 + rand() * 2.2, 0.5 + rand());
-      }
       for (const offset of [-1, 1]) {
         ctx.save();
-        ctx.translate(center + offset * 21 + (rand() - 0.5) * 10, y + 7 + rand() * 10);
-        ctx.rotate((rand() - 0.5) * 0.64);
-        ctx.scale(0.72 + rand() * 0.35, 0.68 + rand() * 0.38);
-        const wash = ctx.createLinearGradient(-12, -8, 9, 8);
-        wash.addColorStop(0, '#e5dece');
-        wash.addColorStop(0.51, offset < 0 ? '#b6b3a7' : '#adafa8');
-        wash.addColorStop(1, '#737773');
-        ctx.fillStyle = wash;
+        ctx.translate(center + offset * 20.5 + (rand() - 0.5) * 4, y + 9 + rand() * 3);
+        ctx.rotate((rand() - 0.5) * 0.23);
+        ctx.scale(0.87 + rand() * 0.14, 0.92 + rand() * 0.15);
+        ctx.fillStyle = stoneColors[Math.floor(rand() * stoneColors.length)];
         ctx.fill(stone);
-        ctx.strokeStyle = '#383b39b5';
-        ctx.lineWidth = 1.25 + rand() * 0.85;
-        ctx.setLineDash([13, 0.8, 5, 1.8]);
-        ctx.lineDashOffset = rand() * 20;
-        ctx.stroke(stoneEdge);
-        ctx.setLineDash([2.2, 1.2, 5, 2]);
-        ctx.strokeStyle = '#f8f1df8c';
-        ctx.lineWidth = 0.85;
-        ctx.stroke(stoneGrain);
+        ctx.fillStyle = '#e9dcc16e';
+        ctx.fill(stoneFace);
+        ctx.strokeStyle = '#494034';
+        ctx.lineWidth = 1.55;
+        ctx.stroke(stone);
         ctx.restore();
       }
     }
 
     // 和紙の細い繊維を土と石に重ねる。
-    for (let i = 0; i < area / 220; i++) {
+    for (let i = 0; i < area / 92; i++) {
       const x = rand() * width;
       const y = rand() * height;
-      ctx.strokeStyle = i % 2 ? '#5753462b' : '#fffcf2aa';
-      ctx.lineWidth = 0.48;
+      ctx.strokeStyle = i % 2 ? '#70492329' : '#f8dd9d64';
+      ctx.lineWidth = 0.62;
       ctx.beginPath();
       ctx.moveTo(x, y);
       ctx.quadraticCurveTo(x + 2, y + 0.7, x + 2 + rand() * 4, y + rand() * 2 - 1);
@@ -295,34 +317,34 @@ export function drawGround(scene: Phaser.Scene, width: number, height: number): 
     const placed: { x: number; y: number }[] = [];
     const ornaments = [
       [
-        ['M-14 3 Q-8 -5 0 -2 Q10 -6 15 0 Q11 7 0 6 Q-10 8 -14 3 Z', '#5d665445'],
-        ['M-2 3 Q-8 1 -10 -6 Q-4 -4 -2 3 Q-5 -6 -1 -11 Q3 -5 1 3 Q5 -5 10 -6 Q8 1 2 4 Z', '#3c4540'],
-        ['M6 5 Q9 -1 13 -1 Q12 4 6 5 Z', '#667460'],
+        ['M-14 3 Q-8 -5 0 -2 Q10 -6 15 0 Q11 7 0 6 Q-10 8 -14 3 Z', '#77703a42'],
+        ['M-2 3 Q-8 1 -10 -6 Q-4 -4 -2 3 Q-5 -6 -1 -11 Q3 -5 1 3 Q5 -5 10 -6 Q8 1 2 4 Z', '#344938'],
+        ['M6 5 Q9 -1 13 -1 Q12 4 6 5 Z', '#6a713f'],
       ],
       [
-        ['M-15 1 Q-9 -6 -3 -4 Q1 -8 5 -3 Q13 -5 15 1 Q11 6 4 4 Q0 8 -6 5 Q-13 6 -15 1 Z', '#4f5e5670'],
-        ['M-11 1 Q-6 -4 -2 -1 Q1 -5 5 -2 Q9 -4 12 0 Q6 3 2 2 Q-3 5 -11 1 Z', '#899286'],
+        ['M-15 1 Q-9 -6 -3 -4 Q1 -8 5 -3 Q13 -5 15 1 Q11 6 4 4 Q0 8 -6 5 Q-13 6 -15 1 Z', '#7b6c3f85'],
+        ['M-11 1 Q-6 -4 -2 -1 Q1 -5 5 -2 Q9 -4 12 0 Q6 3 2 2 Q-3 5 -11 1 Z', '#8c814c'],
       ],
       [
-        ['M-6 4 Q-6 0 -8 -3 Q-3 -3 -4 3 Q0 -2 0 -8 Q3 -5 0 3 Q4 1 7 -4 Q7 2 2 5 Z', '#505b4d'],
-        ['M-8 -3 C-13 -3 -12 -8 -9 -7 C-8 -11 -4 -9 -5 -6 C-2 -5 -4 -2 -8 -3 Z M0 -7 C-4 -7 -4 -12 -1 -11 C0 -15 4 -13 3 -10 C6 -8 3 -6 0 -7 Z M7 -3 C3 -4 5 -8 7 -7 C9 -10 12 -8 11 -6 C14 -4 10 -2 7 -3 Z', '#ad584c'],
-        ['M-9 -6 h2 m7 -4 h2 m6 4 h2', '#e8d8b8', 1.6],
+        ['M-6 4 Q-6 0 -8 -3 Q-3 -3 -4 3 Q0 -2 0 -8 Q3 -5 0 3 Q4 1 7 -4 Q7 2 2 5 Z', '#3d5439'],
+        ['M-8 -3 C-13 -3 -12 -8 -9 -7 C-8 -11 -4 -9 -5 -6 C-2 -5 -4 -2 -8 -3 Z M0 -7 C-4 -7 -4 -12 -1 -11 C0 -15 4 -13 3 -10 C6 -8 3 -6 0 -7 Z M7 -3 C3 -4 5 -8 7 -7 C9 -10 12 -8 11 -6 C14 -4 10 -2 7 -3 Z', '#b94539'],
+        ['M-9 -6 h2 m7 -4 h2 m6 4 h2', '#f6c769', 1.6],
       ],
       [
-        ['M-12 4 Q-13 0 -8 -2 Q-4 -2 -2 2 Q-4 5 -12 4 Z M1 4 Q0 0 4 -4 Q10 -6 13 0 Q14 4 8 5 Z', '#797c77'],
-        ['M-10 1 L-7 -1 L-4 1 Z M3 0 L6 -3 L9 -3 L11 0 Z', '#b5b7ac'],
-        ['M-12 4 Q-8 5 -4 3 M1 4 Q8 6 12 3', '#3e4442', 0.7],
+        ['M-12 4 Q-13 0 -8 -2 Q-4 -2 -2 2 Q-4 5 -12 4 Z M1 4 Q0 0 4 -4 Q10 -6 13 0 Q14 4 8 5 Z', '#817361'],
+        ['M-10 1 L-7 -1 L-4 1 Z M3 0 L6 -3 L9 -3 L11 0 Z', '#c8b99a'],
+        ['M-12 4 Q-8 5 -4 3 M1 4 Q8 6 12 3', '#494337', 0.7],
       ],
       [
-        ['M-12 -3 Q-4 -4 -1 3 Q-9 6 -12 -3 Z M2 3 Q4 -4 11 -5 Q12 2 2 3 Z M5 6 Q8 3 13 5 Q10 8 5 6 Z', '#505f6bb8'],
-        ['M-10 -2 Q-7 1 -3 3 M3 3 L9 -3', '#33414b', 0.7],
+        ['M-12 -3 Q-4 -4 -1 3 Q-9 6 -12 -3 Z M2 3 Q4 -4 11 -5 Q12 2 2 3 Z M5 6 Q8 3 13 5 Q10 8 5 6 Z', '#89613d'],
+        ['M-10 -2 Q-7 1 -3 3 M3 3 L9 -3', '#694e35', 0.7],
       ],
     ] satisfies [string, string, number?][][];
     const brushMarks = ornaments.map((ornament) => ornament.map(([path, color, width = 0]) => ({
       path: new Path2D(path), color, width,
     })));
 
-    for (let i = 0; i < area / 4600; i++) {
+    for (let i = 0; i < area / 6900; i++) {
       const x = rand() * width;
       const y = rand() * height;
       const kind = Math.floor(rand() * ornaments.length);
@@ -352,142 +374,117 @@ export function drawGround(scene: Phaser.Scene, width: number, height: number): 
   });
 
   bake('ground-hedge', 5000, (ctx) => {
-    const rand = seeded(61);
     const { left, right, top, bottom } = FIELD;
-    const inset = 12;
-    const x0 = left - inset;
-    const x1 = right + inset;
-    const y0 = top - inset;
-    const y1 = bottom + inset;
-    const corner = 20;
-
-    // 四辺を一続きの下草でつなぎ、角は丸く回り込ませる。
-    const border = new Path2D();
-    border.rect(0, 0, width, height);
-    // 角丸の四角（古い Safari には roundRect がないので、線と曲線で組み立てる）
-    border.moveTo(x0 + corner, y0);
-    border.lineTo(x1 - corner, y0);
-    border.quadraticCurveTo(x1, y0, x1, y0 + corner);
-    border.lineTo(x1, y1 - corner);
-    border.quadraticCurveTo(x1, y1, x1 - corner, y1);
-    border.lineTo(x0 + corner, y1);
-    border.quadraticCurveTo(x0, y1, x0, y1 - corner);
-    border.lineTo(x0, y0 + corner);
-    border.quadraticCurveTo(x0, y0, x0 + corner, y0);
-    border.closePath();
-    const borderWash = ctx.createLinearGradient(0, 0, width * 0.56, height);
-    borderWash.addColorStop(0, '#d9ddd8');
-    borderWash.addColorStop(0.31, '#737d77');
-    borderWash.addColorStop(0.67, '#555e58');
-    borderWash.addColorStop(1, '#8d958a');
-    ctx.fillStyle = borderWash;
-    ctx.fill(border, 'evenodd');
-
-    // 上端に藍墨の遠山を重ね、麓は横にたなびく霞に溶かす。
-    ctx.save();
-    ctx.scale(width / 720, 1);
-    const mountainWash = ctx.createLinearGradient(0, 2, 0, y0);
-    mountainWash.addColorStop(0, '#596d7cbb');
-    mountainWash.addColorStop(0.57, '#8296a68c');
-    mountainWash.addColorStop(1, '#9daeb100');
-    ctx.fillStyle = mountainWash;
-    ctx.fill(new Path2D('M0 41 Q65 31 111 7 Q124 -2 137 7 L166 19 Q190 27 244 39 Q295 14 331 10 Q343 10 370 26 L433 41 Q483 20 533 2 Q544 -2 555 7 L600 28 Q643 35 676 17 L720 5 V58 H0 Z'));
-    const mist = ctx.createLinearGradient(0, 17, 0, 51);
-    mist.addColorStop(0, '#f1ecde00');
-    mist.addColorStop(0.5, '#f1ecdec9');
-    mist.addColorStop(1, '#f1ecde00');
-    ctx.fillStyle = mist;
-    ctx.fill(new Path2D('M0 27 Q56 23 107 26 L214 26 Q226 26 226 30 H360 Q381 32 358 37 H268 Q254 37 246 42 H0 Z M418 26 H498 Q521 26 533 22 H720 V39 H613 Q601 39 588 34 H428 Q407 34 418 26 Z'));
-    ctx.restore();
-
-    const shrub = new Path2D('M-20 5 Q-22 1 -15 -4 Q-14 -10 -7 -7 Q-1 -14 5 -9 Q11 -10 14 -5 Q22 -5 22 2 Q19 8 9 7 Q2 12 -5 8 Q-14 11 -20 5 Z');
-    const needles = new Path2D('M-23 2 Q-20 -3 -14 -3 Q-12 -8 -5 -6 Q0 -11 7 -7 Q17 -9 20 -4 Q26 -1 22 4 Q12 7 4 5 Q-3 9 -9 5 Q-18 7 -23 2 Z');
-    const foliage = (x: number, y: number, scale: number, pine = false) => {
+    // 左右の岩、松、竹、梅を外側から差し込む。
+    const onBank = (x: number, y: number, scale: number, side: number, draw: () => void) => {
       ctx.save();
       ctx.translate(x, y);
-      ctx.scale(scale, scale);
-      ctx.rotate((rand() - 0.5) * 0.42);
-      const crown = pine ? needles : shrub;
-      const wash = ctx.createLinearGradient(0, -10, 4, 10);
-      wash.addColorStop(0, pine ? '#677b82' : '#a2aa99');
-      wash.addColorStop(0.64, pine ? '#394949' : '#6b786b');
-      wash.addColorStop(1, '#343b38');
-      ctx.fillStyle = wash;
-      ctx.fill(crown);
-      ctx.clip(crown);
-
-      // 葉先へ抜いた筆の筋を、濃い墨と紙の色で散らす。
-      for (let i = 0; i < 18; i++) {
-        const x = rand() * 44 - 22;
-        const y = rand() * 19 - 10;
-        const length = 2 + rand() * (pine ? 8 : 5);
-        ctx.fillStyle = i % 3 ? '#242e2aab' : '#d7dfca87';
-        ctx.fill(new Path2D(pine
-          ? `M${x} ${y} q${length * 0.4} -3 ${length} -4 q${-length * 0.4} 3 ${-length} 4 Z`
-          : `M${x} ${y} q-2 -3 ${length} -5 q0 4 ${-length} 5 Z`));
-      }
+      ctx.scale(scale * side, scale);
+      draw();
       ctx.restore();
     };
-    for (let x = x0 + corner; x <= x1 - corner; x += 21) {
-      foliage(x, y0 - 10, 0.84);
-      foliage(x, y1 + 10, 0.84);
-      foliage(x, y0 + rand() * 7, 0.78 + rand() * 0.26);
-      foliage(x, y1 - rand() * 7, 0.78 + rand() * 0.26);
-    }
-    for (let y = y0 + corner; y <= y1 - corner; y += 18) {
-      foliage(x0 + rand() * 5, y, 0.52 + rand() * 0.20);
-      foliage(x1 - rand() * 5, y, 0.52 + rand() * 0.20);
-    }
-    for (const [x, dx] of [[x0, 1], [x1, -1]]) {
-      for (const [y, dy] of [[y0, 1], [y1, -1]]) {
-        foliage(x + dx * 4, y + dy * 5, 0.84);
-        foliage(x + dx * 16, y + dy * 2, 0.76);
-        foliage(x + dx * 2, y + dy * 17, 0.62);
-      }
-    }
 
-    // 上辺には松を置き、四辺に竹を重ねる。
-    for (let x = 38; x < width; x += 113) {
-      ctx.save();
-      ctx.translate(x, top - 18);
-      // 幹は太い根元から細い枝先へ、曲線をひと筆でつなぐ。
-      ctx.scale(x % 2 ? -1 : 1, 1);
-      ctx.fillStyle = '#343735';
-      ctx.fill(new Path2D('M-4 5 C-5 -3 0 -13 -3 -20 Q-5 -28 -1 -40 Q0 -25 5 -19 Q7 -12 3 4 Z M1 -11 C-8 -19 -12 -20 -26 -18 Q-18 -24 -8 -22 L3 -16 Z M1 -22 Q14 -29 26 -26 Q14 -26 3 -17 Z'));
-      ctx.strokeStyle = '#b7b3a087';
-      ctx.lineWidth = 0.95;
-      ctx.stroke(new Path2D('M-1 3 Q3 -8 1 -16 M-4 -19 Q-14 -22 -20 -20'));
-      ctx.restore();
-      const direction = x % 2 ? -1 : 1;
-      foliage(x - 23 * direction, top - 38, 0.9, true);
-      foliage(x + 23 * direction, top - 45, 0.93, true);
-      foliage(x - direction, top - 57, 1.08, true);
-    }
+    const rock = () => {
+      printShape(ctx, 'M-15 5 L-11 -29 L7 -72 L23 -87 L45 -66 L55 -41 L74 -9 L62 3 L31 9 Z', '#385773', 3.5);
+      printShape(ctx, 'M-11 -29 L7 -72 L23 -87 L32 -66 L22 -48 L16 -15 L3 3 L-15 5 Z', '#89a1a8');
+      printShape(ctx, 'M23 -87 L45 -66 L55 -41 L74 -9 L62 3 L41 -18 L35 -44 L32 -66 Z', '#233c58');
+      printShape(ctx, 'M6 -49 L23 -76 L19 -56 L9 -36 Z M22 -8 L32 -36 L36 -22 L31 -4 Z', '#b3c2bc');
+      printLine(ctx, 'M-8 1 L2 -23 L14 -35 L21 -61 L23 -72 M36 -57 L45 -40 L46 -28 L64 -12 M12 5 L21 -7 L25 -22', '#242522', 2.4);
+    };
 
-    const bamboo = (x: number, y: number) => {
-      for (const [offset, height, lean] of [[-7, 27, -5], [0, 37, 2], [8, 30, 5]]) {
+    const pine = () => {
+      printShape(ctx, 'M-16 4 C3 -13 3 -25 10 -38 C20 -53 43 -56 47 -75 L51 -73 Q49 -57 39 -49 Q62 -54 78 -56 L78 -51 Q55 -48 31 -39 Q15 -33 18 -24 C31 -32 48 -27 62 -35 L65 -31 Q49 -21 29 -23 Q14 -17 7 4 Z', '#694337', 3.6);
+      printLine(ctx, 'M-4 1 Q9 -12 12 -26 Q17 -41 34 -46 M22 -25 Q38 -32 49 -28', '#ba8053', 2);
+      for (const [x, y, s] of [[11, -40, 0.9], [44, -76, 1], [73, -56, 1.05], [57, -34, 0.8], [19, -15, 0.76]]) {
         ctx.save();
-        ctx.translate(x + offset, y);
-        ctx.rotate(lean / height);
-        const stalk = ctx.createLinearGradient(-2, 0, 2, 0);
-        stalk.addColorStop(0, '#38493e');
-        stalk.addColorStop(0.55, '#bac3a3');
-        stalk.addColorStop(1, '#48594a');
-        ctx.fillStyle = stalk;
-        ctx.fill(new Path2D(`M-2 0 Q-2 -12 -1.5 ${-height} L1 ${-height} Q2 -18 2 0 Z`));
-        ctx.strokeStyle = '#313c36';
-        ctx.lineWidth = 1;
-        ctx.stroke(new Path2D('M-2 -8 q2 1 4 0 M-2 -17 q2 1 4 0 M-2 -25 q2 1 4 0'));
-        ctx.fillStyle = '#344b42';
-        ctx.fill(new Path2D(`M0 ${-height + 8} q-8 0 -12 -9 q8 1 12 9 q3 -9 12 -11 q-3 7 -12 11 Z M0 ${-height + 14} q4 -7 13 -7 q-5 6 -13 7 Z`));
+        ctx.translate(x, y);
+        ctx.scale(s, s);
+        printShape(ctx, 'M-30 3 Q-31 -4 -23 -7 Q-21 -15 -12 -13 Q-8 -23 1 -18 Q8 -23 14 -15 Q24 -18 26 -9 Q36 -8 34 0 Q26 7 15 3 Q6 9 -4 4 Q-16 9 -21 5 Z', '#37594d', 2.6);
+        printShape(ctx, 'M-28 2 Q-18 4 -10 -4 Q-3 1 6 -7 Q14 -2 21 -6 Q25 -1 33 -2 Q28 6 15 3 Q6 9 -4 4 Q-16 9 -21 5 Z', '#243f39');
+        for (const [tip, root] of [[-19, -13], [-5, 1], [7, 13], [21, 27]]) {
+          printLine(ctx, `M${root} 2 L${tip - 6} -7 M${root} 2 L${tip} -13 M${root} 2 L${tip + 6} -9`, '#202522', 1.25);
+        }
         ctx.restore();
       }
     };
-    for (let x = 90; x < width - 24; x += 113) bamboo(x, y0 + 6);
-    for (let x = 28; x < width; x += 63) bamboo(x, height - 3);
-    for (let y = top + 100; y <= bottom - 60; y += 150) {
-      bamboo(left - 13, y);
-      bamboo(right + 13, y + 36);
+
+    const bamboo = () => {
+      for (const [x, rise, lean] of [[-7, 74, -5], [5, 94, 7], [17, 64, 15]]) {
+        ctx.save();
+        ctx.translate(x, 0);
+        ctx.transform(1, 0, -lean / rise, 1, 0, 0);
+        printShape(ctx, `M-3 0 L-2 ${-rise} L2 ${-rise} L3 0 Z`, '#839653', 2.3);
+        for (let y = -12; y > -rise; y -= 18) {
+          printLine(ctx, `M-2 ${y} q2 2 4 0`, '#30382b', 1.4);
+        }
+        for (const y of [-rise + 7, -rise + 32]) {
+          printShape(ctx, `M0 ${y} q-13 2 -25 -12 q14 -1 25 12 q5 -15 24 -19 q-7 13 -24 19 q13 -8 27 -4 q-13 9 -27 4 Z`, '#405e48', 1.45);
+        }
+        ctx.restore();
+      }
+    };
+
+    const plum = () => {
+      printShape(ctx, 'M-10 4 L3 -21 L12 -36 L15 -56 L23 -72 L21 -56 L18 -40 L35 -48 L43 -60 L40 -46 L18 -33 L7 -17 L2 4 Z', '#55362d', 2.8);
+      for (const [x, y, r] of [[22, -68, 7], [39, -51, 9], [13, -39, 8], [22, -28, 7], [6, -51, 5], [3, -19, 8]]) {
+        for (let petal = 0; petal < 5; petal++) {
+          const angle = petal * Math.PI * 2 / 5;
+          const shape = new Path2D();
+          shape.ellipse(x + Math.sin(angle) * r * 0.64, y + Math.cos(angle) * r * 0.64, r * 0.53, r * 0.44, -angle, 0, Math.PI * 2);
+          ctx.fillStyle = petal % 2 ? '#bc4437' : '#dc6250';
+          ctx.fill(shape);
+          ctx.strokeStyle = '#492823';
+          ctx.lineWidth = 1.45;
+          ctx.stroke(shape);
+        }
+        ctx.fillStyle = '#f4c66c';
+        ctx.beginPath();
+        ctx.arc(x, y, r * 0.27, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
+
+    const cloud = () => {
+      printShape(ctx, 'M-18 -28 Q-4 -41 17 -33 C37 -41 51 -34 48 -23 C69 -23 76 -10 96 -11 Q110 -10 118 -5 Q109 1 84 0 C68 0 61 8 40 4 C53 15 27 21 13 11 Q-2 17 -18 8 Z', '#eee4cc', 3);
+      printShape(ctx, 'M-17 -14 Q-1 -21 11 -14 C27 -8 41 -20 32 -22 Q28 -23 25 -19 C27 -30 46 -25 42 -16 C38 -5 19 -5 10 -9 Q0 -12 -17 -7 Z M-18 2 Q-2 10 13 5 Q19 3 30 8 C38 10 40 3 33 1 Q39 1 44 7 C44 16 25 15 13 10 Q-1 16 -18 7 Z M55 -5 Q75 -8 91 -4 L112 -5 Q105 0 84 -1 Q66 6 55 -5 Z', '#a7bcc1');
+      printLine(ctx, 'M-12 -19 Q-2 -24 12 -18 C28 -11 39 -21 32 -24 Q27 -26 25 -21 M-8 4 Q5 8 13 3 C22 -2 31 9 37 5 Q39 2 34 1', '#4a7287', 2.5);
+    };
+
+    // 波頭を白く残し、藍の筋と泡を重ねて沖へ返る形にする。
+    const wave = () => {
+      printShape(ctx, 'M-25 15 L-25 -48 C-5 -59 5 -93 31 -95 Q47 -102 59 -88 C84 -91 96 -74 81 -64 Q71 -57 64 -63 C57 -50 44 -59 45 -66 C31 -51 43 -28 61 -24 C74 -19 91 -26 106 -34 C130 -45 150 -38 163 -25 C142 -31 125 -23 115 -13 C153 -21 177 -1 212 0 L224 15 Z', '#204667', 3.5);
+      printShape(ctx, 'M-25 -29 C5 -47 9 -78 32 -81 C9 -53 19 -21 49 -3 Q72 7 102 -12 C84 8 59 14 33 4 C9 -5 -1 -24 3 -40 Q-7 -15 -25 -9 Z M61 -22 C90 -12 121 -47 151 -31 C122 -35 105 -9 80 -6 Z M116 -10 C158 -16 173 2 212 3 L215 10 C175 14 155 -5 116 -10 Z', '#548399');
+      printShape(ctx, 'M-25 -48 C-4 -60 5 -92 31 -95 Q47 -102 59 -88 C84 -91 96 -74 81 -64 Q71 -57 64 -63 C57 -50 44 -59 45 -66 Q40 -63 37 -54 C28 -62 38 -75 49 -77 C38 -81 24 -66 22 -59 Q18 -59 17 -66 Q8 -59 2 -48 C-4 -38 -16 -33 -25 -33 Z', '#f4eedb', 2.7);
+      printShape(ctx, 'M61 -24 C78 -17 91 -28 106 -34 C130 -45 150 -38 163 -25 Q144 -33 132 -27 C126 -24 121 -22 115 -13 Q110 -15 115 -23 Q106 -22 100 -15 Q96 -15 98 -20 C83 -12 69 -15 61 -24 Z', '#f4eedb', 2.25);
+      printLine(ctx, 'M-20 -12 Q-2 -26 4 -46 M23 -56 C12 -29 29 -8 51 -3 M48 -28 Q57 -13 78 -13 M120 -4 Q141 -10 163 -2', '#a6c1c8', 2.5);
+      printLine(ctx, 'M51 -87 Q60 -81 55 -75 M70 -84 Q82 -80 77 -74 M-12 -47 Q2 -58 8 -70', '#658c9e', 2.25);
+      for (const [x, y, r] of [[62, -95, 3], [75, -99, 2], [88, -91, 2.5], [97, -79, 2], [69, -51, 2], [87, -55, 2.7], [102, -42, 2]]) {
+        ctx.fillStyle = '#f4eedb';
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#263e46';
+        ctx.lineWidth = 0.9;
+        ctx.stroke();
+      }
+    };
+
+    for (const side of [1, -1]) {
+      const bank = side === 1 ? left : right;
+      const edge = bank - side * 25;
+      const shift = side === 1 ? 0 : 75;
+      onBank(edge, top + 5, 1.02, side, pine);
+      onBank(edge, 302 + shift, 0.72, side, pine);
+      onBank(edge, 496 - shift, 0.85, side, bamboo);
+      onBank(edge, 674 + shift, 0.83, side, rock);
+      onBank(edge, 848 - shift, 0.92, side, bamboo);
+      onBank(edge, 989 + shift, 1, side, plum);
+      onBank(edge, bottom - 36, 1.12, side, rock);
+      onBank(edge, 147 + shift, 1.02, side, cloud);
+      onBank(edge, 557 + shift, 0.65, side, cloud);
+      onBank(edge, 903 + shift, 0.69, side, cloud);
+      onBank(edge, bottom - 15, 0.79, side, cloud);
+      onBank(edge, height - 6, side === 1 ? 1.08 : 0.94, side, wave);
     }
   });
 }

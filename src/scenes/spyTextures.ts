@@ -17,20 +17,20 @@ export const LANDMARK_SIZE = { w: 64, h: 72 } as const;
 export const STATUE_SIZE = { w: 38, h: 46 } as const;
 
 const PIGMENTS = {
-  clayLight: 0xdac5ad,
-  ink: 0x242524,
-  landmarkVermilionLight: 0xedb29a,
-  landmarkVermilion: 0xba6354,
-  landmarkWoodShade: 0x6c635c,
-  landmarkWood: 0xb8a698,
-  landmarkIron: 0x3f494f,
-  stoneDark: 0x5f727e,
-  stone: 0x899393,
-  stoneLight: 0xbcc6c4,
-  partStraw: 0xcfbea0,
-  partIvory: 0xf2e9d7,
-  landmarkBrass: 0xd1bb8c,
-  landmarkBrassShade: 0x8b795c,
+  clayLight: 0xe8be89,
+  ink: 0x252521,
+  landmarkVermilionLight: 0xf0996d,
+  landmarkVermilion: 0xce4f3a,
+  landmarkWoodShade: 0x724739,
+  landmarkWood: 0xbc8d5d,
+  landmarkIron: 0x293f55,
+  stoneDark: 0x486b85,
+  stone: 0x7795a1,
+  stoneLight: 0xbacdd0,
+  partStraw: 0xd2a254,
+  partIvory: 0xf5e8c6,
+  landmarkBrass: 0xdbad57,
+  landmarkBrassShade: 0x926637,
 };
 
 function color(value: number): string {
@@ -60,24 +60,7 @@ function paintLandmark(ctx: CanvasRenderingContext2D, path: string, fill: number
   const shape = new Path2D(path);
   ctx.fillStyle = color(fill);
   ctx.fill(shape);
-  const wash = ctx.createLinearGradient(8, 6, 58, 72);
-  wash.addColorStop(0, '#f7f0df72');
-  wash.addColorStop(0.3, '#f7f0df22');
-  wash.addColorStop(0.47, '#28333718');
-  wash.addColorStop(0.58, '#f7f0df24');
-  wash.addColorStop(1, '#28333744');
-  ctx.fillStyle = wash;
-  ctx.fill(shape);
-  if (edge) {
-    // 太い墨の縁に、筆が乾いて紙目の残る細い筋を重ねる。
-    mark(ctx, shape, 0x292c2b, edge * 1.12);
-    ctx.save();
-    ctx.setLineDash([0.9, 2, 3.3, 9]);
-    ctx.strokeStyle = '#eee7d774';
-    ctx.lineWidth = 0.68;
-    ctx.stroke(shape);
-    ctx.restore();
-  }
+  if (edge) mark(ctx, shape, PIGMENTS.ink, edge * 1.18);
 }
 
 function mark(ctx: CanvasRenderingContext2D, path: string | Path2D, ink: number, width: number): void {
@@ -91,7 +74,7 @@ function oval(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, r
   shape.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
   ctx.fillStyle = color(fill);
   ctx.fill(shape);
-  if (edge) mark(ctx, shape, 0x292c2b, edge * 1.12);
+  if (edge) mark(ctx, shape, 0x292c2b, edge * 1.18);
 }
 
 function drawTower(ctx: CanvasRenderingContext2D): void {

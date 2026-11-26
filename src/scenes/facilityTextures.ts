@@ -12,28 +12,28 @@ export const FACILITY_TEX: Record<FacilityId, string> = {
 export const FACILITY_SIZE: { w: number; h: number } = { w: 76, h: 80 };
 
 const PIGMENTS = {
-  path: 0xcbcfc7,
-  terracottaDark: 0x8f635a,
-  clayLight: 0xdac5ad,
-  terracotta: 0xbf9381,
-  ink: 0x242524,
-  landmarkVermilionLight: 0xedb29a,
-  uiHoney: 0xf2d4a0,
-  landmarkVermilion: 0xba6354,
-  landmarkWoodShade: 0x6c635c,
-  landmarkWood: 0xb8a698,
-  landmarkIron: 0x3f494f,
-  stoneDark: 0x5f727e,
-  stone: 0x899393,
-  stoneLight: 0xbcc6c4,
-  partStrawShade: 0x8e7961,
-  partStraw: 0xcfbea0,
-  grassDark: 0x536453,
-  bambooLight: 0xaebb9b,
-  partIvory: 0xf2e9d7,
-  partIvoryShade: 0xada294,
-  landmarkBrass: 0xd1bb8c,
-  landmarkBrassShade: 0x8b795c,
+  path: 0xe5dcc3,
+  terracottaDark: 0x934b38,
+  clayLight: 0xe8be89,
+  terracotta: 0xc37753,
+  ink: 0x252521,
+  landmarkVermilionLight: 0xf0996d,
+  uiHoney: 0xffd184,
+  landmarkVermilion: 0xce4f3a,
+  landmarkWoodShade: 0x724739,
+  landmarkWood: 0xbc8d5d,
+  landmarkIron: 0x293f55,
+  stoneDark: 0x486b85,
+  stone: 0x7795a1,
+  stoneLight: 0xbacdd0,
+  partStrawShade: 0x96703e,
+  partStraw: 0xd2a254,
+  grassDark: 0x455f44,
+  bambooLight: 0xa8b371,
+  partIvory: 0xf5e8c6,
+  partIvoryShade: 0x9f825a,
+  landmarkBrass: 0xdbad57,
+  landmarkBrassShade: 0x926637,
 };
 
 function color(value: number): string {
@@ -50,24 +50,7 @@ function paint(ctx: CanvasRenderingContext2D, path: string, fill: number, edge =
   const shape = new Path2D(path);
   ctx.fillStyle = color(fill);
   ctx.fill(shape);
-  const wash = ctx.createLinearGradient(8, 6, 58, 76);
-  wash.addColorStop(0, '#f7f0df72');
-  wash.addColorStop(0.3, '#f7f0df22');
-  wash.addColorStop(0.47, '#28333718');
-  wash.addColorStop(0.58, '#f7f0df24');
-  wash.addColorStop(1, '#28333744');
-  ctx.fillStyle = wash;
-  ctx.fill(shape);
-  if (edge) {
-    // 太い墨の縁に、筆が乾いて紙目の残る細い筋を重ねる。
-    mark(ctx, shape, 0x292c2b, edge * 1.12);
-    ctx.save();
-    ctx.setLineDash([0.9, 2, 3.3, 9]);
-    ctx.strokeStyle = '#eee7d774';
-    ctx.lineWidth = 0.68;
-    ctx.stroke(shape);
-    ctx.restore();
-  }
+  if (edge) mark(ctx, shape, PIGMENTS.ink, edge * 1.18);
 }
 
 function drawShadow(ctx: CanvasRenderingContext2D): void {

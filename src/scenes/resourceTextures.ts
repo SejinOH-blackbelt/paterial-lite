@@ -1,8 +1,8 @@
-// 墨の輪郭に朱・淡緑・藍を重ねる、採取場の素材。
+// 墨の輪郭に朱・松葉色・藍を重ねる、採取場の素材。
 import type Phaser from 'phaser';
 import { COLORS } from '../game/config';
 import type { ResourceKind } from '../game/harvest';
-import { drawPart, seeded } from './textures';
+import { drawPart } from './textures';
 
 export const RES_TEX: Record<ResourceKind, string> = {
   clay: 'res-clay',
@@ -35,51 +35,30 @@ function piece(
   tones: readonly [number, number, number],
   shade: string,
   highlight: string,
-  speckleLeft = 0,
 ): void {
   const shape = new Path2D(silhouette);
   const [base, dark, light] = tones;
-  const wash = ctx.createLinearGradient(-4, 5, RES_SIZE.w * 0.42, RES_SIZE.h);
-  wash.addColorStop(0, color(light));
-  wash.addColorStop(0.39, color(base));
-  wash.addColorStop(0.53, color(light));
-  wash.addColorStop(0.67, color(base));
-  wash.addColorStop(1, color(dark));
-  ctx.fillStyle = wash;
+  ctx.fillStyle = color(base);
   ctx.fill(shape);
   ctx.save();
   ctx.clip(shape);
   ctx.fillStyle = color(dark);
-  ctx.globalAlpha = 0.38;
   ctx.fill(new Path2D(shade));
   ctx.fillStyle = color(light);
   ctx.fill(new Path2D(highlight));
-
-  const rand = seeded(19);
-  ctx.globalAlpha = 0.23;
-  for (let i = 0; i < 200; i++) {
-    ctx.fillStyle = i % 2 ? '#faf2dc' : '#303632';
-    ctx.fillRect(speckleLeft + rand() * RES_SIZE.w, rand() * RES_SIZE.h, 0.7 + rand() * 1.9, 0.48);
-  }
   ctx.restore();
-  ctx.strokeStyle = '#262c2b';
-  ctx.lineWidth = 1.9;
+  ctx.strokeStyle = '#252621';
+  ctx.lineWidth = 2.3;
   ctx.stroke(shape);
-  ctx.save();
-  ctx.setLineDash([0.7, 2.5, 2, 6]);
-  ctx.strokeStyle = '#eae4d476';
-  ctx.lineWidth = 0.65;
-  ctx.stroke(shape);
-  ctx.restore();
 }
 
 export function makeResourceTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists(RES_TEX.clay)) return;
   const { w, h } = RES_SIZE;
   // 霧の下でも種類を拾えるよう、顔料の色と明るい面を残す。
-  const clay = [0xc18775, 0x8b5049, 0xe4b9a2] as const;
-  const bamboo = [0x9eac80, 0x586953, 0xcad5ab] as const;
-  const stone = [0x8299a9, 0x495e70, 0xbccdd1] as const;
+  const clay = [0xbf6950, 0x964c3b, 0xe3996f] as const;
+  const bamboo = [0x879d58, 0x456448, 0xc4cd86] as const;
+  const stone = [0x62859d, 0x345473, 0xb4c8cd] as const;
 
   drawPart(scene, RES_TEX.clay, w, h, (ctx) => {
     piece(ctx, 'M 3 43 Q 3 38 10 35 Q 13 26 20 26 Q 24 17 33 20 Q 40 21 42 31 Q 50 32 53 42 Q 56 48 43 50 Q 25 52 10 49 Q 3 48 3 43 Z',
@@ -102,7 +81,7 @@ export function makeResourceTextures(scene: Phaser.Scene): void {
       const height = 50 - top;
       piece(ctx, `M -4 1 Q 0 -1 4 1 L 4 ${height - 1} Q 0 ${height + 1} -4 ${height - 1} Z`,
         bamboo, `M 1 0 L 5 0 L 5 ${height} L 1 ${height} Z`,
-        `M -3 2 L -1 2 L -1 ${height - 1} L -3 ${height - 1} Z`, -4);
+        `M -3 2 L -1 2 L -1 ${height - 1} L -3 ${height - 1} Z`);
       for (let y = 10; y < height - 4; y += 12) {
         ctx.strokeStyle = color(bamboo[1]);
         ctx.lineWidth = 1.4;
@@ -150,7 +129,7 @@ export function makeResourceTextures(scene: Phaser.Scene): void {
       ctx.translate(x, y);
       piece(ctx, `M -5 0 Q 0 -4 5 0 L 5 ${height} Q 0 ${height + 3} -5 ${height} Z`,
         bamboo, `M 1 0 H 6 V ${height + 3} H 1 Z`,
-        `M -4 2 H -2 V ${height} H -4 Z`, -5);
+        `M -4 2 H -2 V ${height} H -4 Z`);
       ctx.beginPath();
       ctx.ellipse(0, 0, 5, 2.7, 0, 0, Math.PI * 2);
       ctx.fillStyle = color(bamboo[2]);
