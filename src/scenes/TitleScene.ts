@@ -1,7 +1,7 @@
 // タイトル画面：ロゴ、跳ねるパテ、「あそぶ」「あそびかた」
 import Phaser from 'phaser';
 import logoUrl from '../assets/logo.jpg';
-import { COLORS, SCREEN } from '../game/config';
+import { COLORS, PLAYER_ELEMENT, SCREEN } from '../game/config';
 import { makePartTextures } from './partTextures';
 import { PateView } from './PateView';
 import { makeSpyTextures } from './spyTextures';
@@ -47,6 +47,7 @@ export class TitleScene extends Phaser.Scene {
     // 跳ねるパテ
     this.pate = new PateView(this, SCREEN.width / 2, 430);
     this.pate.setHeadPart('flower');
+    this.pate.setElement(PLAYER_ELEMENT);
 
     textButton(this, SCREEN.width / 2, 510, 200, 52, 'あそぶ', COLORS.uiHoney, () => this.scene.start('Role'), 22);
     textButton(this, SCREEN.width / 2, 574, 200, 44, 'あそびかた', COLORS.uiPaper, () => this.showHowTo(), 17);

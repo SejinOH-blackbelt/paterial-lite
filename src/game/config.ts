@@ -215,9 +215,9 @@ export const HEAD_PARTS = ['flower', 'kasa', 'horn', 'flag', 'sprout', 'feather'
 export const KING_PART = 'crown';
 export const PLAYER_PART = 'flower';
 
-/** パテのエレメント（見た目だけ。docs/vision.md のエレメント案の基本4つ） */
-export const ELEMENTS = ['fire', 'water', 'earth', 'wind'] as const;
-export const ELEMENT_NAMES = { fire: '火', water: '水', earth: '土', wind: '風' } as const;
+/** パテのエレメント（見た目だけ。デザインは docs/concept/element-pates.webp） */
+export const ELEMENTS = ['fire', 'water', 'earth', 'wind', 'thunder'] as const;
+export const ELEMENT_NAMES = { fire: '火', water: '水', earth: '土', wind: '風', thunder: '雷' } as const;
 /** プレイヤーのパテのエレメント */
 export const PLAYER_ELEMENT = 'earth';
 
@@ -249,7 +249,7 @@ export const BOT_PROFILES = [
   { id: 'horn', part: 'horn', element: 'fire', timingError: 0.05 },
   { id: 'flag', part: 'flag', element: 'wind', timingError: 0.07 },
   { id: 'sprout', part: 'sprout', element: 'earth', timingError: 0.09 },
-  { id: 'feather', part: 'feather', element: 'fire', timingError: 0.12 }, // のんびり屋
+  { id: 'feather', part: 'feather', element: 'thunder', timingError: 0.12 }, // のんびり屋
 ] as const;
 
 /** 名物（スパイがスキャンして設計図のカケラを集める、和の国の設備） */

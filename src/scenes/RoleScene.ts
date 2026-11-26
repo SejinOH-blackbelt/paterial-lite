@@ -1,6 +1,6 @@
 // 役の発表：「きみは 王様」（市民側）か「きみは スパイ」。スパイをここで決めて、採取場に渡す
 import Phaser from 'phaser';
-import { COLORS, KING_PART, SCREEN } from '../game/config';
+import { COLORS, KING_PART, PLAYER_ELEMENT, SCREEN } from '../game/config';
 import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
 import { PateView } from './PateView';
@@ -42,6 +42,7 @@ export class RoleScene extends Phaser.Scene {
     label(this, x, 205, isSpy ? 'スパイ' : '王様', 56, cssColor(COLORS.uiHoney));
     this.pate = new PateView(this, SCREEN.width / 2, 370);
     this.pate.setHeadPart(isSpy ? 'flower' : KING_PART);
+    this.pate.setElement(PLAYER_ELEMENT);
     this.pate.setScale(1.6);
     if (isSpy) this.pate.setPatch(0.7, 0.4, 5);
     label(

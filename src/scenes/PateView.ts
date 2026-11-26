@@ -3,7 +3,7 @@
 import Phaser from 'phaser';
 import { PATE } from '../game/config';
 import type { Facing } from '../game/movement';
-import { DECOR_TEX, makeDecorTextures, type Element } from './elementTextures';
+import { elementKey, makeElementTextures, makeStrikeTexture, STRIKE_TEX, type Element } from './elementTextures';
 import { PART_ORIGIN_Y, partKey, type HeadPart } from './partTextures';
 import { PATCH_TEX, STATUE_SIZE, STATUE_TEX } from './spyTextures';
 import { PATE_SIZE, TEX } from './textures';
@@ -24,6 +24,15 @@ export const PATE_LAYOUT = {
   armAngle: 0.62,
 } as const;
 
+// 頭の飾りの低い側に、見分け用のパーツを差し込む。
+const badgeOffset = {
+  fire: [-7, -11],
+  water: [7, -11],
+  earth: [-7, -8],
+  wind: [-7, -11],
+  thunder: [-8, -12],
+} as const satisfies Record<Element, readonly [number, number]>;
+
 export class PateView extends Phaser.GameObjects.Container {
   readonly torso: Phaser.GameObjects.Image;
   readonly armL: Phaser.GameObjects.Image;
@@ -33,8 +42,10 @@ export class PateView extends Phaser.GameObjects.Container {
   private readonly upperBody: Phaser.GameObjects.Container;
   private readonly bodyDetails: Phaser.GameObjects.Container;
   private element: Element | null = null;
-  private elementSurface: Phaser.GameObjects.Image | null = null;
-  private elementMotion: Phaser.GameObjects.Image | null = null;
+  private readonly elementRear: Phaser.GameObjects.Container;
+  private elementHead: Phaser.GameObjects.Image | null = null;
+  private elementFront: Phaser.GameObjects.Image | null = null;
+  private particles: Phaser.GameObjects.Image[] = [];
   private windBehind: Phaser.GameObjects.Image | null = null;
   private elementPhase = 0;
   private strikeSign: Phaser.GameObjects.Image | null = null;
@@ -60,7 +71,8 @@ export class PateView extends Phaser.GameObjects.Container {
     this.upperBody = new Phaser.GameObjects.Container(scene, 0, 0, [
       this.armL, this.armR, this.torso, this.bodyDetails,
     ]);
-    this.add([this.legL, this.legR, this.upperBody]);
+    this.elementRear = new Phaser.GameObjects.Container(scene);
+    this.add([this.elementRear, this.legL, this.legR, this.upperBody]);
     scene.add.existing(this);
   }
 
@@ -88,76 +100,109 @@ export class PateView extends Phaser.GameObjects.Container {
     if (this.isStatue) return; // 置物になったら、パーツは置物のてっぺんに固定
     const x = this.strikeSign ? 0 : this.facing === 'left' ? PATE_LAYOUT.headSideX
       : this.facing === 'right' ? -PATE_LAYOUT.headSideX : 0;
+    const mirror = !this.strikeSign && this.facing === 'right';
+    const [offsetX, offsetY] = this.element ? badgeOffset[this.element] : [0, 0];
     // 胴体の伸び縮みに合わせ、差し込み位置を頭の表面に固定する。
     this.headPart?.setPosition(
-      x * this.torso.scaleX,
-      this.torso.y + (PATE_LAYOUT.headInset - PATE_SIZE.h) * this.torso.scaleY,
-    ).setFlipX(!this.strikeSign && this.facing === 'right');
+      this.torso.x + (x + offsetX * (mirror ? -1 : 1)) * this.torso.scaleX,
+      this.torso.y + (PATE_LAYOUT.headInset - PATE_SIZE.h + offsetY) * this.torso.scaleY,
+    ).setFlipX(mirror);
   }
 
-  /** 頭のパーツを残したまま、体の飾りを付け替える。 */
+  /** 見分け用のパーツを残し、胴体・手足と属性の飾りを付け替える。 */
   setElement(element: Element | null): void {
     if (this.element === element) return;
     this.element = element;
-    this.elementSurface?.destroy();
-    this.elementMotion?.destroy();
-    this.windBehind?.destroy();
-    this.elementSurface = this.elementMotion = this.windBehind = null;
+    this.elementHead?.destroy();
+    this.elementFront?.destroy();
+    this.elementRear.removeAll(true);
+    this.elementHead = this.elementFront = this.windBehind = null;
+    this.particles = [];
     this.elementPhase = 0;
-    if (!element) return;
 
-    makeDecorTextures(this.scene);
-    const surface = { fire: DECOR_TEX.scorch, water: DECOR_TEX.gloss, earth: DECOR_TEX.earth, wind: null }[element];
-    if (surface) {
-      this.elementSurface = this.scene.add.image(0, 0, surface).setOrigin(0.5, 1);
-      this.elementSurface.setAlpha(element === 'fire' ? 0.52 : 1);
-      // 土肌の飾りの上に塗りムラを残し、炎など空中の飾りはさらに手前に置く。
-      this.bodyDetails.addAt(this.elementSurface, 0);
-    }
-    const motion = { fire: DECOR_TEX.fire, water: DECOR_TEX.drop, earth: null, wind: DECOR_TEX.wind }[element];
-    if (motion) {
-      this.elementMotion = this.scene.add.image(0, 0, motion);
-      this.upperBody.add(this.elementMotion);
+    if (element) {
+      makeElementTextures(this.scene);
+      this.elementHead = this.scene.add.image(0, 0, elementKey(element, 'head')).setOrigin(0.5, 0.87);
+      this.upperBody.add(this.elementHead);
       if (this.headPart && !this.isStatue) this.upperBody.bringToTop(this.headPart);
+
+      if (element === 'water' || element === 'earth' || element === 'wind') {
+        this.elementFront = this.scene.add.image(0, 0, elementKey(element, 'front'));
+        this.bodyDetails.addAt(this.elementFront, 0);
+      }
+      if (element === 'wind') {
+        this.windBehind = this.scene.add.image(0, 0, elementKey(element, 'ringBack'));
+        this.elementRear.add(this.windBehind);
+      }
+      if (element !== 'earth') {
+        for (let i = 0; i < 3; i++) {
+          const particle = this.scene.add.image(0, 0, elementKey(element, 'particle'));
+          this.elementRear.add(particle);
+          this.particles.push(particle);
+        }
+      }
     }
-    if (element === 'wind') {
-      this.windBehind = this.scene.add.image(0, 0, DECOR_TEX.wind);
-      this.upperBody.addAt(this.windBehind, 0);
-    }
+
+    const arm = element ? elementKey(element, 'arm') : TEX.pateArm;
+    const leg = element ? elementKey(element, 'leg') : TEX.pateLeg;
+    this.armL.setTexture(arm);
+    this.armR.setTexture(arm);
+    this.legL.setTexture(leg);
+    this.legR.setTexture(leg);
+    this.placeTorso();
+    this.placeHeadPart();
     this.placeElement(0);
   }
 
-  private placeElement(dtSeconds: number): void {
-    const mirror = !this.strikeSign && this.facing === 'right';
-    const direction = mirror ? -1 : 1;
-    this.elementSurface?.setFlipX(mirror);
-    const motion = this.elementMotion;
-    if (!motion) return;
+  private placeTorso(): void {
+    const facing = this.strikeSign ? 'down' : this.facing;
+    const view = facing === 'right' ? 'left' : facing;
+    const clay = { down: TEX.pateBody, left: TEX.pateSide, up: TEX.pateBack };
+    this.torso.setTexture(this.element ? elementKey(this.element, view) : clay[view])
+      .setFlipX(facing === 'right');
+  }
 
+  private placeElement(dtSeconds: number): void {
+    if (!this.elementHead) return;
     this.elementPhase += dtSeconds;
-    const { y, scaleX, scaleY } = this.torso;
+    const phase = this.elementPhase;
+    const { x, y, scaleX, scaleY, flipX } = this.torso;
+    const direction = flipX ? -1 : 1;
+
+    // 奥の飾りも上半身と同じだけ傾け、胴体の伸び縮みに合わせる。
+    this.elementRear.setPosition(this.upperBody.x, this.upperBody.y).setRotation(this.upperBody.rotation);
+    const side = !this.strikeSign && (this.facing === 'left' || this.facing === 'right');
+    this.elementHead.setPosition(x - (side ? direction * 1.5 * scaleX : 0), y + (3 - PATE_SIZE.h) * scaleY)
+      .setScale(scaleX, scaleY).setFlipX(flipX);
     if (this.element === 'fire') {
-      const wave = this.elementPhase * 8;
-      motion.setPosition(15 * direction * scaleX, y - 32 * scaleY)
-        .setOrigin(0.5, 0.9).setRotation(Math.sin(wave) * 0.16)
-        .setScale(1, 1 + Math.cos(wave * 2) * 0.09);
-    } else if (this.element === 'water') {
-      const drip = (this.elementPhase % 1.8 - 1.15) / 0.65;
-      motion.setVisible(drip >= 0);
-      if (drip >= 0) {
-        motion.setPosition(14 * direction * scaleX, y - 16 * scaleY + 19 * drip * drip)
-          .setAlpha(1 - drip * 0.75);
-      }
-    } else if (this.windBehind) {
-      const wave = this.elementPhase * 4.4;
-      const orbit = Math.sin(wave);
-      const across = Math.cos(wave) * (orbit >= 0 ? 1 : -1);
-      const depth = Math.abs(orbit);
-      // 奥と手前の二本が脇ですれ違うよう、胴に沿って楕円を回る。
-      motion.setPosition(across * 20 * scaleX, y + (-20 + depth * 7) * scaleY)
-        .setAlpha(0.55 + depth * 0.35).setRotation(-across * 0.25);
-      this.windBehind.setPosition(-across * 20 * scaleX, y - (20 + depth * 7) * scaleY)
-        .setAlpha(0.55).setRotation(across * 0.25);
+      this.elementHead.setRotation(Math.sin(phase * 7) * 0.11)
+        .setScale(scaleX * (1 + Math.sin(phase * 5) * 0.06), scaleY * (1 + Math.cos(phase * 8) * 0.08));
+    }
+
+    if (this.elementFront) {
+      this.elementFront.setPosition(0, -PATE_SIZE.h / 2).setFlipX(flipX);
+    }
+    if (this.windBehind && this.elementFront) {
+      const spin = phase * 4;
+      const slide = Math.sin(spin) * 1.6;
+      const tilt = Math.cos(spin) * 0.07;
+      const width = 1 + Math.cos(spin) * 0.055;
+      this.elementFront.setPosition(slide, -15).setRotation(tilt)
+        .setScale(width, 1).setAlpha(0.84 + Math.sin(spin) * 0.1);
+      this.windBehind.setPosition(x + slide * scaleX, y - 15 * scaleY).setFlipX(flipX)
+        .setRotation(tilt).setScale(width * scaleX, scaleY).setAlpha(0.65);
+    }
+
+    for (const [i, particle] of this.particles.entries()) {
+      const drift = phase * 3 + i * 2.2;
+      const edge = i === 1 ? 1 : -1;
+      const px = edge * (22 + i + Math.cos(drift) * 2);
+      const py = -34 + i * 12 + Math.sin(drift) * 3;
+      const flash = this.element === 'thunder' ? Math.pow(0.5 + 0.5 * Math.sin(phase * 5 + i * 2.5), 6) : 0;
+      particle.setPosition(x + px * direction * scaleX, y + py * scaleY)
+        .setAlpha(0.66 + Math.sin(drift) * 0.14 + flash * 0.2)
+        .setScale(0.74 + i * 0.09 + flash * 0.25)
+        .setRotation(this.element === 'wind' ? drift : edge * 0.16);
     }
   }
 
@@ -165,8 +210,8 @@ export class PateView extends Phaser.GameObjects.Container {
   setStrike(on: boolean): void {
     if (on === (this.strikeSign !== null)) return;
     if (on) {
-      makeDecorTextures(this.scene);
-      this.strikeSign = this.scene.add.image(0, -96, DECOR_TEX.strike).setOrigin(0.5, 0);
+      makeStrikeTexture(this.scene);
+      this.strikeSign = this.scene.add.image(0, -96, STRIKE_TEX).setOrigin(0.5, 0);
       this.upperBody.addAt(this.strikeSign, 0);
       this.walkWeight = this.walkPhase = this.stepBounce = this.hitPose = 0;
       this.hitElapsed = PATE.hitReachSeconds + PATE.hitReturnSeconds;
@@ -181,13 +226,14 @@ export class PateView extends Phaser.GameObjects.Container {
 
   private placeStrike(): void {
     this.upperBody.setY(5).setRotation(0);
-    this.torso.setTexture(TEX.pateBody).setFlipX(false).setScale(1.05, 0.86);
+    this.placeTorso();
+    this.torso.setScale(1.05, 0.86);
     this.legL.setPosition(-10, 0).setFlipX(false);
     this.legR.setPosition(10, 0).setFlipX(false);
     this.armL.setVisible(true).setPosition(-14, -30).setFlipX(false).setRotation(2.84);
     this.armR.setVisible(true).setPosition(14, -30).setRotation(-2.84);
-    this.upperBody.bringToTop(this.armL);
-    this.upperBody.bringToTop(this.armR);
+    this.upperBody.moveAbove(this.armL, this.torso);
+    this.upperBody.moveAbove(this.armR, this.armL);
   }
 
   /** 置物（スパイのイタズラ）。手足のないドーム型のハニワに変わり、もう動かない */
@@ -201,7 +247,7 @@ export class PateView extends Phaser.GameObjects.Container {
 
   setStatue(on: boolean): void {
     if (on === this.isStatue) return;
-    for (const o of [this.legL, this.legR, this.upperBody]) o.setVisible(!on);
+    for (const o of [this.elementRear, this.legL, this.legR, this.upperBody]) o.setVisible(!on);
     if (on) {
       this.statue = this.scene.add.image(0, 0, STATUE_TEX).setOrigin(0.5, 1);
       this.add(this.statue);
@@ -244,11 +290,12 @@ export class PateView extends Phaser.GameObjects.Container {
     const direction = mirror ? -1 : 1;
     const L = PATE_LAYOUT;
 
-    this.torso.setTexture(side ? TEX.pateSide : facing === 'up' ? TEX.pateBack : TEX.pateBody).setFlipX(mirror);
+    this.placeTorso();
     this.armL.setPosition(side ? PATE.sideArmX * direction : -L.armX, side ? PATE.sideArmY : L.armY)
       .setFlipX(mirror);
     this.armR.setVisible(!side);
-    if (side) this.upperBody.bringToTop(this.armL);
+    // 横向きの手前の腕は胴の上に重ねて見せる。
+    if (side) this.upperBody.moveAbove(this.armL, this.torso);
     else {
       this.upperBody.moveTo(this.armL, 0);
       this.upperBody.moveTo(this.armR, 1);

@@ -47,7 +47,12 @@ function outlineClay(ctx: CanvasRenderingContext2D, shape: Path2D): void {
   ctx.stroke(shape);
 }
 
-function drawPateBody(scene: Phaser.Scene, view: 'down' | 'up' | 'left', key: string): void {
+export function drawPateBody(
+  scene: Phaser.Scene,
+  view: 'down' | 'up' | 'left',
+  key: string,
+  paint?: (ctx: CanvasRenderingContext2D) => void,
+): void {
   drawPart(scene, key, PATE_SIZE.w, PATE_SIZE.h, (ctx) => {
     // 頭から胴までひと続きで、下腹に重みのある形。
     const body = new Path2D(view === 'left'
@@ -59,46 +64,49 @@ function drawPateBody(scene: Phaser.Scene, view: 'down' | 'up' | 'left', key: st
       'C 3.6 38 9.6 42.5 20 42.7 C 30.4 42.5 36.4 38 36.8 29.4 ' +
       'C 37.1 25.1 36.2 21.4 35.3 17.4 C 33.6 8 29 0.8 20 1 Z',
     );
-    fillClay(ctx, body);
     ctx.save();
     ctx.clip(body);
-    // 右側から下腹へ回り込む影。
-    ctx.fillStyle = clayColor(COLORS.terracottaDark);
-    ctx.globalAlpha = 0.42;
-    ctx.fill(new Path2D(
-      'M 26 1 C 36 8 37 24 33 31 C 29.6 39 14 42 4 33 ' +
-      'L 2 44 L 39 44 L 39 1 Z',
-    ));
+    if (paint) paint(ctx);
+    else {
+      fillClay(ctx, body);
+      // 右側から下腹へ回り込む影。
+      ctx.fillStyle = clayColor(COLORS.terracottaDark);
+      ctx.globalAlpha = 0.42;
+      ctx.fill(new Path2D(
+        'M 26 1 C 36 8 37 24 33 31 C 29.6 39 14 42 4 33 ' +
+        'L 2 44 L 39 44 L 39 1 Z',
+      ));
 
-    // 素焼きの細かな粒。同じ模様を毎回描く。
-    const rand = seeded(19);
-    ctx.fillStyle = clayColor(COLORS.pateCrack);
-    ctx.globalAlpha = 0.14;
-    for (let i = 0; i < 110; i++) {
-      const x = rand() * PATE_SIZE.w;
-      const y = rand() * PATE_SIZE.h;
-      ctx.fillRect(x, y, 0.5, 0.42);
+      // 素焼きの細かな粒。同じ模様を毎回描く。
+      const rand = seeded(19);
+      ctx.fillStyle = clayColor(COLORS.pateCrack);
+      ctx.globalAlpha = 0.14;
+      for (let i = 0; i < 110; i++) {
+        const x = rand() * PATE_SIZE.w;
+        const y = rand() * PATE_SIZE.h;
+        ctx.fillRect(x, y, 0.5, 0.42);
+      }
+      ctx.globalAlpha = 0.92;
+      ctx.strokeStyle = clayColor(COLORS.pateCrack);
+      ctx.lineWidth = 0.55;
+      ctx.stroke(new Path2D(view === 'up'
+        ? 'M 23.8 1.6 L 24.6 4 23.6 6.3 24.2 8.4 M 24.6 4 L 27 4.6 28.4 6 ' +
+          'M 8.8 29.4 L 10 31.1 9.8 33.7 11.7 35.6 11.9 38.1 13 40.3 ' +
+          'M 9.8 33.7 L 7.8 33.5 6.7 32.5 M 29.7 30.4 L 30.2 31.1 M 30.6 32.3 L 30.5 33'
+        : view === 'left'
+        ? 'M 15 1.6 L 14.1 4.1 14.6 6.3 13.9 8.5 M 14.1 4.1 L 12.3 4.5 11.4 5.8 ' +
+          'M 32.9 29.1 L 31.5 30.6 31.1 33.1 29.3 34.5 29.8 36.9 28.1 40.8 ' +
+          'M 29.3 34.5 L 27.9 33.4 27.3 32 M 28.5 9.3 L 29.1 10 M 29.9 11.5 L 30.2 12'
+        :
+        'M 15 1.8 L 14 3.7 14.3 5.8 15.6 7 15.9 8.7 ' +
+        'M 14 3.7 L 12.4 3.1 M 14.3 5.8 L 13.3 7.1 13.1 8.4 ' +
+        'M 33.1 29.5 L 31.8 31.2 31.4 33.4 29.8 34.7 30 36.6 28.9 37.8 28 40.4 ' +
+        'M 29.8 34.7 L 28.9 33.3 27.7 32.8 ' +
+        'M 9 34.9 L 8.2 33.4 7.6 33.1 7 33.7 M 8.2 33.4 L 8 35.1 ' +
+        'M 26.4 5.6 L 26.9 5.9 M 27.2 7 L 27.6 7.3 M 28.6 8.4 L 28.9 8.8 ' +
+        'M 8.2 27.8 L 8.6 28.5 M 9.4 31 L 9.8 31.4 M 32.6 21.8 L 32.3 22.5',
+      ));
     }
-    ctx.globalAlpha = 0.92;
-    ctx.strokeStyle = clayColor(COLORS.pateCrack);
-    ctx.lineWidth = 0.55;
-    ctx.stroke(new Path2D(view === 'up'
-      ? 'M 23.8 1.6 L 24.6 4 23.6 6.3 24.2 8.4 M 24.6 4 L 27 4.6 28.4 6 ' +
-        'M 8.8 29.4 L 10 31.1 9.8 33.7 11.7 35.6 11.9 38.1 13 40.3 ' +
-        'M 9.8 33.7 L 7.8 33.5 6.7 32.5 M 29.7 30.4 L 30.2 31.1 M 30.6 32.3 L 30.5 33'
-      : view === 'left'
-      ? 'M 15 1.6 L 14.1 4.1 14.6 6.3 13.9 8.5 M 14.1 4.1 L 12.3 4.5 11.4 5.8 ' +
-        'M 32.9 29.1 L 31.5 30.6 31.1 33.1 29.3 34.5 29.8 36.9 28.1 40.8 ' +
-        'M 29.3 34.5 L 27.9 33.4 27.3 32 M 28.5 9.3 L 29.1 10 M 29.9 11.5 L 30.2 12'
-      :
-      'M 15 1.8 L 14 3.7 14.3 5.8 15.6 7 15.9 8.7 ' +
-      'M 14 3.7 L 12.4 3.1 M 14.3 5.8 L 13.3 7.1 13.1 8.4 ' +
-      'M 33.1 29.5 L 31.8 31.2 31.4 33.4 29.8 34.7 30 36.6 28.9 37.8 28 40.4 ' +
-      'M 29.8 34.7 L 28.9 33.3 27.7 32.8 ' +
-      'M 9 34.9 L 8.2 33.4 7.6 33.1 7 33.7 M 8.2 33.4 L 8 35.1 ' +
-      'M 26.4 5.6 L 26.9 5.9 M 27.2 7 L 27.6 7.3 M 28.6 8.4 L 28.9 8.8 ' +
-      'M 8.2 27.8 L 8.6 28.5 M 9.4 31 L 9.8 31.4 M 32.6 21.8 L 32.3 22.5',
-    ));
     ctx.restore();
     outlineClay(ctx, body);
 
@@ -133,21 +141,32 @@ function makePateTextures(scene: Phaser.Scene): void {
   drawPateBody(scene, 'up', TEX.pateBack);
   drawPateBody(scene, 'left', TEX.pateSide);
 
-  drawPart(scene, TEX.pateArm, 10, 17, (ctx) => {
+  drawPateLimbs(scene, TEX.pateArm, TEX.pateLeg);
+}
+
+export function drawPateLimbs(
+  scene: Phaser.Scene,
+  armKey: string,
+  legKey: string,
+  color: number = COLORS.terracotta,
+): void {
+  drawPart(scene, armKey, 10, 17, (ctx) => {
     const arm = new Path2D('M 2 2 Q 4.7 0.1 7 2.6 C 9.6 6.1 8.5 14.8 5.2 15.7 C 2.4 16.3 0.6 7.2 2 2 Z');
-    fillClay(ctx, arm);
-    ctx.fillStyle = clayColor(COLORS.terracottaDark);
-    ctx.globalAlpha = 0.48;
+    ctx.fillStyle = clayColor(color);
+    ctx.fill(arm);
+    ctx.fillStyle = clayColor(color === COLORS.terracotta ? COLORS.terracottaDark : COLORS.pateOutline);
+    ctx.globalAlpha = color === COLORS.terracotta ? 0.48 : 0.18;
     ctx.fill(new Path2D('M 2 2 C 0.6 7.2 2.4 16.3 5.2 15.7 Q 7 15.2 7.7 12.8 C 5.1 16.4 3.2 8 2 2 Z'));
     ctx.globalAlpha = 1;
     outlineClay(ctx, arm);
   });
 
-  drawPart(scene, TEX.pateLeg, 12, 13, (ctx) => {
+  drawPart(scene, legKey, 12, 13, (ctx) => {
     const leg = new Path2D('M 1.2 2 Q 6 -0.3 10.8 2 C 10.7 5.1 10.4 9.7 8.9 11.3 Q 6 13 3.1 11.3 C 1.6 9.7 1.3 5.1 1.2 2 Z');
-    fillClay(ctx, leg);
-    ctx.fillStyle = clayColor(COLORS.terracottaDark);
-    ctx.globalAlpha = 0.48;
+    ctx.fillStyle = clayColor(color);
+    ctx.fill(leg);
+    ctx.fillStyle = clayColor(color === COLORS.terracotta ? COLORS.terracottaDark : COLORS.pateOutline);
+    ctx.globalAlpha = color === COLORS.terracotta ? 0.48 : 0.18;
     ctx.fill(new Path2D('M 1.2 2 Q 6 -0.3 10.8 2 L 10.4 6.9 Q 6 9 1.6 6.9 Z'));
     ctx.globalAlpha = 1;
     outlineClay(ctx, leg);
