@@ -1,5 +1,5 @@
 // パテと同じ丸い線と素焼きの色で描く、採取場の素材。
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import { COLORS } from '../game/config';
 import type { ResourceKind } from '../game/harvest';
 import { drawPart, seeded } from './textures';
@@ -39,24 +39,28 @@ function piece(
 ): void {
   const shape = new Path2D(silhouette);
   const [base, dark, light] = tones;
-  ctx.fillStyle = color(base);
+  const wash = ctx.createLinearGradient(-4, 5, RES_SIZE.w * 0.42, RES_SIZE.h);
+  wash.addColorStop(0, color(light));
+  wash.addColorStop(0.57, color(base));
+  wash.addColorStop(1, color(dark));
+  ctx.fillStyle = wash;
   ctx.fill(shape);
   ctx.save();
   ctx.clip(shape);
   ctx.fillStyle = color(dark);
-  ctx.globalAlpha = 0.65;
+  ctx.globalAlpha = 0.51;
   ctx.fill(new Path2D(shade));
   ctx.fillStyle = color(light);
   ctx.fill(new Path2D(highlight));
 
   const rand = seeded(19);
-  ctx.fillStyle = color(COLORS.pateOutline);
-  ctx.globalAlpha = 0.22;
+  ctx.globalAlpha = 0.23;
   for (let i = 0; i < 200; i++) {
-    ctx.fillRect(speckleLeft + rand() * RES_SIZE.w, rand() * RES_SIZE.h, 0.85, 0.65);
+    ctx.fillStyle = i % 2 ? color(COLORS.partIvory) : color(COLORS.pateOutline);
+    ctx.fillRect(speckleLeft + rand() * RES_SIZE.w, rand() * RES_SIZE.h, 0.55 + rand() * 0.95, 0.55);
   }
   ctx.restore();
-  ctx.strokeStyle = color(COLORS.pateOutline);
+  ctx.strokeStyle = '#45392de8';
   ctx.lineWidth = 1.5;
   ctx.stroke(shape);
 }

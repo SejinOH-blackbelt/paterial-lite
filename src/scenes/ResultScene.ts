@@ -3,11 +3,15 @@ import Phaser from 'phaser';
 import { COLORS, LANDMARKS, PART_NAMES, SCREEN } from '../game/config';
 import type { MatchState, OutcomeReason, Pawn } from '../game/match';
 import { PateView } from './PateView';
+import type { GameAudio } from './audio';
+import type { Bgm } from './bgm';
 import { FONT, INK, cssColor, label, mmss, panel, textButton } from './ui';
 
 export interface ResultData {
   match: MatchState;
   player: Pawn;
+  /** 勝ち負けのジングルを鳴らすため */
+  audio?: GameAudio;
 }
 
 const REASON: Record<OutcomeReason, string> = {
@@ -23,6 +27,7 @@ const partName = (p: Pawn) => PART_NAMES[p.part as keyof typeof PART_NAMES] ?? p
 
 export class ResultScene extends Phaser.Scene {
   private spyView!: PateView;
+  private bgm: Bgm | null = null;
 
   constructor() {
     super('Result');
@@ -33,6 +38,10 @@ export class ResultScene extends Phaser.Scene {
     const o = match.outcome!;
     const spy = match.pawns.find((p) => p.isSpy)!;
     const playerWon = (o.winner === 'spy') === player.isSpy;
+    // 勝ち負けのジングルを1回だけ
+    this.bgm = data.audio?.createBgm() ?? null;
+    this.bgm?.jingle(playerWon ? 'win' : 'lose');
+    this.events.once('shutdown', () => this.bgm?.stop());
     const x = SCREEN.width / 2;
     this.cameras.main.setBackgroundColor(o.winner === 'spy' ? COLORS.uiStone : COLORS.background);
 
@@ -91,5 +100,6 @@ export class ResultScene extends Phaser.Scene {
 
   update(_time: number, deltaMs: number): void {
     this.spyView?.update(deltaMs / 1000, false);
+    this.bgm?.update();
   }
 }

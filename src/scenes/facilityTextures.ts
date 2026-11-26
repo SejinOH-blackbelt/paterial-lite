@@ -26,13 +26,27 @@ function paint(ctx: CanvasRenderingContext2D, path: string, fill: number, edge =
   const shape = new Path2D(path);
   ctx.fillStyle = color(fill);
   ctx.fill(shape);
-  if (edge) mark(ctx, shape, COLORS.ink, edge);
+  ctx.save();
+  const wash = ctx.createLinearGradient(8, 6, 58, 76);
+  wash.addColorStop(0, '#fff1cd82');
+  wash.addColorStop(0.42, '#ffe8c031');
+  wash.addColorStop(0.64, '#a2785b0c');
+  wash.addColorStop(1, '#5f40384a');
+  ctx.fillStyle = wash;
+  ctx.fill(shape);
+  ctx.restore();
+  if (edge) {
+    mark(ctx, shape, 0x544132, edge);
+    mark(ctx, shape, 0x312822, edge * 0.48);
+  }
 }
 
 function drawShadow(ctx: CanvasRenderingContext2D): void {
   ctx.save();
-  ctx.globalAlpha = 0.23;
+  ctx.globalAlpha = 0.10;
   paint(ctx, 'M3 74 Q3 68 38 68 Q73 68 73 74 Q73 80 38 80 Q3 80 3 74 Z', COLORS.ink);
+  ctx.globalAlpha = 0.16;
+  paint(ctx, 'M8 74 Q8 70 38 70 Q68 70 68 74 Q68 78 38 78 Q8 78 8 74 Z', COLORS.ink);
   ctx.restore();
 }
 
@@ -47,6 +61,7 @@ function drawKiln(ctx: CanvasRenderingContext2D): void {
   mark(ctx, 'M13 53 Q18 39 30 39 M38 40 L43 43 M11 66 L16 68 M47 49 L49 53', COLORS.clayLight, 2);
   paint(ctx, 'M17 69 L19 56 Q22 47 32 47 Q42 47 45 57 L48 70 Q32 74 17 69 Z', COLORS.clayLight, 2);
   paint(ctx, 'M22 68 L24 57 Q26 51 32 51 Q39 51 41 58 L43 68 Q32 71 22 68 Z', COLORS.ink);
+  mark(ctx, 'M17 49 Q21 46 23 46 M35 40 L36 42 M47 55 L49 59 M11 62 L14 63', COLORS.terracottaDark, 0.8);
   paint(ctx, 'M25 67 Q22 62 28 58 L29 62 Q33 57 32 54 Q39 58 37 62 L40 60 Q43 65 39 68 Z', COLORS.landmarkVermilionLight);
   paint(ctx, 'M29 68 Q27 65 32 63 L34 60 Q35 64 38 66 L37 68 Z', COLORS.uiHoney);
 }
@@ -87,6 +102,7 @@ function drawWorkshop(ctx: CanvasRenderingContext2D): void {
   paint(ctx, 'M11 59 H18 L16 75 H10 Z M44 58 H51 L53 75 H46 Z', COLORS.landmarkWoodShade, 2.2);
   paint(ctx, 'M8 55 L17 49 L47 49 L55 54 L54 61 L8 63 Z', COLORS.landmarkWood, 2.4);
   paint(ctx, 'M8 55 L17 49 L47 49 L55 54 L8 57 Z', COLORS.clayLight, 1.8);
+  mark(ctx, 'M18 24 L22 20 M28 22 L31 19 M44 24 L45 19 M51 56 L46 57 M12 59 L23 59', COLORS.partIvoryShade, 0.8);
   // のこぎりの歯と、かんなの鉄刃。
   paint(ctx, 'M19 46 L39 43 L38 48 L35 47 L34 49 L31 48 L30 50 L27 49 L26 51 L21 51 Z', COLORS.stoneLight, 1.5);
   paint(ctx, 'M13 46 L19 45 L22 50 L16 52 L12 50 Z', COLORS.landmarkWoodShade, 1.8);

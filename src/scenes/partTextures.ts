@@ -1,4 +1,4 @@
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import { COLORS, HEAD_PARTS } from '../game/config';
 import { drawPart } from './textures';
 
@@ -29,9 +29,21 @@ export function makePartTextures(scene: Phaser.Scene): void {
         ctx.stroke(new Path2D(path));
       };
       const fill = (path: string, tint: number, outline = false) => {
+        const shape = new Path2D(path);
         ctx.fillStyle = color(tint);
-        ctx.fill(new Path2D(path));
-        if (outline) line(path, C.pateOutline, 1.55);
+        ctx.fill(shape);
+        const wash = ctx.createLinearGradient(4, 2, 26, 26);
+        wash.addColorStop(0, '#fff6db80');
+        wash.addColorStop(0.6, '#fff6db0c');
+        wash.addColorStop(1, '#78513b3d');
+        ctx.fillStyle = wash;
+        ctx.fill(shape);
+        if (outline) {
+          ctx.save();
+          ctx.globalAlpha = 0.94;
+          line(path, C.pateOutline, 1.5);
+          ctx.restore();
+        }
       };
 
       // 粘土のくぼみに茎や軸が入り、手前に土の縁と小さなひびが残る。
@@ -48,7 +60,7 @@ export function makePartTextures(scene: Phaser.Scene): void {
     const petals = 'M 10 7 C 7 1 17 0 18 6 C 23 2 28 8 23 12 C 29 15 24 21 19 18 C 18 24 10 22 10 17 C 3 20 1 12 7 10 Q 6 7 10 7 Z';
     fill(petals, C.partPetal, true);
     fill('M 5 13 Q 8 17 12 14 Q 14 21 19 16 Q 23 18 25 14 Q 26 20 19 18 Q 16 24 11 19 L 10 17 Q 4 19 5 13 Z', C.partPetalShade);
-    line(petals, C.pateOutline, 1.55);
+    line(petals, C.pateOutline, 0.85);
     fill('M 11 11 C 11 6 19 7 20 11 C 21 16 12 17 11 11 Z', C.meterNeedle, true);
     line('M 14 10 L 16 9.5 M 9 5.5 L 10.5 4.7', C.harvestHighlight, 1.2);
   });
@@ -58,7 +70,7 @@ export function makePartTextures(scene: Phaser.Scene): void {
     fill('M 2 21 Q 9 15 14 6 Q 16 4 18 7 Q 24 16 30 21 Q 25 25 16 25 Q 6 25 2 21 Z', C.partStraw, true);
     fill('M 3 21 Q 15 22 22 18 L 29 21 Q 24 24.5 16 24.5 Q 8 24 3 21 Z', C.partStrawShade);
     line('M 15 8 Q 12 16 8 20 M 17 10 Q 17 17 15 21 M 19 13 Q 22 17 24 19', C.partStrawShade);
-    line('M 5 21 Q 13 23 24 21', C.meterGood);
+    line('M 5 21 Q 13 23 24 21 M 10 18 L 13 17 M 19 16 L 22 16', C.meterGood);
   });
 
   draw('horn', (fill, line) => {

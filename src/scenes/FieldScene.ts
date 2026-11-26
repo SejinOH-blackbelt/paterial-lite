@@ -67,6 +67,7 @@ import { nearestPass, needleAngle, nextPass, passTime, type HarvestSession, type
 import { GameAudio } from './audio';
 import { Stick } from './Stick';
 import { HudButton } from './HudButton';
+import type { Bgm } from './bgm';
 import type { MeetingData } from './MeetingScene';
 import type { ResultData } from './ResultScene';
 import type { RoleData } from './RoleScene';
@@ -176,6 +177,8 @@ export class FieldScene extends Phaser.Scene {
   /** いまスティックで動かしているか（歩く絵にするため） */
   private driving = false;
   private audio!: GameAudio;
+  /** BGM（採取と同じ音の時計・同じ0拍目で鳴らす） */
+  private bgm!: Bgm;
   /** 0拍目の時刻（音の時計） */
   private origin = 0;
   /** 素材ポイントの残りの量（全員で共有） */
@@ -227,6 +230,9 @@ export class FieldScene extends Phaser.Scene {
     this.audio = new GameAudio(sm.context ?? new AudioContext());
     this.audio.resume();
     this.origin = this.audio.now + 0.5;
+    this.bgm = this.audio.createBgm();
+    this.bgm.play('field', this.origin);
+    this.events.once('shutdown', () => this.bgm.stop());
 
     for (const r of RESOURCE_POINTS) {
       const img = this.add.image(r.x, r.y, RES_TEX[r.kind]).setOrigin(0.5, 1).setDepth(r.y);
@@ -558,6 +564,7 @@ export class FieldScene extends Phaser.Scene {
     // スマホがもたついて1コマが長くなっても、ワープしないように上限をつける
     const dt = Math.min(deltaMs, 100) / 1000;
     const heard = this.audio.heardTime();
+    this.bgm.update();
     if (this.match.phase !== 'play') return;
     updateFieldState(this.field, heard);
     this.drive(dt);
@@ -898,6 +905,7 @@ export class FieldScene extends Phaser.Scene {
     this.pendingTicks = [];
     this.pad.reset(); // 会議の画面に切りかわると、指を離したことが届かないことがある
     this.pad.setVisible(false); // 会議の画面の下に透けて見えないように
+    this.bgm.stop(); // 会議は会議の曲にする
     for (const b of [this.harvestButton, this.actionButton, this.callButton, this.scanButton, this.prankButton]) b?.setVisible(false);
     const data: MeetingData = {
       match: this.match,
@@ -920,6 +928,7 @@ export class FieldScene extends Phaser.Scene {
         this.scanButton?.setVisible(!this.player.frozen);
         this.prankButton?.setVisible(!this.player.frozen);
         this.scene.resume();
+        this.bgm.play('field', this.origin); // 採取の拍と同じ0拍目から数えるので、拍がそろう
         for (const e of this.pates) this.syncPate(e, 0);
         this.updateMaterials(false); // ぬれぎぬの賠償で素材の数が変わっていることがある
       },
@@ -963,6 +972,7 @@ export class FieldScene extends Phaser.Scene {
     this.hud(label(this, SCREEN.width / 2, 150, 'ストライキ！', 34, '#e03131').setDepth(9600));
     this.hud(label(this, SCREEN.width / 2, 190, '王様の支持度が 0 に…', 16).setDepth(9600));
     this.audio.zukoo();
+    this.bgm.stop();
     this.time.delayedCall(SUPPORT.strikeShowSeconds * 1000, () => this.endMatch());
   }
 
@@ -970,7 +980,8 @@ export class FieldScene extends Phaser.Scene {
   private endMatch(): void {
     for (const t of this.pendingTicks) t.cancel();
     this.pendingTicks = [];
-    this.scene.start('Result', { match: this.match, player: this.playerPawn } satisfies ResultData);
+    this.bgm.stop();
+    this.scene.start('Result', { match: this.match, player: this.playerPawn, audio: this.audio } satisfies ResultData);
   }
 
   /** 置物にされたプレイヤーは「土の精」になって、ふわふわ動き回れる（ほかのパテからは見えない） */

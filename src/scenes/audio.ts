@@ -7,16 +7,26 @@
 //   輪の表示とタップの判定を行います。こうすると端末の遅れが自動で差し引かれます。
 
 import { RHYTHM } from '../game/config';
+import { Bgm } from './bgm';
 
 export class GameAudio {
   readonly ctx: AudioContext;
   private readonly master: GainNode;
+  private readonly bgmGain: GainNode;
 
   constructor(ctx: AudioContext) {
     this.ctx = ctx;
     this.master = ctx.createGain();
     this.master.gain.value = 0.8;
     this.master.connect(ctx.destination);
+    this.bgmGain = ctx.createGain();
+    this.bgmGain.gain.value = 0.7;
+    this.bgmGain.connect(this.master);
+  }
+
+  /** 効果音と同じ音の時計を使うBGMを作る。 */
+  createBgm(): Bgm {
+    return new Bgm(this.ctx, this.bgmGain);
   }
 
   /** 音の時計の「いま」（これから鳴らす音の予約に使う） */

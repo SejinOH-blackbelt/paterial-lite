@@ -5,6 +5,7 @@ import { COLORS, MISSIONS, PART_NAMES, SCREEN, SUPPORT, SUSPICION } from '../gam
 import { botVote, castVote, everyoneVoted, hearStamp, meetingTimeLeft, missionsDone, resolveMeeting, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
 import type { Rng } from '../game/random';
 import type { GameAudio } from './audio';
+import type { Bgm } from './bgm';
 import { PateView } from './PateView';
 import { LANDMARK_TEX } from './spyTextures';
 import { INK, cssColor, label, panel, textButton } from './ui';
@@ -43,6 +44,7 @@ export class MeetingScene extends Phaser.Scene {
   /** スタンプのボタン（結果発表のときは隠す） */
   private stampButtons: Phaser.GameObjects.Container[] = [];
   private cancelRoll: (() => void) | null = null;
+  private bgm: Bgm | null = null;
   /** 正体を発表する時刻（音の時計。ドラムロールが鳴り終わる時刻）と、その発表 */
   private reveal: { at: number; show: () => void } | null = null;
   /** 見出しの下の「○○が呼び出し！」（結果発表のときは、ここに開票の様子を出す） */
@@ -80,7 +82,10 @@ export class MeetingScene extends Phaser.Scene {
     this.add.image(CENTER.x, 354, LANDMARK_TEX.torii).setOrigin(0.5, 1).setScale(1.3);
     // スポットライトは、パテより先に（後ろに）描く
     this.spot = this.add.graphics();
-    this.events.once('shutdown', () => this.cancelRoll?.());
+    this.events.once('shutdown', () => {
+      this.cancelRoll?.();
+      this.bgm?.stop();
+    });
     const why =
       meeting.reason === 'emergency'
         ? `${meeting.caller === player ? 'きみ' : nameOf(meeting.caller)}が 緊急の呼び出し！`
@@ -147,6 +152,9 @@ export class MeetingScene extends Phaser.Scene {
       this.botPlans.push({ at: start + 6 + this.ctx.rng() * 16, pawn: p, kind: 'vote' });
     }
     this.ctx.audio.bell();
+    // 会議の曲（鐘のあとから）
+    this.bgm = this.ctx.audio.createBgm();
+    this.bgm.play('meeting', this.ctx.audio.now + 0.6);
     // 会議の前に、プレイヤーがイタズラを目撃していたら、会議の画面で思い出せるように出す
     const w = this.ctx.witnessed;
     if (w) {
@@ -291,6 +299,7 @@ export class MeetingScene extends Phaser.Scene {
 
   update(_time: number, deltaMs: number): void {
     for (const seat of this.seats.values()) seat.view.update(deltaMs / 1000, false);
+    this.bgm?.update();
     // 正体の発表は、ドラムロールの音が鳴り終わる時刻（音の時計）に合わせる。
     // 画面の更新が止まっていて遅れたときは、戻ったらすぐ発表する
     if (this.reveal && this.now() >= this.reveal.at) {
@@ -330,6 +339,7 @@ export class MeetingScene extends Phaser.Scene {
    */
   private finish(): void {
     this.finished = true;
+    this.bgm?.stop(); // 結果発表は、曲を止めて開票の音とドラムロールを聞かせる
     const { match } = this.ctx;
     // まだ投票していない Bot は、ここで投票する（プレイヤーはスキップ扱い）
     for (const p of match.pawns) if (!p.h.frozen && !match.meeting!.votes.has(p)) castVote(match, p, p.isPlayer ? null : botVote(match, p, this.ctx.rng));

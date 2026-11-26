@@ -24,7 +24,19 @@ function paint(ctx: CanvasRenderingContext2D, path: string, fill: number, edge =
   const shape = new Path2D(path);
   ctx.fillStyle = color(fill);
   ctx.fill(shape);
-  if (edge) mark(ctx, shape, COLORS.ink, edge);
+  ctx.save();
+  const wash = ctx.createLinearGradient(8, 6, 58, 72);
+  wash.addColorStop(0, '#fff1cd82');
+  wash.addColorStop(0.42, '#ffe8c031');
+  wash.addColorStop(0.64, '#a2785b0c');
+  wash.addColorStop(1, '#5f40384a');
+  ctx.fillStyle = wash;
+  ctx.fill(shape);
+  ctx.restore();
+  if (edge) {
+    mark(ctx, shape, 0x544132, edge);
+    mark(ctx, shape, 0x312822, edge * 0.48);
+  }
 }
 
 function mark(ctx: CanvasRenderingContext2D, path: string | Path2D, ink: number, width: number): void {
@@ -38,7 +50,7 @@ function oval(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, r
   shape.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
   ctx.fillStyle = color(fill);
   ctx.fill(shape);
-  if (edge) mark(ctx, shape, COLORS.ink, edge);
+  if (edge) mark(ctx, shape, 0x544132, edge);
 }
 
 function drawTower(ctx: CanvasRenderingContext2D): void {
@@ -75,6 +87,7 @@ function drawTorii(ctx: CanvasRenderingContext2D): void {
   paint(ctx, 'M5 12 Q32 21 59 12 L56 22 Q32 29 8 22 Z', COLORS.landmarkVermilion, 2.5);
   paint(ctx, 'M3 8 Q32 20 61 8 L59 15 Q32 25 5 15 Z', COLORS.landmarkIron, 2.5);
   mark(ctx, 'M9 13 Q24 18 38 17 M10 33 L23 34', COLORS.landmarkVermilionLight, 1.3);
+  mark(ctx, 'M12 58 L13 51 M49 40 L50 47 M40 20 Q47 19 53 17', COLORS.landmarkVermilionLight, 0.85);
   mark(ctx, 'M32 25 L32 30', COLORS.landmarkBrass, 2);
 }
 
@@ -90,6 +103,7 @@ function drawKama(ctx: CanvasRenderingContext2D): void {
   for (const [x, y] of [[24, 42], [29, 46], [35, 41], [39, 46], [45, 42]]) {
     oval(ctx, x, y, 0.9, 0.8, COLORS.ink);
   }
+  mark(ctx, 'M19 47 Q22 49 26 49 M36 52 Q43 51 46 48', COLORS.stone, 0.65);
   oval(ctx, 32, 29, 18, 5, COLORS.stone, 2.4);
   mark(ctx, 'M20 28 Q26 26 31 26', COLORS.stoneLight, 1.5);
   paint(ctx, 'M28 27 L29 24 Q25 21 29 19 Q33 17 36 20 Q39 22 35 24 L36 27 Z', COLORS.landmarkBrass, 2);

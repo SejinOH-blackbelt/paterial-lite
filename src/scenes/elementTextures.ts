@@ -37,9 +37,21 @@ function partPainter(scene: Phaser.Scene) {
         ctx.stroke(new Path2D(path));
       };
       paint((path, tint, edge = 0) => {
+        const shape = new Path2D(path);
         ctx.fillStyle = color(tint);
-        ctx.fill(new Path2D(path));
-        if (edge) line(path, C.pateOutline, edge);
+        ctx.fill(shape);
+        const wash = ctx.createLinearGradient(0, 0, w * 0.66, h);
+        wash.addColorStop(0, '#fff6dc77');
+        wash.addColorStop(0.65, '#fff6dc0c');
+        wash.addColorStop(1, '#654c354f');
+        ctx.fillStyle = wash;
+        ctx.fill(shape);
+        if (edge) {
+          ctx.save();
+          ctx.globalAlpha = 0.94;
+          line(path, C.pateOutline, edge);
+          ctx.restore();
+        }
       }, line);
     });
   };
@@ -66,7 +78,7 @@ function paintBody(ctx: CanvasRenderingContext2D, element: Element): void {
   const [light, middle, dark] = palettes[element];
   const gradient = ctx.createLinearGradient(9, 3, 30, 42);
   gradient.addColorStop(0, color(light));
-  gradient.addColorStop(0.48, color(middle));
+  gradient.addColorStop(0.57, color(middle));
   if (element !== 'fire') gradient.addColorStop(1, color(dark));
   if (element === 'fire') {
     const crust = ctx.createLinearGradient(0, 21, 0, 42);
@@ -95,9 +107,12 @@ function paintBody(ctx: CanvasRenderingContext2D, element: Element): void {
     thunder: ['#ffde65', 1.4, 'M3 16 L8 21 L6 25 L12 29 L10 34 L15 39 M34 17 L29 25 L33 26 L25 33 L27 36 L20 43 M32 6 L28 9 L30 12'],
   } as const;
   const [ink, width, path] = marks[element];
+  ctx.save();
+  ctx.globalAlpha = 0.82;
   ctx.strokeStyle = ink;
   ctx.lineWidth = width;
   ctx.stroke(new Path2D(path));
+  ctx.restore();
 }
 
 export function makeElementTextures(scene: Phaser.Scene): void {
