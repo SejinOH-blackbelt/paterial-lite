@@ -2,13 +2,14 @@
 // 6体が輪になって並び、スタンプで話し合って投票します。ルールは src/game/match.ts。
 import Phaser from 'phaser';
 import { COLORS, MISSIONS, PART_NAMES, SCREEN, SUPPORT, SUSPICION } from '../game/config';
-import { botVote, castVote, everyoneVoted, hearStamp, meetingTimeLeft, missionsDone, resolveMeeting, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
+import { addNote, botVote, castVote, everyoneVoted, hearStamp, meetingTimeLeft, missionsDone, resolveMeeting, sightingOf, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
 import type { Rng } from '../game/random';
 import type { GameAudio } from './audio';
 import type { Bgm } from './bgm';
 import { PateView } from './PateView';
-import { LANDMARK_TEX } from './spyTextures';
-import { INK, cssColor, label, panel, textButton } from './ui';
+import { FONT, INK, cssColor, label, panel, textButton } from './ui';
+import { MeetingMap } from './MeetingMap';
+import type { Point } from '../game/movement';
 
 export interface MeetingData {
   match: MatchState;
@@ -24,6 +25,11 @@ export interface MeetingData {
 const STAMPS = ['あやしい！', 'ちがうよ', 'みてた！'] as const;
 const CENTER = { x: SCREEN.width / 2, y: 300 } as const;
 const RING = 118;
+/** 真ん中の小さな地図の幅 */
+const MINI_W = 56;
+/** 指さしの色：あやしい！は朱、みてた！は藍 */
+const STAMP_SUS = 0xe8590c;
+const STAMP_SAW = 0x1c7ed6;
 
 const nameOf = (p: Pawn) => `${PART_NAMES[p.part as keyof typeof PART_NAMES] ?? p.part}のパテ`;
 
@@ -45,6 +51,17 @@ export class MeetingScene extends Phaser.Scene {
   private stampButtons: Phaser.GameObjects.Container[] = [];
   private cancelRoll: (() => void) | null = null;
   private bgm: Bgm | null = null;
+  /** 真ん中の小さな地図と、開いているときの大きな地図 */
+  private miniMap!: MeetingMap;
+  private bigMap: MeetingMap | null = null;
+  private mapView: { close: () => void } | null = null;
+  /** 地図に置かれた印（大きな地図を開いたときにも出す） */
+  private marks: { at: Point; color: number; who: string }[] = [];
+  private statues: Point[] = [];
+  /** 発言の記録欄 */
+  private logPanel!: Phaser.GameObjects.Image;
+  private logText!: Phaser.GameObjects.Text;
+  private logLines: string[] = [];
   /** 正体を発表する時刻（音の時計。ドラムロールが鳴り終わる時刻）と、その発表 */
   private reveal: { at: number; show: () => void } | null = null;
   /** 見出しの下の「○○が呼び出し！」（結果発表のときは、ここに開票の様子を出す） */
@@ -62,6 +79,10 @@ export class MeetingScene extends Phaser.Scene {
     this.botPlans = [];
     this.stampButtons = [];
     this.cancelRoll = null;
+    this.bigMap = null;
+    this.mapView = null;
+    this.marks = [];
+    this.logLines = [];
     this.reveal = null;
   }
 
@@ -74,12 +95,18 @@ export class MeetingScene extends Phaser.Scene {
     const meeting = match.meeting!;
     this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.85).setOrigin(0);
     panel(this, CENTER.x, 65, 320, 98, COLORS.uiWood);
-    panel(this, CENTER.x, 306, 330, 380, COLORS.scanPaper);
+    panel(this, CENTER.x, 291, 330, 350, COLORS.scanPaper);
     this.add.ellipse(CENTER.x, 316, 258, 204, COLORS.uiPaperEdge)
       .setStrokeStyle(3, COLORS.uiWood);
     this.add.ellipse(CENTER.x, 316, 236, 184, COLORS.uiPaper)
       .setStrokeStyle(2, COLORS.uiWood, 0.5);
-    this.add.image(CENTER.x, 354, LANDMARK_TEX.torii).setOrigin(0.5, 1).setScale(1.3);
+    // 輪の真ん中に、採取場の小さな地図（タップで大きく。見かけた場所の印が出る）
+    const statues = [...match.known].map((h) => h.walker.pos);
+    this.miniMap = new MeetingMap(this, CENTER.x - MINI_W / 2, 258, MINI_W, false, statues);
+    this.add.zone(CENTER.x, 258 + this.miniMap.height / 2, MINI_W + 10, this.miniMap.height + 10)
+      .setInteractive()
+      .on('pointerdown', () => this.openMap(null));
+    this.statues = statues;
     // スポットライトは、パテより先に（後ろに）描く
     this.spot = this.add.graphics();
     this.events.once('shutdown', () => {
@@ -129,17 +156,23 @@ export class MeetingScene extends Phaser.Scene {
     // スタンプ（文字チャットはなし）
     const stampColors = [COLORS.uiRose, COLORS.uiPaper, COLORS.uiMoss];
     STAMPS.forEach((s, i) => {
-      const b = textButton(this, 70 + i * 110, 520, 100, 40, s, stampColors[i], () => this.playerStamp(s), 15).setAlpha(player.h.frozen ? 0.4 : 1);
+      const b = textButton(this, 70 + i * 110, 538, 100, 40, s, stampColors[i], () => this.playerStamp(s), 15).setAlpha(player.h.frozen ? 0.4 : 1);
       this.stampButtons.push(b);
     });
-    this.voteButton = textButton(this, 110, 585, 150, 46, '投票する', COLORS.uiHoney, () => this.playerVote(), 18);
-    this.skipButton = textButton(this, 260, 585, 120, 46, 'スキップ', COLORS.uiPaper, () => this.voteFor(player, null), 16);
+    this.voteButton = textButton(this, 110, 598, 150, 46, '投票する', COLORS.uiHoney, () => this.playerVote(), 18);
+    this.skipButton = textButton(this, 260, 598, 120, 46, 'スキップ', COLORS.uiPaper, () => this.voteFor(player, null), 16);
     if (player.h.frozen) {
       // 土の精は見ているだけ
       this.voteButton.setVisible(false);
       this.skipButton.setVisible(false);
-      label(this, SCREEN.width / 2, 585, '土の精は 投票できない…', 15, cssColor(COLORS.uiCream));
+      label(this, SCREEN.width / 2, 598, '土の精は 投票できない…', 15, cssColor(COLORS.uiCream));
     }
+
+    // 発言の記録欄（スタンプが流れて残る。文字チャットはなし）
+    this.logPanel = panel(this, CENTER.x, 490, 330, 42, COLORS.uiPaper);
+    this.logText = this.add
+      .text(24, 472, '', { fontFamily: FONT, fontSize: '11px', fontStyle: 'bold', color: INK, lineSpacing: 1 })
+      .setOrigin(0, 0);
 
     // Bot の予定：何回かスタンプを押し、どこかで投票する
     const start = this.now();
@@ -159,7 +192,7 @@ export class MeetingScene extends Phaser.Scene {
     const w = this.ctx.witnessed;
     if (w) {
       const nm = (p: Pawn) => (p === player ? 'きみ' : nameOf(p));
-      label(this, SCREEN.width / 2, 490, `きみは見た！ ${nm(w.spy)}が${nm(w.target)}を置物に`, 13, '#ffa8a8').setDepth(15);
+      this.log(`きみは見た！ ${nm(w.spy)}が${nm(w.target)}を置物に`);
     }
   }
 
@@ -236,34 +269,119 @@ export class MeetingScene extends Phaser.Scene {
     }
   }
 
-  /** プレイヤーのスタンプ。パテを選んでから「あやしい！」「みてた！」を押すと、その相手を指さす（Botが少し怪しむ） */
+  /**
+   * プレイヤーのスタンプ。パテを選んでから「あやしい！」「みてた！」を押すと、その相手を指さす（Botが少し怪しむ）。
+   * 指さすときは大きな地図が開き、見かけた場所をタップして伝えられる（とばしてもよい）
+   */
   private playerStamp(s: string): void {
-    const { match, player } = this.ctx;
-    if (player.h.frozen) return;
+    const { player } = this.ctx;
+    if (player.h.frozen || this.finished || this.mapView) return;
     const target = this.selected && this.selected !== player ? this.selected : null;
-    if (target && (s === 'あやしい！' || s === 'みてた！')) {
-      this.stamp(player, `${s}→${PART_NAMES[target.part as keyof typeof PART_NAMES]}`);
-      hearStamp(match, player, target, s === 'みてた！' ? 'saw' : 'sus');
-      this.pointAt(target);
-    } else {
-      this.stamp(player, s);
-    }
+    if (target && (s === 'あやしい！' || s === 'みてた！')) this.openMap({ stamp: s, target });
+    else this.say(player, s, null, null);
   }
 
-  /** だれを指さしているか、相手の足元を赤く光らせる */
-  private pointAt(target: Pawn): void {
-    const seat = this.seats.get(target)!;
-    seat.ring.setStrokeStyle(3, COLORS.landmarkVermilion, 1);
-    this.time.delayedCall(900, () => {
-      if (!this.finished) seat.ring.setStrokeStyle(target === this.selected ? 4 : 2, target === this.selected ? COLORS.ink : COLORS.uiWood);
+  /**
+   * だれかが言った：ふきだし、指さす矢印、地図の印、発言の記録欄。
+   * 指さしたときは、ほかのBotもそれを聞いて少し怪しむ（スパイBotの指さしは半分だけ効く）
+   */
+  private say(p: Pawn, s: string, target: Pawn | null, at: Point | null): void {
+    if (p.h.frozen || this.finished) return;
+    const { match } = this.ctx;
+    addNote(match, p, s, target, at, this.now());
+    const seat = this.seats.get(p)!;
+    const tname = target ? (target === this.ctx.player ? 'きみ' : PART_NAMES[target.part as keyof typeof PART_NAMES]) : '';
+    this.bubble(seat.x, seat.y - 60, target ? `${s}→${tname}${at ? '（地図）' : ''}` : s);
+    const color = s === 'みてた！' ? STAMP_SAW : STAMP_SUS;
+    if (target) {
+      if (!p.isSpy || this.ctx.rng() < 0.5) hearStamp(match, p, target, s === 'みてた！' ? 'saw' : 'sus');
+      this.pointArrow(p, target, color);
+    }
+    const who = p === this.ctx.player ? 'きみ' : PART_NAMES[p.part as keyof typeof PART_NAMES];
+    if (at) {
+      this.marks.push({ at, color, who });
+      this.miniMap.addMark(at, color, who);
+      this.bigMap?.addMark(at, color, who);
+    }
+    this.log(`${who}：${s}${target ? `→${tname}` : ''}${at ? '（地図に印）' : ''}`);
+  }
+
+  /** 発言の記録欄に1行足す（新しい3行だけ見せる） */
+  private log(line: string): void {
+    this.logLines.push(line);
+    this.logText.setText(this.logLines.slice(-3).join('\n'));
+  }
+
+  /** speaker から target へ、指さす矢印（少しのあいだ出て、消える） */
+  private pointArrow(speaker: Pawn, target: Pawn, color: number): void {
+    const a = this.seats.get(speaker)!;
+    const b = this.seats.get(target)!;
+    const ax = a.x;
+    const ay = a.y - 30;
+    const dx = b.x - ax;
+    const dy = b.y - 30 - ay;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return;
+    const ux = dx / len;
+    const uy = dy / len;
+    const sx = ax + ux * 24;
+    const sy = ay + uy * 24;
+    const ex = b.x - ux * 26;
+    const ey = b.y - 30 - uy * 26;
+    const g = this.add.graphics().setDepth(12);
+    for (const [w, c] of [[8, COLORS.ink], [4, color]] as const) {
+      g.lineStyle(w, c).lineBetween(sx, sy, ex, ey);
+    }
+    // 矢じり
+    const hx = -uy;
+    const hy = ux;
+    g.fillStyle(COLORS.ink).fillTriangle(ex + ux * 6, ey + uy * 6, ex - ux * 12 + hx * 10, ey - uy * 12 + hy * 10, ex - ux * 12 - hx * 10, ey - uy * 12 - hy * 10);
+    g.fillStyle(color).fillTriangle(ex + ux * 2, ey + uy * 2, ex - ux * 9 + hx * 6.5, ey - uy * 9 + hy * 6.5, ex - ux * 9 - hx * 6.5, ey - uy * 9 - hy * 6.5);
+    // 指さされた相手の足元も光らせる
+    const ring = b.ring;
+    ring.setStrokeStyle(4, color, 1);
+    this.tweens.add({ targets: g, alpha: 0, delay: 2200, duration: 500, onComplete: () => g.destroy() });
+    this.time.delayedCall(2700, () => {
+      if (!this.finished) ring.setStrokeStyle(target === this.selected ? 4 : 2, target === this.selected ? COLORS.ink : COLORS.uiWood);
     });
   }
 
-  /** スタンプ：パテの頭の上にふきだし */
-  private stamp(p: Pawn, s: string): void {
-    if (p.h.frozen || this.finished) return;
-    const seat = this.seats.get(p)!;
-    this.bubble(seat.x, seat.y - 60, s);
+  /**
+   * 大きな地図を開く。pending があれば「見かけた場所をタップ」して、そのスタンプを言う（とばすと場所なし）。
+   * pending が null なら見るだけ
+   */
+  private openMap(pending: { stamp: string; target: Pawn } | null): void {
+    if (this.mapView || this.finished) return;
+    const cover = this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.9).setOrigin(0).setInteractive();
+    const W = 262;
+    const map = new MeetingMap(this, CENTER.x - W / 2, 150, W, true, this.statues);
+    for (const m of this.marks) map.addMark(m.at, m.color, m.who);
+    const tname = pending ? (pending.target === this.ctx.player ? 'きみ' : PART_NAMES[pending.target.part as keyof typeof PART_NAMES]) : '';
+    const title = label(this, CENTER.x, 118, pending ? `${tname}を どこで見た？` : '見かけた場所の地図', 18, cssColor(COLORS.uiHoney));
+    const hint = label(this, CENTER.x, 140, pending ? '地図をタップ（場所なしでも言える）' : '', 11);
+    const parts: Phaser.GameObjects.GameObject[] = [cover, map.container, title, hint];
+    const close = () => {
+      for (const o of parts) o.destroy();
+      this.bigMap = null;
+      this.mapView = null;
+    };
+    const skip = textButton(this, pending ? 110 : CENTER.x, 618, 150, 38, pending ? '場所なしで言う' : 'とじる', COLORS.uiPaper, () => {
+      close();
+      if (pending) this.say(this.ctx.player, pending.stamp, pending.target, null);
+    }, 14);
+    parts.push(skip);
+    if (pending) {
+      parts.push(textButton(this, 260, 618, 110, 38, 'やめる', COLORS.uiPaper, () => close(), 14));
+      cover.on('pointerdown', (ptr: Phaser.Input.Pointer) => {
+        const at = map.worldAt(ptr.x, ptr.y);
+        if (!at) return;
+        close();
+        this.say(this.ctx.player, pending.stamp, pending.target, at);
+      });
+    }
+    for (const o of parts) (o as unknown as Phaser.GameObjects.Components.Depth).setDepth(40);
+    this.bigMap = map;
+    this.mapView = { close };
   }
 
   private bubble(x: number, y: number, text: string, color: number = COLORS.uiPaper): void {
@@ -288,12 +406,10 @@ export class MeetingScene extends Phaser.Scene {
     else if (top && top.s >= SUSPICION.voteThreshold) s = 'あやしい！';
     else s = this.ctx.rng() < 0.5 ? 'ちがうよ' : 'あやしい！';
     if ((s === 'あやしい！' || s === 'みてた！') && top && top.s >= SUSPICION.voteThreshold) {
-      // だれを怪しんでいるか指さす。ほかのBotもそれを聞いて、少し怪しむ
-      this.stamp(p, `${s}→${PART_NAMES[top.o.part as keyof typeof PART_NAMES]}`);
-      if (!p.isSpy || this.ctx.rng() < 0.5) hearStamp(this.ctx.match, p, top.o, s === 'みてた！' ? 'saw' : 'sus');
-      this.pointAt(top.o);
+      // だれを怪しんでいるか指さす。覚えていれば、どこで見かけたかも地図に印を置く
+      this.say(p, s, top.o, sightingOf(match, p, top.o));
     } else {
-      this.stamp(p, s);
+      this.say(p, s, null, null);
     }
   }
 
@@ -340,6 +456,9 @@ export class MeetingScene extends Phaser.Scene {
   private finish(): void {
     this.finished = true;
     this.bgm?.stop(); // 結果発表は、曲を止めて開票の音とドラムロールを聞かせる
+    this.mapView?.close();
+    this.logPanel.setVisible(false);
+    this.logText.setVisible(false);
     const { match } = this.ctx;
     // まだ投票していない Bot は、ここで投票する（プレイヤーはスキップ扱い）
     for (const p of match.pawns) if (!p.h.frozen && !match.meeting!.votes.has(p)) castVote(match, p, p.isPlayer ? null : botVote(match, p, this.ctx.rng));

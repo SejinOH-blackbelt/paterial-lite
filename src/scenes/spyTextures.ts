@@ -16,6 +16,23 @@ export const LANDMARK_SIZE = { w: 64, h: 72 } as const;
 /** 置物の絵の大きさ（足元の中心がパテの位置） */
 export const STATUE_SIZE = { w: 38, h: 46 } as const;
 
+const PIGMENTS = {
+  clayLight: 0xdac5ad,
+  ink: 0x242524,
+  landmarkVermilionLight: 0xedb29a,
+  landmarkVermilion: 0xba6354,
+  landmarkWoodShade: 0x6c635c,
+  landmarkWood: 0xb8a698,
+  landmarkIron: 0x3f494f,
+  stoneDark: 0x5f727e,
+  stone: 0x899393,
+  stoneLight: 0xbcc6c4,
+  partStraw: 0xcfbea0,
+  partIvory: 0xf2e9d7,
+  landmarkBrass: 0xd1bb8c,
+  landmarkBrassShade: 0x8b795c,
+};
+
 function color(value: number): string {
   return Phaser.Display.Color.IntegerToColor(value).rgba;
 }
@@ -39,6 +56,30 @@ function paint(ctx: CanvasRenderingContext2D, path: string, fill: number, edge =
   }
 }
 
+function paintLandmark(ctx: CanvasRenderingContext2D, path: string, fill: number, edge = 0): void {
+  const shape = new Path2D(path);
+  ctx.fillStyle = color(fill);
+  ctx.fill(shape);
+  const wash = ctx.createLinearGradient(8, 6, 58, 72);
+  wash.addColorStop(0, '#f7f0df72');
+  wash.addColorStop(0.3, '#f7f0df22');
+  wash.addColorStop(0.47, '#28333718');
+  wash.addColorStop(0.58, '#f7f0df24');
+  wash.addColorStop(1, '#28333744');
+  ctx.fillStyle = wash;
+  ctx.fill(shape);
+  if (edge) {
+    // 太い墨の縁に、筆が乾いて紙目の残る細い筋を重ねる。
+    mark(ctx, shape, 0x292c2b, edge * 1.12);
+    ctx.save();
+    ctx.setLineDash([0.9, 2, 3.3, 9]);
+    ctx.strokeStyle = '#eee7d774';
+    ctx.lineWidth = 0.68;
+    ctx.stroke(shape);
+    ctx.restore();
+  }
+}
+
 function mark(ctx: CanvasRenderingContext2D, path: string | Path2D, ink: number, width: number): void {
   ctx.strokeStyle = color(ink);
   ctx.lineWidth = width;
@@ -50,16 +91,16 @@ function oval(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, r
   shape.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
   ctx.fillStyle = color(fill);
   ctx.fill(shape);
-  if (edge) mark(ctx, shape, 0x544132, edge);
+  if (edge) mark(ctx, shape, 0x292c2b, edge * 1.12);
 }
 
 function drawTower(ctx: CanvasRenderingContext2D): void {
-  paint(ctx, 'M15 42 L49 64 L44 67 L14 49 Z M47 42 L14 64 L20 67 L49 49 Z', COLORS.landmarkWoodShade, 2);
-  paint(ctx, 'M14 37 L22 38 L18 69 L8 70 Z M42 38 L50 37 L56 69 L46 70 Z', COLORS.landmarkWood, 2.5);
-  mark(ctx, 'M16 49 L13 65 M48 53 L51 65', COLORS.clayLight, 1.5);
-  paint(ctx, 'M12 33 L51 33 L58 41 L54 47 Q32 49 7 45 L6 40 Z', COLORS.landmarkWoodShade, 2.5);
-  paint(ctx, 'M12 33 L51 33 L58 41 Q32 44 6 40 Z', COLORS.landmarkWood, 2);
-  mark(ctx, 'M11 39 L23 39 M40 40 L49 39', COLORS.clayLight, 1.5);
+  paintLandmark(ctx, 'M15 42 L49 64 L44 67 L14 49 Z M47 42 L14 64 L20 67 L49 49 Z', PIGMENTS.landmarkWoodShade, 2);
+  paintLandmark(ctx, 'M14 37 L22 38 L18 69 L8 70 Z M42 38 L50 37 L56 69 L46 70 Z', PIGMENTS.landmarkWood, 2.5);
+  mark(ctx, 'M16 49 L13 65 M48 53 L51 65', PIGMENTS.clayLight, 1.5);
+  paintLandmark(ctx, 'M12 33 L51 33 L58 41 L54 47 Q32 49 7 45 L6 40 Z', PIGMENTS.landmarkWoodShade, 2.5);
+  paintLandmark(ctx, 'M12 33 L51 33 L58 41 Q32 44 6 40 Z', PIGMENTS.landmarkWood, 2);
+  mark(ctx, 'M11 39 L23 39 M40 40 L49 39', PIGMENTS.clayLight, 1.5);
 
   // 歯先を太くして、縮小しても櫓の上の歯車が読めるようにする。
   const tooth = [-0.5, -0.31, -0.25, 0.25, 0.31];
@@ -70,43 +111,43 @@ function drawTower(ctx: CanvasRenderingContext2D): void {
   })).flat().join(' L');
   ctx.save();
   ctx.translate(2, 2);
-  paint(ctx, `M${gear} Z`, COLORS.landmarkBrassShade, 2.3);
+  paintLandmark(ctx, `M${gear} Z`, PIGMENTS.landmarkBrassShade, 2.3);
   ctx.restore();
-  paint(ctx, `M${gear} Z`, COLORS.landmarkBrass, 2.3);
-  oval(ctx, 32, 21, 9.5, 9.5, COLORS.landmarkBrassShade, 1.5);
-  mark(ctx, 'M24 13 Q29 8 35 10', COLORS.partIvory, 1.3);
-  paint(ctx, 'M29 18 L35 17 L36 24 L30 25 Z', COLORS.partStraw, 1.6);
+  paintLandmark(ctx, `M${gear} Z`, PIGMENTS.landmarkBrass, 2.3);
+  oval(ctx, 32, 21, 9.5, 9.5, PIGMENTS.landmarkBrassShade, 1.5);
+  mark(ctx, 'M24 13 Q29 8 35 10', PIGMENTS.partIvory, 1.3);
+  paintLandmark(ctx, 'M29 18 L35 17 L36 24 L30 25 Z', PIGMENTS.partStraw, 1.6);
 }
 
 function drawTorii(ctx: CanvasRenderingContext2D): void {
-  paint(ctx, 'M13 18 L22 19 L18 68 L8 68 Z M42 19 L51 18 L56 68 L46 68 Z', COLORS.landmarkVermilion, 2.6);
-  mark(ctx, 'M16 24 L14 43 M46 37 L48 58', COLORS.landmarkVermilionLight, 1.5);
-  paint(ctx, 'M8 61 L19 62 L19 69 L7 69 Z M45 62 L56 61 L57 69 L45 69 Z', COLORS.landmarkIron, 2);
-  paint(ctx, 'M28 18 L36 18 L36 35 L28 35 Z', COLORS.landmarkWoodShade, 2);
-  paint(ctx, 'M5 30 Q31 32 59 29 L59 35 Q33 39 5 36 Z', COLORS.landmarkVermilion, 2.4);
-  paint(ctx, 'M5 12 Q32 21 59 12 L56 22 Q32 29 8 22 Z', COLORS.landmarkVermilion, 2.5);
-  paint(ctx, 'M3 8 Q32 20 61 8 L59 15 Q32 25 5 15 Z', COLORS.landmarkIron, 2.5);
-  mark(ctx, 'M9 13 Q24 18 38 17 M10 33 L23 34', COLORS.landmarkVermilionLight, 1.3);
-  mark(ctx, 'M12 58 L13 51 M49 40 L50 47 M40 20 Q47 19 53 17', COLORS.landmarkVermilionLight, 0.85);
-  mark(ctx, 'M32 25 L32 30', COLORS.landmarkBrass, 2);
+  paintLandmark(ctx, 'M13 18 L22 19 L18 68 L8 68 Z M42 19 L51 18 L56 68 L46 68 Z', PIGMENTS.landmarkVermilion, 2.6);
+  mark(ctx, 'M16 24 L14 43 M46 37 L48 58', PIGMENTS.landmarkVermilionLight, 1.5);
+  paintLandmark(ctx, 'M8 61 L19 62 L19 69 L7 69 Z M45 62 L56 61 L57 69 L45 69 Z', PIGMENTS.landmarkIron, 2);
+  paintLandmark(ctx, 'M28 18 L36 18 L36 35 L28 35 Z', PIGMENTS.landmarkWoodShade, 2);
+  paintLandmark(ctx, 'M5 30 Q31 32 59 29 L59 35 Q33 39 5 36 Z', PIGMENTS.landmarkVermilion, 2.4);
+  paintLandmark(ctx, 'M5 12 Q32 21 59 12 L56 22 Q32 29 8 22 Z', PIGMENTS.landmarkVermilion, 2.5);
+  paintLandmark(ctx, 'M3 8 Q32 20 61 8 L59 15 Q32 25 5 15 Z', PIGMENTS.landmarkIron, 2.5);
+  mark(ctx, 'M9 13 Q24 18 38 17 M10 33 L23 34', PIGMENTS.landmarkVermilionLight, 1.3);
+  mark(ctx, 'M12 58 L13 51 M49 40 L50 47 M40 20 Q47 19 53 17', PIGMENTS.landmarkVermilionLight, 0.85);
+  mark(ctx, 'M32 25 L32 30', PIGMENTS.landmarkBrass, 2);
 }
 
 function drawKama(ctx: CanvasRenderingContext2D): void {
-  paint(ctx, 'M15 58 L21 57 L20 69 L13 70 Z M44 57 L50 58 L52 69 L45 70 Z', COLORS.landmarkIron, 2);
-  paint(ctx, 'M12 54 Q32 49 52 54 L51 63 Q31 69 13 62 Z', COLORS.landmarkWoodShade, 2.5);
-  paint(ctx, 'M23 58 Q32 60 41 58 L40 62 Q32 64 24 62 Z', COLORS.landmarkVermilion, 1.4);
-  oval(ctx, 10, 40, 6, 5, COLORS.landmarkIron, 2);
-  oval(ctx, 54, 40, 6, 5, COLORS.landmarkIron, 2);
-  paint(ctx, 'M17 30 Q9 37 11 46 Q14 58 32 58 Q51 57 53 46 Q55 37 47 30 Z', COLORS.landmarkIron, 2.6);
-  paint(ctx, 'M17 33 Q29 39 45 34 Q46 49 31 52 Q17 53 15 43 Q14 37 17 33 Z', COLORS.stoneDark);
-  mark(ctx, 'M18 37 Q14 42 18 47 M22 50 L25 51', COLORS.stoneLight, 1.4);
+  paintLandmark(ctx, 'M15 58 L21 57 L20 69 L13 70 Z M44 57 L50 58 L52 69 L45 70 Z', PIGMENTS.landmarkIron, 2);
+  paintLandmark(ctx, 'M12 54 Q32 49 52 54 L51 63 Q31 69 13 62 Z', PIGMENTS.landmarkWoodShade, 2.5);
+  paintLandmark(ctx, 'M23 58 Q32 60 41 58 L40 62 Q32 64 24 62 Z', PIGMENTS.landmarkVermilion, 1.4);
+  oval(ctx, 10, 40, 6, 5, PIGMENTS.landmarkIron, 2);
+  oval(ctx, 54, 40, 6, 5, PIGMENTS.landmarkIron, 2);
+  paintLandmark(ctx, 'M17 30 Q9 37 11 46 Q14 58 32 58 Q51 57 53 46 Q55 37 47 30 Z', PIGMENTS.landmarkIron, 2.6);
+  paintLandmark(ctx, 'M17 33 Q29 39 45 34 Q46 49 31 52 Q17 53 15 43 Q14 37 17 33 Z', PIGMENTS.stoneDark);
+  mark(ctx, 'M18 37 Q14 42 18 47 M22 50 L25 51', PIGMENTS.stoneLight, 1.4);
   for (const [x, y] of [[24, 42], [29, 46], [35, 41], [39, 46], [45, 42]]) {
-    oval(ctx, x, y, 0.9, 0.8, COLORS.ink);
+    oval(ctx, x, y, 0.9, 0.8, PIGMENTS.ink);
   }
-  mark(ctx, 'M19 47 Q22 49 26 49 M36 52 Q43 51 46 48', COLORS.stone, 0.65);
-  oval(ctx, 32, 29, 18, 5, COLORS.stone, 2.4);
-  mark(ctx, 'M20 28 Q26 26 31 26', COLORS.stoneLight, 1.5);
-  paint(ctx, 'M28 27 L29 24 Q25 21 29 19 Q33 17 36 20 Q39 22 35 24 L36 27 Z', COLORS.landmarkBrass, 2);
+  mark(ctx, 'M19 47 Q22 49 26 49 M36 52 Q43 51 46 48', PIGMENTS.stone, 0.65);
+  oval(ctx, 32, 29, 18, 5, PIGMENTS.stone, 2.4);
+  mark(ctx, 'M20 28 Q26 26 31 26', PIGMENTS.stoneLight, 1.5);
+  paintLandmark(ctx, 'M28 27 L29 24 Q25 21 29 19 Q33 17 36 20 Q39 22 35 24 L36 27 Z', PIGMENTS.landmarkBrass, 2);
 }
 
 function drawStatue(ctx: CanvasRenderingContext2D): void {

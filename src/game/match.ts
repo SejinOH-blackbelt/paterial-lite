@@ -43,6 +43,18 @@ export interface Meeting {
   votes: Map<Pawn, Pawn | null>;
   /** スタンプで、だれがだれを指さしたか（同じ相手を何度指さしても、効くのは1回だけ） */
   pointed: Map<Pawn, Set<Pawn>>;
+  /** 会議で言ったことの記録（スタンプ・指さした相手・見かけた場所）。画面の発言の記録欄に出す */
+  notes: MeetingNote[];
+}
+
+/** 会議で言ったこと1つ（文字チャットはなし。スタンプと、指さした相手と、地図の印だけ） */
+export interface MeetingNote {
+  by: Pawn;
+  stamp: string;
+  target: Pawn | null;
+  /** 見かけた場所（採取場の座標）。言わなければ null */
+  at: Point | null;
+  time: number;
 }
 
 export interface MeetingResult {
@@ -76,6 +88,8 @@ export interface MatchState {
   suspicion: Map<Pawn, Map<Pawn, number>>;
   /** Botが置物を見つけた時刻（少し間をおいて呼び出すため） */
   spotted: Map<Pawn, number>;
+  /** だれが、だれを、どこで怪しんだか（いちばん強く怪しんだ出来事の場所）。Botが会議で「どこで見たか」を言うのに使う */
+  sightings: Map<Pawn, Map<Pawn, { at: Point; amount: number }>>;
   /** 王様の支持度（0 になると市民がストライキを起こして、スパイの勝ち） */
   support: number;
 }
@@ -106,6 +120,7 @@ export function createMatch(pawns: Pawn[], now: number, rng: Rng): MatchState {
     known: new Set(),
     suspicion: new Map(pawns.map((p) => [p, new Map()])),
     spotted: new Map(),
+    sightings: new Map(),
     support: SUPPORT.start,
   };
 }
@@ -203,7 +218,7 @@ export function startMeeting(m: MatchState, caller: Pawn, reason: Meeting['reaso
   }
   m.spy.scan = null;
   m.phase = 'meeting';
-  m.meeting = { caller, reason, body, startedAt: now, votes: new Map(), pointed: new Map() };
+  m.meeting = { caller, reason, body, startedAt: now, votes: new Map(), pointed: new Map(), notes: [] };
   return m.meeting;
 }
 
@@ -232,10 +247,29 @@ export function suspicionOf(m: MatchState, observer: Pawn, target: Pawn): number
   return m.suspicion.get(observer)?.get(target) ?? 0;
 }
 
-function addSuspicion(m: MatchState, observer: Pawn, target: Pawn, amount: number): void {
+function addSuspicion(m: MatchState, observer: Pawn, target: Pawn, amount: number, at?: Point): void {
   if (observer === target || observer.isPlayer) return;
   const row = m.suspicion.get(observer)!;
   row.set(target, (row.get(target) ?? 0) + amount);
+  if (!at) return;
+  // 場所は、いちばん強く怪しんだ出来事のものを覚えておく（同じ強さなら新しいほう）
+  const seen = m.sightings.get(observer) ?? new Map<Pawn, { at: Point; amount: number }>();
+  const old = seen.get(target);
+  if (!old || amount >= old.amount) seen.set(target, { at: { ...at }, amount });
+  m.sightings.set(observer, seen);
+}
+
+/** observer が target を怪しんだ場所（覚えていなければ null） */
+export function sightingOf(m: MatchState, observer: Pawn, target: Pawn): Point | null {
+  return m.sightings.get(observer)?.get(target)?.at ?? null;
+}
+
+/** 会議で言ったことを記録する（会議中でなければ何もしない） */
+export function addNote(m: MatchState, by: Pawn, stamp: string, target: Pawn | null, at: Point | null, now: number): MeetingNote | null {
+  if (!m.meeting) return null;
+  const note: MeetingNote = { by, stamp, target, at: at ? { ...at } : null, time: now };
+  m.meeting.notes.push(note);
+  return note;
 }
 
 /**
@@ -347,12 +381,12 @@ export function observeSpyEvent(m: MatchState, ev: SpyEvent): void {
     const amount = ev.kind === 'prank' ? SUSPICION.sawPrank : SUSPICION.sawScan;
     for (const w of ev.witnesses) {
       const p = pawnOf(w);
-      if (p) addSuspicion(m, p, spyPawn, amount);
+      if (p) addSuspicion(m, p, spyPawn, amount, ev.at);
     }
   } else {
     // 失敗の「ブブー」は、聞こえる距離にいれば気づく
     for (const p of m.pawns) {
-      if (!p.h.frozen && p !== spyPawn && dist(p.h.walker.pos, ev.at) <= BOT.hearRadius) addSuspicion(m, p, spyPawn, SUSPICION.heardScanFail);
+      if (!p.h.frozen && p !== spyPawn && dist(p.h.walker.pos, ev.at) <= BOT.hearRadius) addSuspicion(m, p, spyPawn, SUSPICION.heardScanFail, ev.at);
     }
   }
 }
@@ -362,7 +396,7 @@ export function observeKotsu(m: MatchState): void {
   const spyPawn = m.pawns.find((p) => p.isSpy)!;
   for (const p of m.pawns) {
     if (!p.h.frozen && p !== spyPawn && dist(p.h.walker.pos, spyPawn.h.walker.pos) <= BOT.hearRadius * 0.6) {
-      addSuspicion(m, p, spyPawn, SUSPICION.heardKotsu);
+      addSuspicion(m, p, spyPawn, SUSPICION.heardKotsu, spyPawn.h.walker.pos);
     }
   }
 }
@@ -376,7 +410,7 @@ export function observeMissionMiss(m: MatchState, ev: MissionEvent): void {
   const who = m.pawns.find((p) => p.h === ev.h);
   if (!who?.isSpy) return;
   for (const p of m.pawns) {
-    if (!p.h.frozen && p !== who && dist(p.h.walker.pos, ev.at) <= MISS_SOUND.goriRadius) addSuspicion(m, p, who, MISS_SOUND.heardGori);
+    if (!p.h.frozen && p !== who && dist(p.h.walker.pos, ev.at) <= MISS_SOUND.goriRadius) addSuspicion(m, p, who, MISS_SOUND.heardGori, ev.at);
   }
 }
 
@@ -386,7 +420,7 @@ export function observePatch(m: MatchState, now: number, dt: number): void {
   const size = patchSize(m.spy, now);
   for (const p of m.pawns) {
     if (!p.h.frozen && p !== spyPawn && dist(p.h.walker.pos, spyPawn.h.walker.pos) <= SUSPICION.patchSeeRadius) {
-      addSuspicion(m, p, spyPawn, SUSPICION.sawPatchPerSecond * (size / 4) * dt);
+      addSuspicion(m, p, spyPawn, SUSPICION.sawPatchPerSecond * (size / 4) * dt, spyPawn.h.walker.pos);
     }
   }
 }
