@@ -241,9 +241,33 @@ export const HEAD_PARTS = ['flower', 'kasa', 'horn', 'flag', 'sprout', 'feather'
 export const KING_PART = 'crown';
 export const PLAYER_PART = 'flower';
 
-/** パテのエレメント（見た目だけ。デザインは docs/concept/element-pates.webp） */
+/**
+ * パテのエレメント（全世界共通の5つ。デザインは docs/concept/element-pates.webp）。
+ * 相性は docs/design.md の M9 と相性表のページ（https://claude.ai/artifact/VBtDzi6evWLEsdizCTFczE）
+ */
 export const ELEMENTS = ['fire', 'water', 'earth', 'wind', 'thunder'] as const;
 export const ELEMENT_NAMES = { fire: '火', water: '水', earth: '土', wind: '風', thunder: '雷' } as const;
+/** 相生（助けてめぐる）：キーのエレメントが、値のエレメントを助ける。風 → 水 → 土 → 火 → 雷 → 風 */
+export const ELEMENT_SHENG = { wind: 'water', water: 'earth', earth: 'fire', fire: 'thunder', thunder: 'wind' } as const;
+/** 相剋（打ち消す）：キーのエレメントが、値のエレメントを打ち消す（風が土を吹き飛ばす、土が雷を逃がす、雷で水がしびれる、水が火を消す、火が風を乱す） */
+export const ELEMENT_KE = { wind: 'earth', earth: 'thunder', thunder: 'water', water: 'fire', fire: 'wind' } as const;
+
+/**
+ * 相性の効き方（得意・普通・苦手）。不可はそのままではできない（更衣室で着替える）。
+ * workScale：Bot がミッションにかかる時間の倍率、failChance：Bot がまちがえる確率
+ */
+export const AFFINITY = {
+  workScale: { good: 0.7, plain: 1, weak: 1.5 },
+  failChance: { good: 0.1, plain: 0.2, weak: 0.35 },
+  /** ミニゲームの難しさ：太鼓の長さ、杭の色の数、拍手の数、拍手のずれてもよい秒数 */
+  drumLength: { good: 3, plain: 4, weak: 6 },
+  pegColors: { good: 2, plain: 3, weak: 4 },
+  claps: { good: 1, plain: 2, weak: 3 },
+  clapWindow: { good: 0.18, plain: 0.14, weak: 0.1 },
+} as const;
+
+/** ミッションの配り方：1体にいくつ配るか（そのうち1つは、そのエレメントで苦手か不可のもの） */
+export const MISSION_DEAL = { perPawn: 3 } as const;
 /** プレイヤーのパテのエレメント */
 export const PLAYER_ELEMENT = 'earth';
 
@@ -395,10 +419,11 @@ export const FACILITY = {
  * game：施設で遊ぶミニゲーム（drum まねっこ太鼓・jigsaw ジグソー・pegs 杭むすび・prayer 土のお祈り）
  */
 export const MISSIONS = [
-  { id: 'kiln', name: '窯で焼く', kind: 'clay', need: 8, facility: 'kiln', game: 'drum' },
-  { id: 'workshop', name: '製造所で組み立てる', kind: 'bamboo', need: 7, facility: 'workshop', game: 'jigsaw' },
-  { id: 'foundry', name: '鋳造所で流し込む', kind: 'stone', need: 6, facility: 'foundry', game: 'pegs' },
-  { id: 'prayer', name: '土のお祈り', kind: null, need: 0, facility: 'shrine', game: 'prayer' },
+  // element：そのミッションのエレメント（M9 の①では、いまの施設に仮に当てている。②で5つの施設に置き換える）
+  { id: 'kiln', name: '窯で焼く', kind: 'clay', need: 8, facility: 'kiln', game: 'drum', element: 'fire' },
+  { id: 'workshop', name: '製造所で組み立てる', kind: 'bamboo', need: 7, facility: 'workshop', game: 'jigsaw', element: 'wind' },
+  { id: 'foundry', name: '鋳造所で流し込む', kind: 'stone', need: 6, facility: 'foundry', game: 'pegs', element: 'thunder' },
+  { id: 'prayer', name: '土のお祈り', kind: null, need: 0, facility: 'shrine', game: 'prayer', element: 'earth' },
 ] as const;
 
 /** 国の仕事ゲージ：素材1個を1として、加工やお祈りを終えたときに、さらにこれだけたまる */
