@@ -44,7 +44,7 @@ import {
 import { beatInterval } from '../game/rhythm';
 import type { GameAudio } from './audio';
 import { drawPart } from './textures';
-import { FONT, INK, pinToScreen } from './ui';
+import { FONT, INK, pinToScreen, textButton } from './ui';
 import { makeMissionArt, MISSION_BG_TEX, MISSION_PART_TEX } from './missionArt';
 
 /** パネルの位置と大きさ（上の表示と、下のスティックのあいだ） */
@@ -77,6 +77,8 @@ export interface MissionViewDeps {
   origin: number;
   /** 操作の結果（miss・done は画面側で音を鳴らし、ミッションを進める） */
   onStep: (s: Step) => void;
+  /** 「やめる」を押した */
+  onQuit: () => void;
 }
 
 export class MissionGameView {
@@ -110,10 +112,9 @@ export class MissionGameView {
     this.title = scene.add
       .text(CX, PANEL.y + 40, '', { fontFamily: FONT, fontSize: '13px', fontStyle: 'bold', color: INK, align: 'center', wordWrap: { width: PANEL.w - 28, useAdvancedWrap: true } })
       .setOrigin(0.5, 0);
-    const foot = scene.add
-      .text(CX, PANEL.y + PANEL.h - 16, 'スティックで動くと やめられる', { fontFamily: FONT, fontSize: '11px', color: INK })
-      .setOrigin(0.5)
-      .setAlpha(0.6);
+    // ミニゲームをやめるボタン（ミニゲーム中はスティックを消すので、やめるのはこのボタン）
+    const foot = textButton(scene, PANEL.x + PANEL.w - 46, PANEL.y + 24, 70, 30, 'やめる', COLORS.uiPaper, () => this.deps.onQuit(), 13);
+    this.hitAreas.push(foot);
     this.art = scene.add.graphics();
     this.root = scene.add.container(0, 0, [bg, frame, head, this.title, foot, this.art]).setDepth(9700);
     if (game.kind === 'drum') this.buildDrums(game);

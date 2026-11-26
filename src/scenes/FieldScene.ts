@@ -224,6 +224,8 @@ export class FieldScene extends Phaser.Scene {
   private missionView: MissionGameView | null = null;
   /** 依代の祠の画面（開いているときだけ） */
   private yoriView: YorishiroView | null = null;
+  /** 試合をやめるボタン（ミニゲーム中は、パネルの「やめる」とまちがえないように隠す） */
+  private quitButton!: Phaser.GameObjects.Container;
   /** スパイの「本当にやる／ふりをする」を選ぶ札（出ているときだけ） */
   private spyChoice: Phaser.GameObjects.GameObject[] | null = null;
   /** 自分のミッションのスイッチの上の印（入れられるとき「！」） */
@@ -596,8 +598,15 @@ export class FieldScene extends Phaser.Scene {
   private updateButtons(): void {
     const me = this.player;
     const playing = !me.frozen;
-    this.harvestButton.setVisible(playing);
-    this.actionButton.setVisible(playing);
+    // ミニゲーム中は、スティックと右下のボタンを消す（パネルの操作だけに集中できるように。やめるのはパネルの「やめる」）
+    const inGame = this.missionView !== null || this.yoriView !== null;
+    if (inGame && this.pad.isVisible) this.pad.reset();
+    this.pad.setVisible(!inGame);
+    this.quitButton.setVisible(!inGame);
+    this.scanButton?.setVisible(playing && !inGame);
+    this.prankButton?.setVisible(playing && !inGame);
+    this.harvestButton.setVisible(playing && !inGame);
+    this.actionButton.setVisible(playing && !inGame);
     // スティックで動かしているあいだは始められないので光らせない（採取中は叩けるので光る）
     this.harvestButton.setLit(me.session !== null || (!this.driving && harvestChance(me, this.field, this.all)?.state === 'ready'));
     const m = missionChance(me, this.board, this.all, this.isPlayerSpy);
@@ -606,7 +615,7 @@ export class FieldScene extends Phaser.Scene {
     this.actionButton.setLabel(shrine ? '乗りうつる' : m ? 'スイッチ' : 'アクション');
     const body = reportableBody(this.match, this.playerPawn);
     const emergency = canEmergency(this.match, this.playerPawn);
-    this.callButton.setVisible(playing);
+    this.callButton.setVisible(playing && !inGame);
     this.callButton.setLit(!!body || emergency);
     this.callButton.setLabel(body ? '呼び出し' : emergency ? '緊急の\n呼び出し' : '呼び出し');
   }
@@ -1336,7 +1345,7 @@ export class FieldScene extends Phaser.Scene {
     this.hud(label(this, 247, 94, '支持度', 11, INK).setStroke(INK, 0).setDepth(9500));
     this.supportText = this.hud(label(this, 304, 94, '', 10, INK).setStroke(INK, 0).setDepth(9500));
     // 試合をやめてタイトルに戻るボタン（押すと確認が出る）
-    this.hud(textButton(this, 196, 95, 52, 24, 'やめる', COLORS.uiPaper, () => this.askQuit(), 11).setDepth(9500));
+    this.quitButton = this.hud(textButton(this, 196, 95, 52, 24, 'やめる', COLORS.uiPaper, () => this.askQuit(), 11).setDepth(9500));
   }
 
   /** 「やめる」：本当にやめるか確かめる。確認のあいだも試合は進む */
@@ -1778,6 +1787,11 @@ export class FieldScene extends Phaser.Scene {
         this.yoriView?.startCommands(me.possess!.game!);
       },
       onPress: (b) => this.onCommand(b),
+      onCancel: () => {
+        // 乗りうつりをやめる（体はそのまま）
+        me.possess = null;
+        this.closeYorishiro();
+      },
     });
   }
 
@@ -1847,6 +1861,11 @@ export class FieldScene extends Phaser.Scene {
         tapTime: (p) => this.tapTime(p),
         origin: this.origin,
         onStep: (step) => this.onPlayerMissionStep(step),
+        onQuit: () => {
+          // ミニゲームをやめる（スイッチは入らない。資源も使わない）
+          this.player.task = null;
+          this.syncMissionView();
+        },
       });
     }
     this.missionView.update();

@@ -6,7 +6,7 @@ import { COLORS, ELEMENT_NAMES, ELEMENTS, MISSIONS, SCREEN, YORISHIRO } from '..
 import { affinity, AFFINITY_NAMES, type Affinity, type ElementId, type MissionId } from '../game/elements';
 import type { CommandGame } from '../game/yorishiro';
 import { ELEMENT_ICON, makeElementIcons } from './elementIcons';
-import { FONT, INK, cssColor, pinToScreen } from './ui';
+import { FONT, INK, cssColor, pinToScreen, textButton } from './ui';
 
 const PANEL = { x: 12, y: 116, w: SCREEN.width - 24, h: 378 } as const;
 const CX = SCREEN.width / 2;
@@ -20,6 +20,8 @@ export interface YorishiroDeps {
   missions: MissionId[];
   onChoose: (e: ElementId) => void;
   onPress: (button: number) => void;
+  /** 「やめる」を押した */
+  onCancel: () => void;
 }
 
 export class YorishiroView {
@@ -43,11 +45,13 @@ export class YorishiroView {
     this.hitAreas.push(bg);
     const frame = scene.add.graphics();
     frame.lineStyle(5, COLORS.landmarkWood).strokeRect(PANEL.x + 3, PANEL.y + 3, PANEL.w - 6, PANEL.h - 6);
-    const head = scene.add.text(CX, PANEL.y + 14, '依代（よりしろ）の祠', { fontFamily: FONT, fontSize: '17px', fontStyle: 'bold', color: INK }).setOrigin(0.5, 0);
+    const head = scene.add.text(CX - 30, PANEL.y + 14, '依代（よりしろ）の祠', { fontFamily: FONT, fontSize: '17px', fontStyle: 'bold', color: INK }).setOrigin(0.5, 0);
     this.title = scene.add
       .text(CX, PANEL.y + 40, 'どの体に 乗りうつる？', { fontFamily: FONT, fontSize: '13px', fontStyle: 'bold', color: INK, align: 'center' })
       .setOrigin(0.5, 0);
-    const foot = scene.add.text(CX, PANEL.y + PANEL.h - 16, 'スティックで動くと やめられる', { fontFamily: FONT, fontSize: '11px', color: INK }).setOrigin(0.5).setAlpha(0.6);
+    // やめるボタン（祠の画面のあいだはスティックを消すので、やめるのはこのボタン）
+    const foot = textButton(scene, PANEL.x + PANEL.w - 46, PANEL.y + 24, 70, 30, 'やめる', COLORS.uiPaper, () => this.deps.onCancel(), 13);
+    this.hitAreas.push(foot);
     this.root = scene.add.container(0, 0, [bg, frame, head, this.title, foot]).setDepth(9700);
     this.buildChoose();
     pinToScreen(this.root);

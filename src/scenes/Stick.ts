@@ -84,6 +84,10 @@ export class Stick {
   }
 
   /** 見せる・隠す（会議のあいだは隠す） */
+  get isVisible(): boolean {
+    return this.base.visible;
+  }
+
   setVisible(on: boolean): void {
     this.base.setVisible(on);
     this.knob.setVisible(on);
