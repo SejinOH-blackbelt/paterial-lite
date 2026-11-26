@@ -210,8 +210,16 @@ export const RESOURCE_REACTION = {
 } as const;
 
 /** 頭のパーツ（6体を見分けるため。プレイヤーは花） */
-export const HEAD_PARTS = ['flower', 'kasa', 'horn', 'flag', 'sprout', 'feather'] as const;
+export const HEAD_PARTS = ['flower', 'kasa', 'horn', 'flag', 'sprout', 'feather', 'crown'] as const;
+/** 王様パテがかぶる頭のパーツ */
+export const KING_PART = 'crown';
 export const PLAYER_PART = 'flower';
+
+/** パテのエレメント（見た目だけ。docs/vision.md のエレメント案の基本4つ） */
+export const ELEMENTS = ['fire', 'water', 'earth', 'wind'] as const;
+export const ELEMENT_NAMES = { fire: '火', water: '水', earth: '土', wind: '風' } as const;
+/** プレイヤーのパテのエレメント */
+export const PLAYER_ELEMENT = 'earth';
 
 /** 住民Bot（和の国の住民）の動き */
 export const BOT = {
@@ -237,11 +245,11 @@ export const BOT = {
  * part：頭のパーツ、timingError：タイミングのズレの大きさ（秒、小さいほど上手）
  */
 export const BOT_PROFILES = [
-  { id: 'kasa', part: 'kasa', timingError: 0.03 }, // 名人
-  { id: 'horn', part: 'horn', timingError: 0.05 },
-  { id: 'flag', part: 'flag', timingError: 0.07 },
-  { id: 'sprout', part: 'sprout', timingError: 0.09 },
-  { id: 'feather', part: 'feather', timingError: 0.12 }, // のんびり屋
+  { id: 'kasa', part: 'kasa', element: 'water', timingError: 0.03 }, // 名人
+  { id: 'horn', part: 'horn', element: 'fire', timingError: 0.05 },
+  { id: 'flag', part: 'flag', element: 'wind', timingError: 0.07 },
+  { id: 'sprout', part: 'sprout', element: 'earth', timingError: 0.09 },
+  { id: 'feather', part: 'feather', element: 'fire', timingError: 0.12 }, // のんびり屋
 ] as const;
 
 /** 名物（スパイがスキャンして設計図のカケラを集める、和の国の設備） */
@@ -390,4 +398,13 @@ export const PART_NAMES = {
   flag: '旗',
   sprout: '若葉',
   feather: '羽根',
+  crown: '王冠',
+} as const;
+
+/** 王様の支持度（国の住民が王様を信じている度合い） */
+export const SUPPORT = {
+  /** 最初の支持度 */
+  start: 100,
+  /** 会議でぬれぎぬ（スパイでない市民を調べた）になったときに下がる量 */
+  wrongAccusation: 50,
 } as const;
