@@ -23,6 +23,8 @@ export interface Harvester {
   frozen: boolean;
   /** 素材の種類ごとに、これまで採取した数（ミッションの進み具合に使う） */
   gathered: Record<string, number>;
+  /** いま十字ボタンで動かしている（そのあいだは採取を始めない・スキャンは中断） */
+  driving: boolean;
 }
 
 /** 採取場の素材ポイントの残りの量（全員で共有する） */
@@ -33,7 +35,7 @@ export interface FieldState {
 }
 
 export function createHarvester(walker: Walker): Harvester {
-  return { walker, materials: 0, session: null, claim: null, waitingFor: null, frozen: false, gathered: {} };
+  return { walker, materials: 0, session: null, claim: null, waitingFor: null, frozen: false, gathered: {}, driving: false };
 }
 
 export function createFieldState(): FieldState {
@@ -127,6 +129,7 @@ export function moveHarvester(h: Harvester, p: Point, all: readonly Harvester[])
  */
 export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harvester[], earliest: number, origin: number): void {
   if (h.frozen) return; // 置物は採取しない
+  if (h.driving) return; // 十字ボタンで動かしているあいだは、素材の前でも採取を始めない（その場で回れるように）
   if (h.session) {
     if (f.stock[h.session.pointId] <= 0) {
       h.session = null;
@@ -155,12 +158,12 @@ export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harve
 }
 
 /**
- * 十字ボタンで動かす。動かしたら採取・順番待ちはやめる（置物は動けない）。
- * forward / turn の意味は driveWalker と同じ。
+ * 十字ボタンで動かす。毎コマ呼ぶ（押していないときは forward・turn とも 0）。
+ * 動かしたら採取・順番待ちはやめる（置物は動けない）。forward / turn の意味は driveWalker と同じ。
  */
 export function driveHarvester(h: Harvester, forward: number, turn: number, dtSeconds: number): void {
-  if (h.frozen) return;
-  if (forward === 0 && turn === 0) return;
+  h.driving = !h.frozen && (forward !== 0 || turn !== 0);
+  if (!h.driving) return;
   h.session = null;
   h.claim = null;
   h.waitingFor = null;

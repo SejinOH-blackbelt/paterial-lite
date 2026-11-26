@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COUNTRIES, LANDMARKS, SCAN_GAME } from '../src/game/config';
-import { createHarvester } from '../src/game/harvest';
+import { createHarvester, driveHarvester } from '../src/game/harvest';
 import { createWalker } from '../src/game/movement';
 import { createRng } from '../src/game/random';
 import { answerQuiz, checkTimeout, createScanGame, makeQuiz, mimicShowing, mimicStep, pressMimic, type MimicGame, type QuizGame } from '../src/game/scanGame';
@@ -127,5 +127,16 @@ describe('スキャンの失敗', () => {
     s.scan!.game!.result = 'success';
     expect(updateScan(s, [spy], 1)!.kind).toBe('scan');
     expect(s.fragments).toBe(1);
+  });
+  it('十字ボタンで動かすと（回るだけでも）スキャンは中断。答えがそろっていても成功にならない', () => {
+    const torii = LANDMARKS[1];
+    const spy = createHarvester(createWalker({ x: torii.x, y: torii.y + 20 }));
+    const s = createSpyState(spy, 0, createRng(1));
+    startScan(s, 0, { ctx, rng: createRng(5) });
+    driveHarvester(spy, 0, 1, 0.1);
+    s.scan!.game!.result = 'success';
+    expect(updateScan(s, [spy], 1)).toBeNull();
+    expect(s.scan).toBeNull();
+    expect(s.fragments).toBe(0);
   });
 });

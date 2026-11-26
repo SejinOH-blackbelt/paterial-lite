@@ -309,9 +309,10 @@ export class FieldScene extends Phaser.Scene {
     if (this.player.frozen) {
       // 土の精は、ふつうより少し速く動ける
       if (this.spirit && this.driving) driveWalker(this.spirit.walker, forward, turn, dt, PATE.speed * 1.3);
-    } else if (this.driving) {
-      driveHarvester(this.player, forward, turn, dt);
-    } else if (this.wasDriving) {
+    } else {
+      driveHarvester(this.player, forward, turn, dt); // 押していないときも呼ぶ（動かしているかの印を消すため）
+    }
+    if (!this.player.frozen && !this.driving && this.wasDriving) {
       // ほかのパテが使っているポイントなら、そばで順番を待つ（空いたら自動で採取を始める）
       if (approachNearby(this.player, this.all) === 'wait') this.popText('じゅんばん待ち', '#2b1d14', 15, 0);
     }

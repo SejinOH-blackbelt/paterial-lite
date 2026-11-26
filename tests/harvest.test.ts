@@ -190,3 +190,18 @@ describe('十字ボタンで採取する', () => {
     expect(statue.walker.pos).toEqual(before);
   });
 });
+
+describe('十字ボタンで回るとき', () => {
+  it('素材の前でその場で回っても、押しているあいだは採取が始まらない。離して寄ると始まる', () => {
+    const { f, h } = atClay();
+    driveHarvester(h, 0, 1, 0.3);
+    updateHarvester(h, f, [h], 6, 0);
+    expect(h.session).toBeNull();
+    expect(h.walker.facing).not.toBe('up'); // 回った向きのまま（上に戻されない）
+    driveHarvester(h, 0, 0, 0.016); // 離した
+    approachNearby(h, [h]);
+    stepWalker(h.walker, 1);
+    updateHarvester(h, f, [h], 7, 0);
+    expect(h.session?.pointId).toBe('clay');
+  });
+});
