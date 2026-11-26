@@ -8,13 +8,31 @@ export const cssColor = (color: number): string => Phaser.Display.Color.IntegerT
 export const INK = cssColor(COLORS.ink);
 export const PAPER = COLORS.uiPaper;
 
-/** 絵本の紙を重ねたパネル */
-export function panel(scene: Phaser.Scene, x: number, y: number, w: number, h: number, color: number, edge: number = COLORS.uiWood): Phaser.GameObjects.Graphics {
-  const left = x - w / 2;
-  const top = y - h / 2;
+/** パネルの画像のまわりに足す余白（影がはみ出すぶん） */
+const PANEL_PAD = 4;
+
+/**
+ * 絵本の紙を重ねたパネル。
+ * 紙の繊維などの細かい線が多いので、一度だけ画像に焼きつけて、同じ大きさ・色なら使い回す
+ * （毎コマ線を描き直すと、スマホで重くなるため）。(x, y) がパネルの真ん中
+ */
+export function panel(scene: Phaser.Scene, x: number, y: number, w: number, h: number, color: number, edge: number = COLORS.uiWood): Phaser.GameObjects.Image {
+  const rw = Math.round(w);
+  const rh = Math.round(h);
+  const key = `paper-panel-${rw}x${rh}-${color}-${edge}`;
+  if (!scene.textures.exists(key)) {
+    const g = scene.make.graphics({}, false);
+    drawPanel(g, PANEL_PAD, PANEL_PAD, rw, rh, color, edge);
+    g.generateTexture(key, rw + PANEL_PAD * 2, rh + PANEL_PAD * 2);
+    g.destroy();
+  }
+  return scene.add.image(x, y, key);
+}
+
+/** パネルの絵を g に描く（left, top が紙の左上） */
+function drawPanel(g: Phaser.GameObjects.Graphics, left: number, top: number, w: number, h: number, color: number, edge: number): void {
   const faceHeight = h - 5;
   const radius = Math.min(8, w / 4, faceHeight / 2);
-  const g = scene.add.graphics();
   // 紙の下へ落ちる影を重ね、表紙の厚みを出す。
   g.fillStyle(COLORS.ink, 0.07).fillRoundedRect(left - 2, top + 2, w + 4, h + 2, radius + 2);
   g.fillStyle(COLORS.ink, 0.13).fillRoundedRect(left - 1, top + 2, w + 2, h, radius + 1);
@@ -78,7 +96,6 @@ export function panel(scene: Phaser.Scene, x: number, y: number, w: number, h: n
       }
     }
   }
-  return g;
 }
 
 /** 文字入りの四角いボタン。押すと onClick を呼ぶ */

@@ -353,7 +353,17 @@ export function drawGround(scene: Phaser.Scene, width: number, height: number): 
     // 四辺を一続きの下草でつなぎ、角は丸く回り込ませる。
     const border = new Path2D();
     border.rect(0, 0, width, height);
-    border.roundRect(x0, y0, x1 - x0, y1 - y0, corner);
+    // 角丸の四角（古い Safari には roundRect がないので、線と曲線で組み立てる）
+    border.moveTo(x0 + corner, y0);
+    border.lineTo(x1 - corner, y0);
+    border.quadraticCurveTo(x1, y0, x1, y0 + corner);
+    border.lineTo(x1, y1 - corner);
+    border.quadraticCurveTo(x1, y1, x1 - corner, y1);
+    border.lineTo(x0 + corner, y1);
+    border.quadraticCurveTo(x0, y1, x0, y1 - corner);
+    border.lineTo(x0, y0 + corner);
+    border.quadraticCurveTo(x0, y0, x0 + corner, y0);
+    border.closePath();
     ctx.fillStyle = '#687a54';
     ctx.fill(border, 'evenodd');
 

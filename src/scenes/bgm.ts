@@ -159,9 +159,16 @@ export class Bgm {
     const drum = field ? (downbeat ? 180 : 230) : (downbeat ? 140 : 170);
     this.tone(playback, time, drum, drum * 0.63, 0.12, downbeat ? 0.052 : 0.035);
 
+    // 採取の針は半拍ごとにも真上を通るので、採取場の曲は裏拍にも軽い音（木の「コッ」）を入れて、叩く位置をつかみやすくする
+    if (field) this.tone(playback, time + this.halfBeat(), 900, 760, 0.04, 0.02);
+
     const melody = field ? FIELD_MELODY : MEETING_MELODY;
     const pitch = melody[beat % melody.length];
     if (pitch) this.mallet(playback, time, pitch, field ? 0.24 : 0.16, 0.052);
+  }
+
+  private halfBeat(): number {
+    return beatInterval() / 2;
   }
 
   private mallet(playback: Playback, time: number, pitch: number, length: number, volume: number): void {
