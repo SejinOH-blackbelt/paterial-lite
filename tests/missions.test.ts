@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { BOT_PROFILES, FACILITIES, MATCH, MISS_SOUND, MISSION_BOT, MISSIONS } from '../src/game/config';
+import { BOT_PROFILES, FACILITIES, FACILITY, MATCH, MISS_SOUND, MISSION_BOT, MISSIONS } from '../src/game/config';
 import { createBot, neededKinds, updateBot } from '../src/game/bot';
 import { createFieldState, createHarvester, driveHarvester, updateFieldState, updateHarvester, type Harvester } from '../src/game/harvest';
-import { checkOutcome, createMatch, observeMissionMiss, suspicionOf, type Pawn } from '../src/game/match';
+import { canEmergency, checkOutcome, createMatch, observeMissionMiss, suspicionOf, type Pawn } from '../src/game/match';
 import {
   allMissionsDone,
   facilityStand,
@@ -91,6 +91,15 @@ describe('施設のミッション', () => {
     expect(p.walker.facing).toBe('right');
     const far = createHarvester(createWalker({ x: w.x + 200, y: w.y }));
     expect(missionChance(far)).toBeNull();
+  });
+
+  it('正面は、前と同じ広さ（立つ位置から frontRadius）で受けつける。土の祠なら緊急の呼び出しもできる', () => {
+    const s = fac('shrine');
+    const front = createHarvester(createWalker({ x: s.x, y: facilityStand(s).y + FACILITY.frontRadius - 2 }));
+    expect(missionChance(front)?.facility.id).toBe('shrine');
+    const pawn: Pawn = { id: 'p', part: 'flower', h: front, isSpy: false, isPlayer: true, emergencyLeft: 1 };
+    const m = createMatch([pawn, { ...pawn, id: 'q', h: createHarvester(createWalker({ x: 0, y: 0 })), isSpy: true }], 0, createRng(1));
+    expect(canEmergency(m, pawn)).toBe(true);
   });
 
   it('住民Botは、採取・加工・お祈りを全部こなす', () => {

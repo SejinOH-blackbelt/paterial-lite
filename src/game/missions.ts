@@ -62,8 +62,12 @@ export function facilityCenter(f: Facility): Point {
 
 /** いる場所からミッションができる施設（真ん中から useRadius 以内でいちばん近いもの。正面でなくてもよい。なければ null） */
 export function facilityNear(p: Point): Facility | null {
-  const near = FACILITIES.map((f) => ({ f, d: dist(facilityCenter(f), p) }))
-    .filter((x) => x.d <= FACILITY.useRadius)
+  // 真ん中からの近さ（どちら側でも）と、正面の立つ位置からの近さ（前と同じ広さ）の、どちらかに入ればよい
+  const near = FACILITIES.map((f) => ({
+    f,
+    d: Math.min(dist(facilityCenter(f), p) / FACILITY.useRadius, dist(facilityStand(f), p) / FACILITY.frontRadius),
+  }))
+    .filter((x) => x.d <= 1)
     .sort((a, b) => a.d - b.d)[0];
   return near?.f ?? null;
 }

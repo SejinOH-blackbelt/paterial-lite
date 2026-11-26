@@ -171,6 +171,16 @@ describe('採取ボタンで採取する', () => {
     expect(side.walker.facing).toBe('right');
   });
 
+  it('正面は、前と同じ広さ（立つ位置から frontRadius）で受けつけ、その場で始める', () => {
+    const f = createFieldState();
+    const s = standSpot(clay);
+    const h = createHarvester(createWalker({ x: s.x, y: s.y + RESOURCE.frontRadius - 2 }));
+    expect(startHarvest(h, f, [h])?.state).toBe('ready');
+    updateHarvester(h, f, [h], 5, 0);
+    expect(h.session?.pointId).toBe('clay');
+    expect(h.walker.facing).toBe('up');
+  });
+
   it('素材のそばで「採取」を押すと、採取を始める', () => {
     const f = createFieldState();
     const s = standSpot(clay);

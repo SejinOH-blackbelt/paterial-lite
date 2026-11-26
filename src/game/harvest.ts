@@ -89,8 +89,14 @@ export function resourceAtTap(p: Point): ResourcePoint | null {
 
 /** いる場所から採取できる素材ポイント（足元から useRadius 以内でいちばん近いもの。正面でなくても、横や後ろからでもよい） */
 export function nearbyPoint(p: Point): ResourcePoint | null {
-  const near = RESOURCE_POINTS.map((r) => ({ r, d: Math.hypot(r.x - p.x, r.y - p.y) }))
-    .filter((x) => x.d <= RESOURCE.useRadius)
+  // 足元からの近さ（どちら側でも）と、正面の立つ位置からの近さ（前と同じ広さ）の、どちらかに入ればよい
+  const near = RESOURCE_POINTS.map((r) => {
+    const s = standSpot(r);
+    const around = Math.hypot(r.x - p.x, r.y - p.y) / RESOURCE.useRadius;
+    const front = Math.hypot(s.x - p.x, s.y - p.y) / RESOURCE.frontRadius;
+    return { r, d: Math.min(around, front) };
+  })
+    .filter((x) => x.d <= 1)
     .sort((a, b) => a.d - b.d)[0];
   return near?.r ?? null;
 }
