@@ -14,7 +14,7 @@ const REASON: Record<OutcomeReason, string> = {
   gauge: '国の仕事ゲージが 満タンになった！',
   caught: '会議で スパイを当てた！',
   scanned: 'スパイが 名物を全部スキャンして、\nミッションも終えた',
-  frozen: '市民が 全員 置物にされた…',
+  frozen: '動ける市民が スパイと同じ数まで 減った…',
   timeout: '時間切れ… 国の仕事が 終わらなかった',
 };
 

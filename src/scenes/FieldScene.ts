@@ -4,9 +4,10 @@ import Phaser from 'phaser';
 import { BOT, BOT_PROFILES, COLORS, LANDMARKS, MATCH, MISSIONS, PATE, PLAYER_PART, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
+  approachNearby,
   createHarvester,
+  driveHarvester,
   harvestTap,
-  moveHarvester,
   updateFieldState,
   updateHarvester,
   type FieldState,
@@ -28,7 +29,7 @@ import {
   type MatchState,
   type Pawn,
 } from '../game/match';
-import { createWalker, isWalking, setTarget, stepWalker, type Walker } from '../game/movement';
+import { createWalker, driveWalker, isWalking, stepWalker, type Walker } from '../game/movement';
 import { createRng, type Rng } from '../game/random';
 import {
   canScan,
@@ -45,6 +46,7 @@ import {
 import { createSpyBotMind, updateSpyBot, type SpyBotMind } from '../game/spyBot';
 import { nearestPass, needleAngle, nextPass, passTime, type HarvestSession, type Judgement } from '../game/rhythm';
 import { GameAudio } from './audio';
+import { DPad } from './DPad';
 import type { MeetingData } from './MeetingScene';
 import type { ResultData } from './ResultScene';
 import type { RoleData } from './RoleScene';
@@ -134,7 +136,12 @@ export class FieldScene extends Phaser.Scene {
   private fragmentsText: Phaser.GameObjects.Text | null = null;
   /** スキャンのミニゲームの画面（遊んでいるあいだだけ） */
   private scanView: ScanGameView | null = null;
-  private marker!: Phaser.GameObjects.Image;
+  /** 十字ボタン（↑前進・↓後ずさり・←→その場で回る） */
+  private pad!: DPad;
+  /** 前のコマで十字ボタンを押していたか（離した瞬間に、そばの素材で採取を始めるため） */
+  private wasDriving = false;
+  /** いま十字ボタンで動かしているか（歩く絵にするため） */
+  private driving = false;
   private audio!: GameAudio;
   /** 0拍目の時刻（音の時計） */
   private origin = 0;
@@ -150,7 +157,6 @@ export class FieldScene extends Phaser.Scene {
   private meter!: Phaser.GameObjects.Graphics;
   private stockBars!: Phaser.GameObjects.Graphics;
   private materialsText!: Phaser.GameObjects.Text;
-  private downOnButton = false;
   private lastFlashLap = -1;
   /** 採取中に画面を暗くする幕 */
   private focusCover!: Phaser.GameObjects.Rectangle;
@@ -205,7 +211,6 @@ export class FieldScene extends Phaser.Scene {
     this.pateSprite = this.pates[0].view;
     this.all = this.pates.map((e) => e.h);
     this.setupMatch();
-    this.marker = this.add.image(0, 0, TEX.marker).setVisible(false);
 
     // 採取中は、画面を暗くして、メーターとボタンを真ん中に大きく出す（まわりが見えにくくなる）
     this.focusCover = this.hud(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, 0x1a120c, 0.82).setOrigin(0).setDepth(9040).setVisible(false));
@@ -230,26 +235,25 @@ export class FieldScene extends Phaser.Scene {
     this.callButton = this.hud(this.makeCallButton());
 
 
-    // タップ：採取中に「採取」ボタンを押したら採取、それ以外はそこへ歩く
+    // 十字ボタンで動く。2本指で同時に押せるように、指を3本まで受けつける
+    if (this.input.manager.pointersTotal < 3) this.input.addPointer(3 - this.input.manager.pointersTotal);
+    this.pad = new DPad(this);
+    this.wasDriving = false;
+    this.driving = false;
+
+    // タップ：十字ボタン・採取ボタン・呼び出し・スパイのボタン（地面をタップしても歩かない）
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
       this.audio.resume();
       if (this.match.phase !== 'play') return;
-      if (this.player.frozen) {
-        // 置物にされたら、土の精として動き回って見るだけ
-        if (this.spirit) setTarget(this.spirit.walker, { x: p.worldX, y: p.worldY });
-        return;
-      }
+      // スキャンのミニゲームのパネルは十字ボタンの上に重なるので、パネルが先に受けとる
+      if (this.scanView?.owns(over)) return;
+      if (this.pad.down(p)) return;
+      if (this.player.frozen) return; // 置物にされたら、土の精として十字ボタンで動き回って見るだけ
       if (this.callButton.visible && over.includes(this.callButton)) {
-        this.downOnButton = true;
         this.playerCalls();
         return;
       }
-      if (this.scanView?.owns(over)) {
-        this.downOnButton = true; // ミニゲームのパネルの上は、歩くタップにしない
-        return;
-      }
       if (this.scanButton && over.includes(this.scanButton)) {
-        this.downOnButton = true;
         // スキャン：その国の状態からクイズを作る（または、まねっこ）
         if (startScan(this.spy, this.audio.heardTime(), { ctx: { gauge: gauge(this.match) }, rng: this.rng })) {
           this.squash(this.scanButton, 0.9);
@@ -257,7 +261,6 @@ export class FieldScene extends Phaser.Scene {
         return;
       }
       if (this.prankButton && over.includes(this.prankButton)) {
-        this.downOnButton = true;
         const ev = prank(this.spy, this.all, this.audio.heardTime());
         if (ev) {
           this.squash(this.prankButton, 0.9);
@@ -265,14 +268,11 @@ export class FieldScene extends Phaser.Scene {
         }
         return;
       }
-      this.downOnButton = this.player.session !== null && over.includes(this.button);
-      if (this.downOnButton) this.hit(p);
-      else this.goTo(p, true);
+      if (this.player.session !== null && over.includes(this.button)) this.hit(p);
     });
-    // 指を押したまま動かすと、その方向へついてくる（ボタンを押した指は除く）
-    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (p.isDown && !this.downOnButton) this.goTo(p, false);
-    });
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.pad.move(p));
+    this.input.on('pointerup', (p: Phaser.Input.Pointer) => this.pad.up(p));
+    this.input.on('pointerupoutside', (p: Phaser.Input.Pointer) => this.pad.up(p));
 
     for (const e of this.pates) this.syncPate(e, 0);
   }
@@ -301,20 +301,21 @@ export class FieldScene extends Phaser.Scene {
     return c;
   }
 
-  private goTo(p: Phaser.Input.Pointer, showMarker: boolean): void {
-    // 置物にされたら歩けない（指を押したまま置物にされて、そのまま指を動かした場合も）
-    if (this.player.frozen) return;
-    const result = moveHarvester(this.player, { x: p.worldX, y: p.worldY }, this.all);
-    // ほかのパテが使っているポイントなら、そばで順番を待つ（空いたら自動で採取を始める）
-    if (result === 'wait' && showMarker) this.popText('じゅんばん待ち', '#2b1d14', 15, 0);
-    const t = this.player.walker.target!;
-    // 前の目印の「消える演出」が残っていたら止めてから、表示し直す
-    this.tweens.killTweensOf(this.marker);
-    this.marker.setPosition(t.x, t.y).setVisible(true).setAlpha(1).setScale(1);
-    if (showMarker) {
-      this.marker.setScale(1.4);
-      this.tweens.add({ targets: this.marker, scale: 1, duration: 150, ease: 'Back.Out' });
+  /** 十字ボタンで動かす。離した瞬間、素材のそばなら自分で寄って採取を始める */
+  private drive(dt: number): void {
+    this.pad.update();
+    const { forward, turn } = this.pad.state();
+    this.driving = forward !== 0 || turn !== 0;
+    if (this.player.frozen) {
+      // 土の精は、ふつうより少し速く動ける
+      if (this.spirit && this.driving) driveWalker(this.spirit.walker, forward, turn, dt, PATE.speed * 1.3);
+    } else if (this.driving) {
+      driveHarvester(this.player, forward, turn, dt);
+    } else if (this.wasDriving) {
+      // ほかのパテが使っているポイントなら、そばで順番を待つ（空いたら自動で採取を始める）
+      if (approachNearby(this.player, this.all) === 'wait') this.popText('じゅんばん待ち', '#2b1d14', 15, 0);
     }
+    this.wasDriving = this.driving;
   }
 
   /** 「採取」ボタンを押したとき */
@@ -431,6 +432,7 @@ export class FieldScene extends Phaser.Scene {
     const heard = this.audio.heardTime();
     if (this.match.phase !== 'play') return;
     updateFieldState(this.field, heard);
+    this.drive(dt);
     for (const e of this.pates) {
       stepWalker(e.h.walker, dt);
       // 最初の判定は、まだ音の予約が間に合う周から選ぶ（scheduleTicks と同じ締め切り）
@@ -455,10 +457,6 @@ export class FieldScene extends Phaser.Scene {
     }
     observePatch(this.match, heard, dt);
     this.updateSpirit(dt);
-    const walking = isWalking(this.player.walker);
-    if (!walking && this.marker.visible && this.marker.alpha === 1) {
-      this.tweens.add({ targets: this.marker, alpha: 0, duration: 200, onComplete: () => this.marker.setVisible(false) });
-    }
     this.scheduleTicks();
     this.drawMeter(heard);
     this.drawStock(heard);
@@ -735,7 +733,7 @@ export class FieldScene extends Phaser.Scene {
     this.syncScanView(started);
     for (const t of this.pendingTicks) t.cancel();
     this.pendingTicks = [];
-    this.marker.setVisible(false);
+    this.pad.reset(); // 会議の画面に切りかわると、指を離したことが届かないことがある
     const data: MeetingData = {
       match: this.match,
       player: this.playerPawn,
@@ -751,6 +749,7 @@ export class FieldScene extends Phaser.Scene {
           return;
         }
         this.witnessed = null;
+        this.pad.reset();
         this.scene.resume();
         for (const e of this.pates) this.syncPate(e, 0);
         this.updateMaterials(false); // ぬれぎぬの賠償で素材の数が変わっていることがある
@@ -784,13 +783,13 @@ export class FieldScene extends Phaser.Scene {
       this.scanButton?.setVisible(false);
       this.prankButton?.setVisible(false);
     }
-    stepWalker(this.spirit.walker, dt, PATE.speed * 1.3);
+    stepWalker(this.spirit.walker, dt, PATE.speed * 1.3); // 生まれたときに少し浮き上がる動き
     const { x, y } = this.spirit.walker.pos;
     const floatY = y - 10 - Math.sin(this.time.now / 300) * 4;
     this.spirit.view.setPosition(x, floatY);
     this.spirit.glow.setPosition(x, floatY);
     this.spirit.view.setFacing(this.spirit.walker.facing);
-    this.spirit.view.update(dt, isWalking(this.spirit.walker));
+    this.spirit.view.update(dt, isWalking(this.spirit.walker) || this.driving);
   }
 
   /** 見える範囲の外を暗くする（自分のまわりだけ穴をあけた霧） */
@@ -950,7 +949,7 @@ export class FieldScene extends Phaser.Scene {
     if (e.h.frozen && !e.view.isStatue) e.view.setStatue(true);
     e.view.setPosition(x, y);
     e.view.setFacing(e.h.walker.facing);
-    e.view.update(dt, isWalking(e.h.walker));
+    e.view.update(dt, isWalking(e.h.walker) || (e.h === this.player && this.driving && !e.h.frozen));
     e.shadow.setPosition(x, y - 1).setScale(1 - e.view.bounce * PATE.shadowShrink);
     // 下にいるものほど手前に表示する
     e.view.setDepth(y);

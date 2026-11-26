@@ -85,10 +85,15 @@ describe('スパイの勝ち', () => {
     expect(checkOutcome(m, 11)).toMatchObject({ winner: 'spy', reason: 'scanned' });
   });
 
-  it('市民を全員置物にすると、スパイの勝ち', () => {
+  it('動ける市民の数がスパイの数（1体）まで減ると、スパイの勝ち', () => {
     const { m, pawns } = setup();
-    pawns.filter((p) => !p.isSpy).forEach((p) => (p.h.frozen = true));
-    expect(checkOutcome(m, 10)).toMatchObject({ winner: 'spy', reason: 'frozen' });
+    const citizens = pawns.filter((p) => !p.isSpy);
+    // 5体のうち3体が置物：動ける市民は2体 → まだ続く
+    citizens.slice(0, 3).forEach((p) => (p.h.frozen = true));
+    expect(checkOutcome(m, 10)).toBeNull();
+    // 4体目も置物：動ける市民は1体（スパイと同じ数）→ スパイの勝ち
+    citizens[3].h.frozen = true;
+    expect(checkOutcome(m, 11)).toMatchObject({ winner: 'spy', reason: 'frozen' });
   });
 
   it('会議の時間は、制限時間に数えない', () => {

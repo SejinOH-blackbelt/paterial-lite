@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { RESOURCE, RESOURCE_POINTS, STOCK } from '../src/game/config';
 import {
+  approachNearby,
   createFieldState,
+  driveHarvester,
   createHarvester,
   harvestTap,
   moveHarvester,
@@ -145,5 +147,46 @@ describe('素材ポイントの取り合い', () => {
     stepWalker(me.walker, 100);
     updateHarvester(me, f, all, 7, 0);
     expect(me.session?.pointId).toBe('clay');
+  });
+});
+
+describe('十字ボタンで採取する', () => {
+  it('素材の立つ場所のそばで止まると、自分で寄って採取を始める', () => {
+    const f = createFieldState();
+    const s = standSpot(clay);
+    const h = createHarvester(createWalker({ x: s.x + 20, y: s.y + 15 }));
+    expect(approachNearby(h, [h])).toBe('harvest');
+    stepWalker(h.walker, 10);
+    updateHarvester(h, f, [h], 5, 0);
+    expect(h.session?.pointId).toBe('clay');
+  });
+
+  it('素材から離れたところで止まっても、何も起きない', () => {
+    const s = standSpot(clay);
+    const h = createHarvester(createWalker({ x: s.x + RESOURCE.approachRadius + 10, y: s.y }));
+    expect(approachNearby(h, [h])).toBeNull();
+    expect(h.walker.target).toBeNull();
+  });
+
+  it('ほかのパテが使っていたら、そばで順番を待つ', () => {
+    const f = createFieldState();
+    const other = createHarvester(createWalker(standSpot(clay)));
+    updateHarvester(other, f, [other], 5, 0);
+    const s = standSpot(clay);
+    const me = createHarvester(createWalker({ x: s.x + 10, y: s.y + 20 }));
+    expect(approachNearby(me, [other, me])).toBe('wait');
+    expect(me.waitingFor).toBe('clay');
+  });
+
+  it('採取中に十字ボタンを押すと、採取をやめて動き出す。置物は動けない', () => {
+    const { h } = atClay();
+    driveHarvester(h, 1, 0, 0.5);
+    expect(h.session).toBeNull();
+    expect(h.claim).toBeNull();
+    const statue = atClay().h;
+    statue.frozen = true;
+    const before = { ...statue.walker.pos };
+    driveHarvester(statue, 1, 0, 0.5);
+    expect(statue.walker.pos).toEqual(before);
   });
 });

@@ -1,7 +1,7 @@
 // 素材ポイントと採取の流れのルール。画面表示（Phaser）には依存しません。
 
 import { FIELD, RESOURCE, RESOURCE_POINTS, STOCK } from './config';
-import { setTarget, type Point, type Walker } from './movement';
+import { driveWalker, faceTo, setTarget, type Point, type Walker } from './movement';
 import type { Rng } from './random';
 import { startSession, tapSession, type HarvestSession, type TapResult } from './rhythm';
 
@@ -151,7 +151,35 @@ export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harve
   }
   h.claim = r.id;
   h.session = startSession(r.id, r.kind, earliest, origin);
-  h.walker.facing = 'up'; // 素材のほうを向く
+  faceTo(h.walker, 'up'); // 素材のほうを向く
+}
+
+/**
+ * 十字ボタンで動かす。動かしたら採取・順番待ちはやめる（置物は動けない）。
+ * forward / turn の意味は driveWalker と同じ。
+ */
+export function driveHarvester(h: Harvester, forward: number, turn: number, dtSeconds: number): void {
+  if (h.frozen) return;
+  if (forward === 0 && turn === 0) return;
+  h.session = null;
+  h.claim = null;
+  h.waitingFor = null;
+  driveWalker(h.walker, forward, turn, dtSeconds);
+}
+
+/**
+ * 十字ボタンを離したとき：素材ポイントの立つ場所のすぐそばなら、自分で寄って採取を始める
+ * （使用中なら、そばで順番を待つ）。近くになければ何もしない（null）。
+ */
+export function approachNearby(h: Harvester, all: readonly Harvester[]): MoveResult | null {
+  if (h.frozen || h.session || h.walker.target) return null;
+  const p = h.walker.pos;
+  const near = RESOURCE_POINTS.map((r) => ({ r, d: Math.hypot(standSpot(r).x - p.x, standSpot(r).y - p.y) }))
+    .filter((x) => x.d <= RESOURCE.approachRadius)
+    .sort((a, b) => a.d - b.d)[0];
+  if (!near) return null;
+  // 素材そのものを指したのと同じ扱いにする（空いていれば立つ場所へ、使用中なら待つ場所へ）
+  return moveHarvester(h, { x: near.r.x, y: near.r.y - RESOURCE.tapCenterUp }, all);
 }
 
 export interface HarvestResult extends TapResult {

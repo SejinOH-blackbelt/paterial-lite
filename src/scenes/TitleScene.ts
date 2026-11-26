@@ -11,9 +11,11 @@ import { FONT, INK, cssColor, label, panel, textButton } from './ui';
 const HOW_TO = [
   '和の国に、バイキングのスパイが1体まぎれこんだ！',
   '',
+  '【操作】下の十字ボタン。↑前進 ↓後ずさり ↺↻その場で回る。素材のそばで止まると採取が始まる。',
+  '',
   '【市民】素材を集めてミッションをこなし、国の仕事ゲージを満タンにしよう。置物を見つけたら「呼び出し」で会議。スタンプと投票で、スパイを当てよう。',
   '',
-  '【スパイ】名物をスキャンして、自分のミッションも終えれば勝ち。近くのパテを置物にもできる。',
+  '【スパイ】名物をスキャンして、自分のミッションも終えれば勝ち。近くのパテを置物にもできる。動ける市民がスパイと同じ数になっても勝ち。',
   '',
   '手がかり：スパイを叩くと石の「コツッ」。体のどこかに、グレーの塗りムラ…',
 ].join('\n');
@@ -52,13 +54,13 @@ export class TitleScene extends Phaser.Scene {
 
   private showHowTo(): void {
     const bg = this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.65).setOrigin(0).setInteractive();
-    const card = panel(this, SCREEN.width / 2, SCREEN.height / 2, SCREEN.width - 30, 420, COLORS.uiPaper);
-    const title = label(this, SCREEN.width / 2, SCREEN.height / 2 - 180, 'あそびかた', 22, cssColor(COLORS.uiHoney));
+    const card = panel(this, SCREEN.width / 2, SCREEN.height / 2, SCREEN.width - 30, 560, COLORS.uiPaper);
+    const title = label(this, SCREEN.width / 2, SCREEN.height / 2 - 250, 'あそびかた', 22, cssColor(COLORS.uiHoney));
     const body = this.add
-      .text(SCREEN.width / 2, SCREEN.height / 2 - 150, HOW_TO, { fontFamily: FONT, fontSize: '14px', color: INK, align: 'left', lineSpacing: 5, wordWrap: { width: 300, useAdvancedWrap: true } })
+      .text(SCREEN.width / 2, SCREEN.height / 2 - 222, HOW_TO, { fontFamily: FONT, fontSize: '14px', color: INK, align: 'left', lineSpacing: 5, wordWrap: { width: 300, useAdvancedWrap: true } })
       .setOrigin(0.5, 0);
     const parts: Phaser.GameObjects.GameObject[] = [bg, card, title, body];
-    const close = textButton(this, SCREEN.width / 2, SCREEN.height / 2 + 175, 140, 40, 'とじる', COLORS.uiHoney, () => parts.concat(close).forEach((o) => o.destroy()), 16);
+    const close = textButton(this, SCREEN.width / 2, SCREEN.height / 2 + 245, 140, 40, 'とじる', COLORS.uiHoney, () => parts.concat(close).forEach((o) => o.destroy()), 16);
   }
 
   /** パテが ぴょこぴょこ 跳ねる */

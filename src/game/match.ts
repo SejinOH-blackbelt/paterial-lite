@@ -3,7 +3,7 @@
 
 import { BOT, LANDMARKS, MATCH, MISSIONS, SUSPICION } from './config';
 import { createFieldState, type FieldState, type Harvester } from './harvest';
-import type { Point } from './movement';
+import { faceTo, type Point } from './movement';
 import type { Rng } from './random';
 import { allScanned, createSpyState, patchSize, type SpyEvent, type SpyState } from './spy';
 
@@ -135,7 +135,10 @@ export function checkOutcome(m: MatchState, now: number): Outcome | null {
   const citizens = m.pawns.filter((p) => !p.isSpy);
   const spyPawn = m.pawns.find((p) => p.isSpy)!;
   let o: Outcome | null = null;
-  if (citizens.length > 0 && citizens.every((p) => p.h.frozen)) o = { winner: 'spy', reason: 'frozen', time: now };
+  // 動ける市民の数が、スパイの数まで減ったらスパイの勝ち（もう多数決で勝てないため）
+  const spies = m.pawns.filter((p) => p.isSpy).length;
+  const active = citizens.filter((p) => !p.h.frozen).length;
+  if (citizens.length > 0 && active <= spies) o = { winner: 'spy', reason: 'frozen', time: now };
   else if (allScanned(m.spy) && allMissionsDone(spyPawn.h)) o = { winner: 'spy', reason: 'scanned', time: now };
   else if (gauge(m) >= 1) o = { winner: 'citizens', reason: 'gauge', time: now };
   else if (playedSeconds(m, now) >= MATCH.timeLimit) o = { winner: 'spy', reason: 'timeout', time: now };
@@ -310,7 +313,7 @@ export function regroup(m: MatchState): void {
     const a = (i / alive.length) * Math.PI * 2 + Math.PI / 2;
     p.h.walker.pos = { x: torii.x + Math.cos(a) * MATCH.regroupRadius, y: torii.y + 30 + Math.sin(a) * MATCH.regroupRadius * 0.6 };
     p.h.walker.target = null;
-    p.h.walker.facing = 'down';
+    faceTo(p.h.walker, 'down');
   });
 }
 

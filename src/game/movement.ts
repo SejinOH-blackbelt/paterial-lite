@@ -18,11 +18,16 @@ export interface Walker {
   target: Point | null;
   /** 向いている方向。止まったときは最後に歩いた方向を向いたまま */
   facing: Facing;
+  /** 体の向き（角度。ラジアン。0 が画面の右、π/2 が画面の下）。十字ボタンの前進・後退はこの向きに進む */
+  heading: number;
 }
+
+/** 4方向の向きを、角度にする */
+const FACING_ANGLE: Record<Facing, number> = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
 
 /** 立ち止まった新しいパテを作る（最初は手前を向いている） */
 export function createWalker(pos: Point): Walker {
-  return { pos: { ...pos }, target: null, facing: 'down' };
+  return { pos: { ...pos }, target: null, facing: 'down', heading: Math.PI / 2 };
 }
 
 /**
@@ -52,7 +57,39 @@ export function clampToField(p: Point): Point {
 /** 新しい目的地を決める */
 export function setTarget(w: Walker, p: Point): void {
   w.target = clampToField(p);
-  w.facing = facingFor(w.target.x - w.pos.x, w.target.y - w.pos.y, w.facing);
+  turnToward(w, w.target.x - w.pos.x, w.target.y - w.pos.y);
+}
+
+/** 進む向き（dx, dy）へ体を向ける */
+function turnToward(w: Walker, dx: number, dy: number): void {
+  if (dx === 0 && dy === 0) return;
+  w.heading = Math.atan2(dy, dx);
+  w.facing = facingFor(dx, dy, w.facing);
+}
+
+/** 向きを4方向のどれかに決めたとき（素材のほうを向くなど）、体の向きの角度もそろえる */
+export function faceTo(w: Walker, facing: Facing): void {
+  w.facing = facing;
+  w.heading = FACING_ANGLE[facing];
+}
+
+/**
+ * 十字ボタンで動かす（戦車のような操作）。
+ * forward：1 で前進、-1 で後ずさり（体の向きは変えずに下がる）、0 で止まる。
+ * turn：1 で右回り、-1 で左回り（その場で回る）。
+ * 目的地へ歩いている途中なら、それはやめる。
+ */
+export function driveWalker(w: Walker, forward: number, turn: number, dtSeconds: number, speed: number = PATE.speed): void {
+  w.target = null;
+  w.heading += turn * PATE.turnSpeed * dtSeconds;
+  // 角度が大きくなりすぎないように、-π〜π に収める
+  w.heading = Math.atan2(Math.sin(w.heading), Math.cos(w.heading));
+  const cos = Math.cos(w.heading);
+  const sin = Math.sin(w.heading);
+  w.facing = facingFor(cos, sin, w.facing);
+  if (forward === 0) return;
+  const move = forward * speed * (forward < 0 ? PATE.backSpeedRate : 1) * dtSeconds;
+  w.pos = clampToField({ x: w.pos.x + cos * move, y: w.pos.y + sin * move });
 }
 
 /**
@@ -64,7 +101,7 @@ export function stepWalker(w: Walker, dtSeconds: number, speed: number = PATE.sp
   const dx = w.target.x - w.pos.x;
   const dy = w.target.y - w.pos.y;
   const dist = Math.hypot(dx, dy);
-  w.facing = facingFor(dx, dy, w.facing);
+  turnToward(w, dx, dy);
   const move = speed * dtSeconds;
   if (dist <= PATE.arriveDistance || move >= dist) {
     w.pos = { ...w.target };
