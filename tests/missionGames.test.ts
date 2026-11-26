@@ -85,6 +85,21 @@ describe('杭むすび（鋳造所）', () => {
 });
 
 describe('ジグソー（製造所）', () => {
+  it('得意なら最初からピースがはまっていて手間が少ない。苦手はまちがえると、はめたピースが外れる', () => {
+    const good = createJigsawGame(createRng(7), 2, false);
+    expect(good.placed.filter((p) => p)).toHaveLength(2);
+    expect(good.tray).toHaveLength(MISSION_GAME.jigsawPieces - 2);
+    const weak = createJigsawGame(createRng(8), 0, true);
+    const p = weak.tray[0];
+    pickPiece(weak, p);
+    placePiece(weak, p);
+    expect(weak.placed[p]).toBe(true);
+    const other = weak.tray[0];
+    pickPiece(weak, other);
+    expect(placePiece(weak, (other + 1) % MISSION_GAME.jigsawPieces === other ? 0 : (other + 1) % MISSION_GAME.jigsawPieces)).toBe('miss');
+    expect(weak.placed.filter((x) => x)).toHaveLength(0); // はめていた1つが外れた
+  });
+
   it('ピースを正しい場所にはめるとできあがり。ちがう場所なら台に戻る', () => {
     const g = createJigsawGame(createRng(6));
     expect(g.tray.some((p, i) => p !== i)).toBe(true); // 最初から正しい並びではない

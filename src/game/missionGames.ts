@@ -145,15 +145,20 @@ export interface JigsawGame {
   /** 場所ごとにはまっているか */
   placed: boolean[];
   selected: number | null;
+  /** 苦手：まちがえると、はめたピースが1つ外れて台に戻る */
+  penalty: boolean;
   result: 'playing' | 'success';
 }
 
-export function createJigsawGame(rng: Rng): JigsawGame {
+/** preplaced：最初からはまっているピースの数（得意だと減る手間）。penalty：まちがえるとはめたピースが外れる（苦手） */
+export function createJigsawGame(rng: Rng, preplaced = 0, penalty = false): JigsawGame {
   const n = MISSION_GAME.jigsawPieces;
-  let tray = shuffle(rng, Array.from({ length: n }, (_, i) => i));
+  const placed: boolean[] = Array(n).fill(false);
+  for (const i of shuffle(rng, Array.from({ length: n }, (_, k) => k)).slice(0, Math.min(preplaced, n - 1))) placed[i] = true;
+  let tray = shuffle(rng, Array.from({ length: n }, (_, i) => i).filter((i) => !placed[i]));
   // 最初から正しい並びだと簡単すぎるので、並べ替え直す
-  for (let k = 0; k < 5 && tray.every((p, i) => p === i); k++) tray = shuffle(rng, tray);
-  return { kind: 'jigsaw', tray, placed: Array(n).fill(false), selected: null, result: 'playing' };
+  for (let k = 0; k < 5 && tray.length > 1 && tray.every((p, i) => p === i); k++) tray = shuffle(rng, tray);
+  return { kind: 'jigsaw', tray, placed, selected: null, penalty, result: 'playing' };
 }
 
 /** 台のピースを選ぶ（同じピースをもう一度で、選ぶのをやめる） */
@@ -168,7 +173,17 @@ export function placePiece(g: JigsawGame, slot: number): Step {
   if (g.result !== 'playing' || g.selected === null || g.placed[slot] === undefined || g.placed[slot]) return 'ignored';
   const piece = g.selected;
   g.selected = null;
-  if (piece !== slot) return 'miss';
+  if (piece !== slot) {
+    if (g.penalty) {
+      // 苦手：はめたピースが1つ外れて台に戻る
+      const back = g.placed.findIndex((p) => p);
+      if (back >= 0) {
+        g.placed[back] = false;
+        g.tray.push(back);
+      }
+    }
+    return 'miss';
+  }
   g.placed[slot] = true;
   g.tray = g.tray.filter((p) => p !== piece);
   if (g.tray.length > 0) return 'ok';
@@ -318,7 +333,7 @@ export function createMissionGame(kind: MissionGameKind, now: number, origin: nu
     case 'pegs':
       return createPegGame(rng, AFFINITY.pegColors[a]);
     case 'jigsaw':
-      return createJigsawGame(rng);
+      return createJigsawGame(rng, AFFINITY.jigsawPreplaced[a], AFFINITY.jigsawPenalty[a]);
     case 'prayer':
       return createPrayerGame(origin, AFFINITY.claps[a], AFFINITY.clapWindow[a]);
   }

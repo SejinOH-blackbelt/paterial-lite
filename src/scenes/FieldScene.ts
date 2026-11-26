@@ -786,7 +786,7 @@ export class FieldScene extends Phaser.Scene {
     const walking = (e: PateEntity) =>
       e.h === this.player ? this.driving || isWalking(e.h.walker) : this.remoteWalking.get(e.h) ?? isWalking(e.h.walker);
     if (!this.isSim()) {
-      this.netSend('host', { k: 'me', p: pawnToWire(this.player, walking(this.pates[this.me])) } satisfies SelfState);
+      this.netSend('host', { k: 'me', p: pawnToWire(this.player, walking(this.pates[this.me]), heard) } satisfies SelfState);
       return;
     }
     const f = fieldToWire(this.field, heard);
@@ -794,7 +794,7 @@ export class FieldScene extends Phaser.Scene {
       k: 'snap',
       tl: Math.round(timeLeft(this.match, heard) * 10) / 10,
       sup: this.match.support,
-      pw: this.pates.map((e) => pawnToWire(e.h, walking(e))),
+      pw: this.pates.map((e) => pawnToWire(e.h, walking(e), heard)),
       st: f.st,
       rg: f.rg,
       spy: spyToWire(this.spy, patchSize(this.spy, heard), prankWait(this.spy, heard)),
@@ -1333,7 +1333,7 @@ export class FieldScene extends Phaser.Scene {
       // 子機：会議を開くのは親機（親機が、呼び出せるかを確かめる）
       if (!reportableBody(this.match, this.playerPawn) && !canEmergency(this.match, this.playerPawn)) return false;
       // 押した瞬間の場所で親機が確かめられるように、先に今のようすを送る（同じ通り道なので順番は入れかわらない）
-      this.netSend('host', { k: 'me', p: pawnToWire(this.player, this.driving) } satisfies SelfState);
+      this.netSend('host', { k: 'me', p: pawnToWire(this.player, this.driving, this.audio.heardTime()) } satisfies SelfState);
       this.netSend('host', { k: 'call' } satisfies CallRequest);
       return true;
     }
@@ -1488,8 +1488,10 @@ export class FieldScene extends Phaser.Scene {
     // 視界は前だけ：前の扇形と足元の円だけ穴をあけた霧（右向きに描いて、向きに合わせて回す）
     const cone = 'field-vision-cone';
     if (!this.textures.exists(cone)) {
-      const width = SCREEN.width * 2 + 120;
-      const height = SCREEN.height * 2 + 120;
+      // 向きに合わせて回すので、どの向きでも画面全体（マップの端でカメラが止まり、パテが画面の角に寄ったときも）を覆える正方形にする
+      const side = Math.ceil(Math.hypot(SCREEN.width, SCREEN.height)) * 2 + 120;
+      const width = side;
+      const height = side;
       drawPart(this, cone, width, height, (ctx) => {
         const x = width / 2;
         const y = height / 2;

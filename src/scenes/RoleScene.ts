@@ -1,6 +1,6 @@
 // 役の発表：「きみは 王様」（市民側）か「きみは スパイ」。スパイをここで決めて、採取場に渡す
 import Phaser from 'phaser';
-import { COLORS, ELEMENT_NAMES, ELEMENTS, KING_PART, PLAYER_ELEMENT, SCREEN } from '../game/config';
+import { COLORS, ELEMENT_NAMES, ELEMENTS, KING_PART, NET, PLAYER_ELEMENT, SCREEN } from '../game/config';
 import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
 import { PateView } from './PateView';
@@ -8,6 +8,7 @@ import { INK, cssColor, label, panel, textButton } from './ui';
 import { ELEMENT_ICON, makeElementIcons } from './elementIcons';
 import type { ElementId } from '../game/elements';
 import type { NetGame } from '../net/netGame';
+import type { GoWire, NetMessage, ReadyWire } from '../net/sync';
 
 export interface RoleData {
   /** スパイになるパテの番号（ひとりで遊ぶときは 0 がプレイヤー。友達と遊ぶときは席の番号） */
@@ -33,6 +34,7 @@ export class RoleScene extends Phaser.Scene {
     const hash = typeof location !== 'undefined' ? location.hash : '';
     const spyIndex = net ? net.spy : hash === '#spy' ? 0 : hash === '#citizen' ? 1 + Math.floor(rng() * 5) : chooseSpy(6, rng);
     const isSpy = spyIndex === (net ? net.mySeat : 0);
+    if (net) this.listenNet(net);
 
     const x = SCREEN.width / 2;
     this.cameras.main.setBackgroundColor(isSpy ? COLORS.uiStone : COLORS.background);
@@ -98,7 +100,12 @@ export class RoleScene extends Phaser.Scene {
     const go = (e: ElementId) => {
       if (gone) return;
       gone = true;
-      this.scene.start('Field', { spyIndex, net, element: e } satisfies RoleData);
+      if (!net) {
+        this.scene.start('Field', { spyIndex, net, element: e } satisfies RoleData);
+        return;
+      }
+      // 友達と遊ぶとき：全員が選び終えてから、いっせいに始める（親機だけ先に動けないように）
+      this.waitForEveryone(spyIndex, net, e);
     };
     const random = () => ELEMENTS[Math.floor(Math.random() * ELEMENTS.length)];
     textButton(this, x + 70, 530, 130, 46, 'これにする', COLORS.uiHoney, () => go(chosen ?? random()), 17);
@@ -113,6 +120,68 @@ export class RoleScene extends Phaser.Scene {
     tick();
     this.time.addEvent({ delay: 1000, repeat: 10, callback: tick });
   }
+
+  /**
+   * 友達と遊ぶとき：自分の選択を伝えて、全員がそろうのを待つ。
+   * 親機は、人の席が全員「選び終えた」を送ってきたら（または待ちすぎたら）「始める」をみんなに送る
+   */
+  private waitForEveryone(spyIndex: number, net: NetGame, element: ElementId): void {
+    const x = SCREEN.width / 2;
+    this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.6).setOrigin(0).setInteractive();
+    label(this, x, 300, `${ELEMENT_NAMES[element]}の体にやどった！`, 20, cssColor(COLORS.uiHoney));
+    label(this, x, 340, 'みんなが選ぶのを 待っています…', 14);
+    let started = false;
+    const start = () => {
+      if (started) return;
+      started = true;
+      this.scene.start('Field', { spyIndex, net, element } satisfies RoleData);
+    };
+    const host = net.mySeat === 0;
+    const humans = net.seats.map((id, seat) => (id !== 0 ? seat : -1)).filter((seat) => seat >= 0);
+    const goAll = () => {
+      net.relay.send('all', { k: 'go' } satisfies GoWire);
+      start();
+    };
+    // 選んでいるあいだに届いた知らせ（create で受けとり始めている）も使う
+    this.onReady = () => {
+      if (host && humans.every((s) => this.readySeats.has(s))) goAll();
+    };
+    this.onGo = start;
+    if (this.goReceived) start();
+    if (host) {
+      this.readySeats.add(0);
+      this.onReady();
+      this.time.delayedCall(NET.readyTimeout * 1000, goAll); // 抜けた人がいても、待ちすぎたら始める
+    } else {
+      net.relay.send('host', { k: 'ready' } satisfies ReadyWire);
+    }
+  }
+
+  /** 友達と遊ぶとき：役の画面を開いたときから、ほかの人の「選び終えた」「始める」を受けとる */
+  private listenNet(net: NetGame): void {
+    this.readySeats = new Set();
+    this.goReceived = false;
+    this.onReady = () => {};
+    this.onGo = () => {};
+    const unlisten = net.relay.listen((from, data) => {
+      const msg = data as NetMessage;
+      const seat = net.seats.indexOf(from);
+      if (msg?.k === 'go' && seat === 0) {
+        this.goReceived = true;
+        this.onGo();
+      }
+      if (msg?.k === 'ready' && seat > 0) {
+        this.readySeats.add(seat);
+        this.onReady();
+      }
+    });
+    this.events.once('shutdown', () => unlisten());
+  }
+
+  private readySeats = new Set<number>();
+  private goReceived = false;
+  private onReady: () => void = () => {};
+  private onGo: () => void = () => {};
 
   /** パテが ぴょこぴょこ 跳ねる */
   update(_time: number, deltaMs: number): void {

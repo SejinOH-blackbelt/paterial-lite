@@ -32,6 +32,16 @@ describe('友達と遊ぶときの、ようすの伝え方', () => {
     expect([...b.finished].sort()).toEqual([MISSIONS[0].id, MISSIONS[3].id].sort());
   });
 
+  it('体の向きの角度と、視界がまるい残り秒数も写る（残り秒数は受けとったスマホの時計に直す）', () => {
+    const a = createHarvester(createWalker({ x: 1, y: 1 }));
+    a.walker.heading = 1.23;
+    a.lightUntil = 110;
+    const b = createHarvester(createWalker({ x: 0, y: 0 }));
+    applyWireToPawn(b, JSON.parse(JSON.stringify(pawnToWire(a, false, 100))), makeSession, 5000);
+    expect(b.walker.heading).toBeCloseTo(1.23, 2);
+    expect(b.lightUntil).toBeCloseTo(5010, 5);
+  });
+
   it('ミッション中の印は写るが、中身（ミニゲーム）はない。終わったら印が消える', () => {
     const a = createHarvester(createWalker({ x: 1, y: 1 }));
     a.task = { missionId: MISSIONS[1].id, start: 0, game: null, endsAt: 5, willFail: false };

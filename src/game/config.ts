@@ -162,6 +162,8 @@ export const HUD_BUTTONS = {
 export const NET = {
   /** ようすを送る間隔（秒）。短いほど動きがなめらかだが、通信が増える */
   sendInterval: 0.1,
+  /** 親機が、みんながエレメントを選び終えるのを待つ最長の秒数（抜けた人がいても始められるように） */
+  readyTimeout: 20,
 } as const;
 
 /** リズム採取（回るメーター） */
@@ -264,6 +266,9 @@ export const AFFINITY = {
   pegColors: { good: 2, plain: 3, weak: 4 },
   claps: { good: 1, plain: 2, weak: 3 },
   clapWindow: { good: 0.18, plain: 0.14, weak: 0.1 },
+  /** ジグソー：最初からはまっているピースの数、まちがえるとはめたピースが1つ外れるか */
+  jigsawPreplaced: { good: 2, plain: 0, weak: 0 },
+  jigsawPenalty: { good: false, plain: false, weak: true },
 } as const;
 
 /**

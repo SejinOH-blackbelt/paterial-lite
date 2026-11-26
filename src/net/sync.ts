@@ -38,6 +38,10 @@ export interface PawnWire {
   e: number;
   /** 配られたミッション（MISSIONS の番号のビット） */
   ms: number;
+  /** 体の向きの角度（ラジアン。視界の扇の向き） */
+  hd: number;
+  /** 視界がまるい残りの秒数（雷のミッションのあと。なければ 0）。スマホごとに時計がちがうので残り秒数で送る */
+  lt: number;
 }
 
 /** 親機 → みんな：試合のようす */
@@ -58,7 +62,7 @@ export interface Snapshot {
 }
 
 /** パテのようすを送る形にする */
-export function pawnToWire(h: Harvester, walking: boolean): PawnWire {
+export function pawnToWire(h: Harvester, walking: boolean, now = 0): PawnWire {
   const r = h.session ? RESOURCE_POINTS.findIndex((p) => p.id === h.session!.pointId) : -1;
   const tk = h.task ? MISSIONS.findIndex((m) => m.id === h.task!.missionId) : -1;
   let fin = 0;
@@ -80,6 +84,8 @@ export function pawnToWire(h: Harvester, walking: boolean): PawnWire {
     fin,
     e: ELEMENTS.indexOf(h.element),
     ms,
+    hd: Math.round(h.walker.heading * 100) / 100,
+    lt: Math.max(0, Math.round((h.lightUntil - now) * 10) / 10),
   };
 }
 
@@ -108,6 +114,8 @@ export function applyWireToPawn(h: Harvester, w: PawnWire, makeSession: (pointId
   h.finished = new Set(MISSIONS.filter((_, i) => (w.fin & (1 << i)) !== 0).map((m) => m.id));
   if (typeof w.e === 'number' && ELEMENTS[w.e]) h.element = ELEMENTS[w.e];
   if (typeof w.ms === 'number') h.missions = MISSIONS.filter((_, i) => (w.ms & (1 << i)) !== 0).map((m) => m.id);
+  if (typeof w.hd === 'number') h.walker.heading = w.hd;
+  if (typeof w.lt === 'number') h.lightUntil = w.lt > 0 ? now + w.lt : -Infinity;
   return w.w === 1;
 }
 
@@ -223,6 +231,16 @@ export interface StartWire {
   seed: number;
 }
 
+/** 子機 → 親機：最初のエレメントを選び終えた */
+export interface ReadyWire {
+  k: 'ready';
+}
+
+/** 親機 → みんな：全員が選び終えたので、いっせいに試合を始める */
+export interface GoWire {
+  k: 'go';
+}
+
 /** 子機 → 親機：呼び出しボタンを押した（置物のそばなら呼び出し、土の祠なら緊急の呼び出し。親機が確かめる） */
 export interface CallRequest {
   k: 'call';
@@ -265,7 +283,7 @@ export interface ResultWire {
   lost: number;
 }
 
-export type NetMessage = CallRequest | MeetWire | SayWire | VoteWire | ResultWire | Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | OverWire | StartWire;
+export type NetMessage = ReadyWire | GoWire | CallRequest | MeetWire | SayWire | VoteWire | ResultWire | Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | OverWire | StartWire;
 
 /**
  * 親機が席を決める：親機は 0 番、ほかの人は入った順に 1 番から。残りは Bot。

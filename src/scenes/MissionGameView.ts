@@ -360,7 +360,9 @@ export class MissionGameView {
   private buildPrayer(g: PrayerGame): void {
     // 作法の順番の札（色は drawPrayer で、いまの段を明るくする）
     PRAYER_STEPS.forEach((text, i) => {
-      const t = this.scene.add.text(this.chipX(i) + 35, PANEL.y + 87, `${'①②③④'[i]}${text}`, { fontFamily: FONT, fontSize: '11px', fontStyle: 'bold', color: INK }).setOrigin(0.5);
+      // 拍手の数は得意・苦手で変わるので、実際の数を出す
+      const shown = i === 2 ? `拍手×${g.clapsNeeded}` : text;
+      const t = this.scene.add.text(this.chipX(i) + 35, PANEL.y + 87, `${'①②③④'[i]}${shown}`, { fontFamily: FONT, fontSize: '11px', fontStyle: 'bold', color: INK }).setOrigin(0.5);
       this.root.add(t);
     });
     this.hotspot(this.bellAt.x, this.bellAt.y + 20, 52, () => {
