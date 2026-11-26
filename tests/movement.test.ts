@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FIELD, PATE } from '../src/game/config';
-import { clampToField, createWalker, driveWalker, facingFor, isWalking, setTarget, stepWalker } from '../src/game/movement';
+import { clampToField, createWalker, steerWalker, facingFor, isWalking, setTarget, stepWalker } from '../src/game/movement';
 
 const walker = (x: number, y: number) => createWalker({ x, y });
 
@@ -61,40 +61,42 @@ describe('パテの向き', () => {
   });
 });
 
-describe('十字ボタンの操作（前進・後退・その場で回る）', () => {
-  it('最初は手前（画面の下）を向いていて、↑で向いている方へ進む', () => {
+describe('スティックの操作（倒した方向へ進む）', () => {
+  it('倒した方向へまっすぐ進み、そちらを向く（上なら上へ）', () => {
     const w = walker(300, 300);
-    driveWalker(w, 1, 0, 1);
+    steerWalker(w, 0, -1, 1);
     expect(w.pos.x).toBeCloseTo(300);
-    expect(w.pos.y).toBeCloseTo(300 + PATE.speed);
-    expect(w.facing).toBe('down');
-  });
-
-  it('→で右回り：手前向きから約半秒で左を向く（画面の下→左は時計回り）', () => {
-    const w = walker(300, 300);
-    driveWalker(w, 0, 1, Math.PI / 2 / PATE.turnSpeed);
-    expect(w.heading).toBeCloseTo(Math.PI);
-    expect(w.facing).toBe('left');
-    expect(w.pos).toEqual({ x: 300, y: 300 }); // 回るだけでは動かない
-  });
-
-  it('↓は向きを変えずに、ゆっくり後ずさりする', () => {
-    const w = walker(300, 300);
-    driveWalker(w, -1, 0, 1);
-    expect(w.pos.y).toBeCloseTo(300 - PATE.speed * PATE.backSpeedRate);
-    expect(w.facing).toBe('down');
-  });
-
-  it('採取場の外へは出られない。目的地へ歩いている途中でも、ボタンを押したらそちらが優先', () => {
-    const w = walker(300, FIELD.bottom - 5);
-    setTarget(w, { x: 300, y: 100 }); // 上を向いて歩き出す
-    driveWalker(w, -1, 0, 5); // 上を向いたまま、後ずさりで下の端まで
+    expect(w.pos.y).toBeCloseTo(300 - PATE.speed);
     expect(w.facing).toBe('up');
+    steerWalker(w, 1, 0, 0.5);
+    expect(w.pos.x).toBeCloseTo(300 + PATE.speed / 2);
+    expect(w.facing).toBe('right');
+  });
+
+  it('斜めにも同じ速さで進む（8方向）。小さく倒すとゆっくり', () => {
+    const w = walker(300, 300);
+    steerWalker(w, Math.SQRT1_2, Math.SQRT1_2, 1);
+    expect(Math.hypot(w.pos.x - 300, w.pos.y - 300)).toBeCloseTo(PATE.speed);
+    const slow = walker(300, 300);
+    steerWalker(slow, 0.5, 0, 1);
+    expect(slow.pos.x).toBeCloseTo(300 + PATE.speed / 2);
+  });
+
+  it('倒していなければ動かない', () => {
+    const w = walker(300, 300);
+    steerWalker(w, 0, 0, 1);
+    expect(w.pos).toEqual({ x: 300, y: 300 });
+  });
+
+  it('採取場の外へは出られない。目的地へ歩いている途中でも、スティックが優先', () => {
+    const w = walker(300, FIELD.bottom - 5);
+    setTarget(w, { x: 300, y: 100 });
+    steerWalker(w, 0, 1, 5);
     expect(w.target).toBeNull();
     expect(w.pos.y).toBe(FIELD.bottom);
   });
 
-  it('目的地へ歩くときも、体の向きの角度がそろう（そのあと十字ボタンで続けて動かせる）', () => {
+  it('目的地へ歩くときも、体の向きの角度がそろう（そのあとスティックで続けて動かせる）', () => {
     const w = walker(300, 300);
     setTarget(w, { x: 400, y: 300 });
     expect(w.heading).toBeCloseTo(0);

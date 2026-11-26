@@ -1,7 +1,7 @@
 // 素材ポイントと採取の流れのルール。画面表示（Phaser）には依存しません。
 
 import { FIELD, RESOURCE, RESOURCE_POINTS, STOCK } from './config';
-import { driveWalker, faceTo, setTarget, type Point, type Walker } from './movement';
+import { faceTo, steerWalker, setTarget, type Point, type Walker } from './movement';
 import type { MissionTask } from './missions';
 import type { Rng } from './random';
 import { startSession, tapSession, type HarvestSession, type TapResult } from './rhythm';
@@ -24,7 +24,7 @@ export interface Harvester {
   frozen: boolean;
   /** 素材の種類ごとに、これまで採取した数（ミッションの進み具合に使う） */
   gathered: Record<string, number>;
-  /** いま十字ボタンで動かしている（そのあいだは採取を始めない・スキャンは中断） */
+  /** いまスティックで動かしている（そのあいだは採取を始めない・スキャンは中断） */
   driving: boolean;
   /** 施設でミッション（加工・お祈り）をしているところ。していなければ null */
   task: MissionTask | null;
@@ -135,7 +135,7 @@ export function moveHarvester(h: Harvester, p: Point, all: readonly Harvester[])
  */
 export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harvester[], earliest: number, origin: number): void {
   if (h.frozen) return; // 置物は採取しない
-  if (h.driving) return; // 十字ボタンで動かしているあいだは、素材の前でも採取を始めない（その場で回れるように）
+  if (h.driving) return; // スティックで動かしているあいだは、素材の前でも採取を始めない（その場で回れるように）
   if (h.task) return; // 施設でミッション中
   if (h.session) {
     if (f.stock[h.session.pointId] <= 0) {
@@ -165,21 +165,21 @@ export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harve
 }
 
 /**
- * 十字ボタンで動かす。毎コマ呼ぶ（押していないときは forward・turn とも 0）。
- * 動かしたら採取・順番待ちはやめる（置物は動けない）。forward / turn の意味は driveWalker と同じ。
+ * スティックで動かす。毎コマ呼ぶ（倒していないときは dx・dy とも 0）。
+ * 動かしたら採取・順番待ち・施設のミッションはやめる（置物は動けない）。dx・dy の意味は steerWalker と同じ。
  */
-export function driveHarvester(h: Harvester, forward: number, turn: number, dtSeconds: number): void {
-  h.driving = !h.frozen && (forward !== 0 || turn !== 0);
+export function driveHarvester(h: Harvester, dx: number, dy: number, dtSeconds: number): void {
+  h.driving = !h.frozen && (dx !== 0 || dy !== 0);
   if (!h.driving) return;
   h.session = null;
-  h.task = null; // 施設のミッションも、動いたらやめる
+  h.task = null;
   h.claim = null;
   h.waitingFor = null;
-  driveWalker(h.walker, forward, turn, dtSeconds);
+  steerWalker(h.walker, dx, dy, dtSeconds);
 }
 
 /**
- * 十字ボタンを離したとき：素材ポイントの立つ場所のすぐそばなら、自分で寄って採取を始める
+ * スティックを離したとき：素材ポイントの立つ場所のすぐそばなら、自分で寄って採取を始める
  * （使用中なら、そばで順番を待つ）。近くになければ何もしない（null）。
  */
 export function approachNearby(h: Harvester, all: readonly Harvester[]): MoveResult | null {

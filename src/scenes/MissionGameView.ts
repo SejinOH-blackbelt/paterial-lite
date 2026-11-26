@@ -1,6 +1,6 @@
 // 施設のミニゲーム（まねっこ太鼓・杭むすび・ジグソー・土のお祈り）の画面。画面の真ん中にパネルを出します。
 // 判定のルールは src/game/missionGames.ts。この部品は表示・音・タップの受け付けだけ。
-// 下の十字ボタンはパネルの外にあるので、動けばいつでもやめられる。
+// 下のスティックはパネルの外にあるので、動けばいつでもやめられる。
 import Phaser from 'phaser';
 import { COLORS, MISSION_GAME, SCREEN } from '../game/config';
 import {
@@ -17,6 +17,8 @@ import {
   releaseHands,
   ringBell,
   updatePrayer,
+  clapTime,
+  upcomingClaps,
   type DrumGame,
   type JigsawGame,
   type MissionGame,
@@ -29,7 +31,7 @@ import type { GameAudio } from './audio';
 import { drawPart } from './textures';
 import { FONT, INK, pinToScreen } from './ui';
 
-/** パネルの位置と大きさ（上の表示と、下の十字ボタンのあいだ） */
+/** パネルの位置と大きさ（上の表示と、下のスティックのあいだ） */
 const PANEL = { x: 12, y: 116, w: SCREEN.width - 24, h: 378 } as const;
 const CX = SCREEN.width / 2;
 /** 杭の色（赤・青・黄）。色に加えて、刻んだ点の数でも見分けられる */
@@ -37,6 +39,9 @@ const PEG_COLORS = [COLORS.landmarkVermilion, COLORS.partFlag, COLORS.uiHoney] a
 const JIGSAW_TEX = 'mission-jigsaw-art';
 /** 土のお祈りの作法 */
 const PRAYER_STEPS = ['鈴', '合掌', '拍手×2', '鈴'] as const;
+/** 拍手のゴールの輪の半径と、縮んでくる輪がいちばん外にいるときの広がり */
+const RING = 58;
+const RING_GROW = 46;
 /** ジグソーの絵の大きさ（2×2 に切る） */
 const ART = 160;
 
@@ -82,7 +87,7 @@ export class MissionGameView {
       .text(CX, PANEL.y + 40, '', { fontFamily: FONT, fontSize: '13px', fontStyle: 'bold', color: INK, align: 'center', wordWrap: { width: PANEL.w - 28, useAdvancedWrap: true } })
       .setOrigin(0.5, 0);
     const foot = scene.add
-      .text(CX, PANEL.y + PANEL.h - 16, '十字ボタンで動くと やめられる', { fontFamily: FONT, fontSize: '11px', color: INK })
+      .text(CX, PANEL.y + PANEL.h - 16, 'スティックで動くと やめられる', { fontFamily: FONT, fontSize: '11px', color: INK })
       .setOrigin(0.5)
       .setAlpha(0.6);
     this.art = scene.add.graphics();
@@ -376,7 +381,7 @@ export class MissionGameView {
     const hints = [
       '① 鈴を鳴らそう（鈴をタップ）',
       '② 手を合わせよう（手を長押し）',
-      `③ 拍に合わせて 拍手を2回（${g.claps}/${MISSION_GAME.claps}）`,
+      `③ 縮む輪が 重なった瞬間に 拍手（${g.claps}/${MISSION_GAME.claps}）`,
       '④ もう一度 鈴を鳴らそう',
     ];
     this.title.setText(`すべての国で同じ「土のお祈り」\n${hints[g.stage]}`);
@@ -396,13 +401,21 @@ export class MissionGameView {
     a.fillStyle(g.stage === 0 || g.stage === 3 ? COLORS.uiHoney : COLORS.landmarkBrassShade).fillCircle(bx, by, 24);
     a.fillStyle(COLORS.ink).fillRect(bx - 14, by + 4, 28, 4).fillCircle(bx, by + 12, 4);
     a.fillStyle(COLORS.uiCream, 0.6).fillCircle(bx - 8, by - 9, 6);
-    // 手を合わせる場所（拍のたびに光る輪）
+    // 手を合わせる場所。拍手の段では、叩く拍に向かって外から輪が縮んでくる（いつ叩くか前もって分かる）
     const { x: hx, y: hy } = this.handsAt;
-    const b = beatInterval();
-    const beatPhase = ((now - g.origin) / b) % 1;
     if (g.stage === 2) {
-      const pulse = Math.max(0, 1 - Math.min(beatPhase, 1 - beatPhase) / 0.15);
-      a.lineStyle(6, COLORS.meterNeedle, pulse).strokeCircle(hx, hy, 58);
+      const approach = MISSION_GAME.clapLeadBeats * beatInterval();
+      // ゴールの輪（ここに重なったら叩く）
+      a.lineStyle(7, COLORS.ink).strokeCircle(hx, hy, RING);
+      a.lineStyle(4, COLORS.uiHoney).strokeCircle(hx, hy, RING);
+      for (const k of upcomingClaps(g)) {
+        const until = clapTime(g, k) - now;
+        if (until > approach || until < -MISSION_GAME.clapWindow) continue;
+        const r = RING + (Math.max(0, until) / approach) * RING_GROW;
+        const fade = Math.min(1, (approach - until) / (approach * 0.3)); // 出てくるときは、ふわっと
+        a.lineStyle(8, COLORS.ink, 0.6 * fade).strokeCircle(hx, hy, r);
+        a.lineStyle(5, COLORS.meterNeedle, fade).strokeCircle(hx, hy, r);
+      }
       this.scheduleGuide(g, now);
     }
     a.fillStyle(COLORS.ink).fillCircle(hx, hy, 48);
@@ -416,12 +429,14 @@ export class MissionGameView {
     }
   }
 
-  /** 拍手の段のあいだ、拍の音を少し先まで予約する（音は拍ちょうどに鳴る） */
+  /** 拍手の段のあいだ、拍の音を少し先まで予約する（音は拍ちょうどに鳴る。叩く拍は高い音） */
   private scheduleGuide(g: PrayerGame, now: number): void {
     const b = beatInterval();
     const next = Math.ceil((now - g.origin) / b);
+    const claps = upcomingClaps(g);
     for (let k = Math.max(next, this.guideBeat + 1); g.origin + k * b < now + 0.25; k++) {
-      this.scheduled.push(this.deps.audio.tick(g.origin + k * b, false));
+      // 拍手する拍は、少し高い音で鳴らす
+      this.scheduled.push(this.deps.audio.tick(g.origin + k * b, claps.includes(k)));
       this.guideBeat = k;
     }
   }

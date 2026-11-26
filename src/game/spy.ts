@@ -129,7 +129,7 @@ export function updateScan(s: SpyState, all: readonly Harvester[], now: number):
   const h = s.spy;
   const l = LANDMARKS.find((x) => x.id === s.scan!.landmarkId)!;
   if (h.frozen || h.walker.target || h.driving || h.session || h.task || dist(l, h.walker.pos) > SPY.scanRadius) {
-    s.scan = null; // 動いた（十字ボタンで回っただけでも）・採取を始めた → 中断
+    s.scan = null; // 動いた（スティックで少し動いただけでも）・採取を始めた → 中断
     return null;
   }
   // 終わったか：ミニゲームなら成功・失敗が決まったとき、Botなら時間がたったとき

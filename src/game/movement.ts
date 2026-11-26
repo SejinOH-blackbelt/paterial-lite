@@ -18,7 +18,7 @@ export interface Walker {
   target: Point | null;
   /** 向いている方向。止まったときは最後に歩いた方向を向いたまま */
   facing: Facing;
-  /** 体の向き（角度。ラジアン。0 が画面の右、π/2 が画面の下）。十字ボタンの前進・後退はこの向きに進む */
+  /** 体の向き（角度。ラジアン。0 が画面の右、π/2 が画面の下） */
   heading: number;
 }
 
@@ -74,22 +74,17 @@ export function faceTo(w: Walker, facing: Facing): void {
 }
 
 /**
- * 十字ボタンで動かす（戦車のような操作）。
- * forward：1 で前進、-1 で後ずさり（体の向きは変えずに下がる）、0 で止まる。
- * turn：1 で右回り、-1 で左回り（その場で回る）。
+ * スティックで動かす。倒した方向（dx, dy）へそのまま進む。
+ * dx, dy の長さは 0〜1（スティックをどれだけ倒したか。小さく倒すとゆっくり）。
  * 目的地へ歩いている途中なら、それはやめる。
  */
-export function driveWalker(w: Walker, forward: number, turn: number, dtSeconds: number, speed: number = PATE.speed): void {
+export function steerWalker(w: Walker, dx: number, dy: number, dtSeconds: number, speed: number = PATE.speed): void {
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return;
   w.target = null;
-  w.heading += turn * PATE.turnSpeed * dtSeconds;
-  // 角度が大きくなりすぎないように、-π〜π に収める
-  w.heading = Math.atan2(Math.sin(w.heading), Math.cos(w.heading));
-  const cos = Math.cos(w.heading);
-  const sin = Math.sin(w.heading);
-  w.facing = facingFor(cos, sin, w.facing);
-  if (forward === 0) return;
-  const move = forward * speed * (forward < 0 ? PATE.backSpeedRate : 1) * dtSeconds;
-  w.pos = clampToField({ x: w.pos.x + cos * move, y: w.pos.y + sin * move });
+  turnToward(w, dx, dy);
+  const move = Math.min(1, len) * speed * dtSeconds;
+  w.pos = clampToField({ x: w.pos.x + (dx / len) * move, y: w.pos.y + (dy / len) * move });
 }
 
 /**

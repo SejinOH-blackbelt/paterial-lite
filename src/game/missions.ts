@@ -174,7 +174,7 @@ export function updateBotTask(h: Harvester, now: number, rng: Rng): MissionEvent
 }
 
 /**
- * 十字ボタンを離したとき：施設の前のすぐそばなら、自分で寄っていく（着いたらミッションが始まる）。
+ * スティックを離したとき：施設の前のすぐそばなら、自分で寄っていく（着いたらミッションが始まる）。
  * 寄っていく施設を返す（近くになければ null）
  */
 export function approachFacility(h: Harvester): Facility | null {

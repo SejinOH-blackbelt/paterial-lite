@@ -176,6 +176,7 @@ export function placePiece(g: JigsawGame, slot: number): Step {
  * すべての国で共通の「土のお祈り」：
  * ①鈴を鳴らす（タップ）→ ②手を合わせる（長押し）→ ③拍に合わせて拍手2回 → ④もう一度鈴を鳴らす。
  * 順番をまちがえる・手を早く離す・拍手が拍からずれると 'miss'（①からやり直し）。
+ * 拍手する拍は、手を合わせ終えたときに先に決める（clapBeat）。叩きそびれたら、少し先の拍で決め直す（やさしく）。
  */
 export interface PrayerGame {
   kind: 'prayer';
@@ -183,23 +184,22 @@ export interface PrayerGame {
   stage: 0 | 1 | 2 | 3;
   /** 手を合わせはじめた時刻（合わせていなければ null） */
   holdStart: number | null;
-  /** 拍手の数と、最後に拍手した拍の番号（拍手は続けて隣の拍に叩く） */
+  /** 拍手の数と、次に拍手する拍の番号（拍手は続けて隣の拍に叩く） */
   claps: number;
-  lastClapBeat: number;
+  clapBeat: number;
   /** 0拍目の時刻（拍の基準。音の時計） */
   origin: number;
   result: 'playing' | 'success';
 }
 
 export function createPrayerGame(origin: number): PrayerGame {
-  return { kind: 'prayer', stage: 0, holdStart: null, claps: 0, lastClapBeat: -Infinity, origin, result: 'playing' };
+  return { kind: 'prayer', stage: 0, holdStart: null, claps: 0, clapBeat: 0, origin, result: 'playing' };
 }
 
 function missPrayer(g: PrayerGame): Step {
   g.stage = 0;
   g.holdStart = null;
   g.claps = 0;
-  g.lastClapBeat = -Infinity;
   return 'miss';
 }
 
@@ -225,14 +225,10 @@ export function pressHands(g: PrayerGame, t: number): Step {
     return 'ok';
   }
   if (g.stage !== 2) return missPrayer(g);
-  // 拍手：いちばん近い拍から、ずれが小さければ OK
-  const b = beatInterval();
-  const beat = Math.round((t - g.origin) / b);
-  if (Math.abs(t - (g.origin + beat * b)) > MISSION_GAME.clapWindow) return missPrayer(g);
-  if (beat === g.lastClapBeat) return 'ignored'; // 同じ拍で2回は数えない
-  // 隣の拍なら続けて数える。間があいたら、この拍手から数え直す
-  g.claps = beat === g.lastClapBeat + 1 ? g.claps + 1 : 1;
-  g.lastClapBeat = beat;
+  // 拍手：決めておいた拍から、ずれが小さければ OK（早すぎ・遅すぎは miss）
+  if (Math.abs(t - clapTime(g, g.clapBeat)) > MISSION_GAME.clapWindow) return missPrayer(g);
+  g.claps++;
+  g.clapBeat++;
   if (g.claps >= MISSION_GAME.claps) g.stage = 3;
   return 'ok';
 }
@@ -244,12 +240,37 @@ export function releaseHands(g: PrayerGame, t: number): Step {
   return missPrayer(g);
 }
 
-/** 毎コマ呼ぶ：手を合わせて十分たったら、拍手に進む */
+/** 拍の番号 k の時刻 */
+export function clapTime(g: PrayerGame, k: number): number {
+  return g.origin + k * beatInterval();
+}
+
+/** 時刻 t から数えて clapLeadBeats 拍あとの拍の番号（拍手を始める拍） */
+function leadBeat(g: PrayerGame, t: number): number {
+  return Math.ceil((t - g.origin) / beatInterval()) + MISSION_GAME.clapLeadBeats;
+}
+
+/** これから叩く拍手の拍の番号（まだ叩いていない分） */
+export function upcomingClaps(g: PrayerGame): number[] {
+  if (g.stage !== 2) return [];
+  return Array.from({ length: MISSION_GAME.claps - g.claps }, (_, i) => g.clapBeat + i);
+}
+
+/**
+ * 毎コマ呼ぶ：手を合わせて十分たったら、拍手に進む（拍手する拍をここで決める）。
+ * 拍手の拍を叩きそびれたら、少し先の拍で1回目から決め直す（まちがいにはしない）
+ */
 export function updatePrayer(g: PrayerGame, now: number): Step {
   if (g.stage === 1 && g.holdStart !== null && now - g.holdStart >= MISSION_GAME.prayerHoldSeconds) {
     g.stage = 2;
     g.holdStart = null;
+    g.claps = 0;
+    g.clapBeat = leadBeat(g, now);
     return 'ok';
+  }
+  if (g.stage === 2 && now > clapTime(g, g.clapBeat) + MISSION_GAME.clapWindow) {
+    g.claps = 0;
+    g.clapBeat = leadBeat(g, now);
   }
   return 'ignored';
 }

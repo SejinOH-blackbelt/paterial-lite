@@ -48,7 +48,7 @@ import {
   type MissionEvent,
 } from '../game/missions';
 import type { Step } from '../game/missionGames';
-import { createWalker, driveWalker, isWalking, stepWalker, type Walker } from '../game/movement';
+import { createWalker, isWalking, steerWalker, stepWalker, type Walker } from '../game/movement';
 import { createRng, type Rng } from '../game/random';
 import {
   canScan,
@@ -65,7 +65,7 @@ import {
 import { createSpyBotMind, updateSpyBot, type SpyBotMind } from '../game/spyBot';
 import { nearestPass, needleAngle, nextPass, passTime, type HarvestSession, type Judgement } from '../game/rhythm';
 import { GameAudio } from './audio';
-import { DPad } from './DPad';
+import { Stick } from './Stick';
 import type { MeetingData } from './MeetingScene';
 import type { ResultData } from './ResultScene';
 import type { RoleData } from './RoleScene';
@@ -166,15 +166,15 @@ export class FieldScene extends Phaser.Scene {
   private missionView: MissionGameView | null = null;
   /** 「素材が足りない」などを出した施設（その施設の前を離れるまで、もう一度は出さない） */
   private hintFacility: string | null = null;
-  /** 十字ボタンでやめた施設（その施設の前のそばを離れるまで、自分で寄ったり始め直したりしない） */
+  /** スティックでやめた施設（その施設の前のそばを離れるまで、自分で寄ったり始め直したりしない） */
   private leftFacility: string | null = null;
   /** 施設の上の「！」（自分のミッションがそこでできるとき） */
   private facilityMarks!: Phaser.GameObjects.Graphics;
-  /** 十字ボタン（↑前進・↓後ずさり・←→その場で回る） */
-  private pad!: DPad;
-  /** 前のコマで十字ボタンを押していたか（離した瞬間に、そばの素材で採取を始めるため） */
+  /** スティック（倒した方向へ進む） */
+  private pad!: Stick;
+  /** 前のコマでスティックを押していたか（離した瞬間に、そばの素材で採取を始めるため） */
   private wasDriving = false;
-  /** いま十字ボタンで動かしているか（歩く絵にするため） */
+  /** いまスティックで動かしているか（歩く絵にするため） */
   private driving = false;
   private audio!: GameAudio;
   /** 0拍目の時刻（音の時計） */
@@ -280,21 +280,21 @@ export class FieldScene extends Phaser.Scene {
     this.callButton = this.hud(this.makeCallButton());
 
 
-    // 十字ボタンで動く。2本指で同時に押せるように、指を3本まで受けつける
+    // スティックで動く。スティックを倒しながらボタンも押せるように、指を3本まで受けつける
     if (this.input.manager.pointersTotal < 3) this.input.addPointer(3 - this.input.manager.pointersTotal);
-    this.pad = new DPad(this);
+    this.pad = new Stick(this);
     this.wasDriving = false;
     this.driving = false;
 
-    // タップ：十字ボタン・採取ボタン・呼び出し・スパイのボタン（地面をタップしても歩かない）
+    // タップ：スティック・採取ボタン・呼び出し・スパイのボタン（地面をタップしても歩かない）
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
       this.audio.resume();
       if (this.match.phase !== 'play') return;
-      // スキャンのミニゲームのパネルは十字ボタンの上に重なるので、パネルが先に受けとる
+      // スキャンのミニゲームのパネルはスティックの上に重なるので、パネルが先に受けとる
       if (this.scanView?.owns(over)) return;
       if (this.missionView?.owns(over)) return; // 施設のミニゲームのパネル
       if (this.pad.down(p)) return;
-      if (this.player.frozen) return; // 置物にされたら、土の精として十字ボタンで動き回って見るだけ
+      if (this.player.frozen) return; // 置物にされたら、土の精としてスティックで動き回って見るだけ
       if (this.callButton.visible && over.includes(this.callButton)) {
         this.playerCalls();
         return;
@@ -354,18 +354,18 @@ export class FieldScene extends Phaser.Scene {
     return c;
   }
 
-  /** 十字ボタンで動かす。離した瞬間、素材のそばなら自分で寄って採取を始める */
+  /** スティックで動かす。離した瞬間、素材のそばなら自分で寄って採取を始める */
   private drive(dt: number): void {
     this.pad.update();
-    const { forward, turn } = this.pad.state();
-    this.driving = forward !== 0 || turn !== 0;
+    const { x: dx, y: dy } = this.pad.state();
+    this.driving = dx !== 0 || dy !== 0;
     if (this.player.frozen) {
       // 土の精は、ふつうより少し速く動ける
-      if (this.spirit && this.driving) driveWalker(this.spirit.walker, forward, turn, dt, PATE.speed * 1.3);
+      if (this.spirit && this.driving) steerWalker(this.spirit.walker, dx, dy, dt, PATE.speed * 1.3);
     } else {
       const task = this.player.task;
-      driveHarvester(this.player, forward, turn, dt); // 押していないときも呼ぶ（動かしているかの印を消すため）
-      // 十字ボタンでミッションをやめたら、その施設の前を離れるまで始め直さない（その場で向きを変えて立ち去れるように）
+      driveHarvester(this.player, dx, dy, dt); // 押していないときも呼ぶ（動かしているかの印を消すため）
+      // スティックでミッションをやめたら、その施設の前を離れるまで始め直さない（少しだけ動かしてやめても、離した瞬間に始め直さないように）
       if (task && !this.player.task) this.leftFacility = missionById(task.missionId).facility;
     }
     if (!this.player.frozen && !this.driving && this.wasDriving) {
@@ -1112,7 +1112,7 @@ export class FieldScene extends Phaser.Scene {
     this.syncMissionView();
   }
 
-  /** 十字ボタンでやめた施設の前のそばに、まだいるか */
+  /** スティックでやめた施設の前のそばに、まだいるか */
   private nearLeftFacility(): boolean {
     if (!this.leftFacility) return false;
     const s = facilityStand(facilityById(this.leftFacility));

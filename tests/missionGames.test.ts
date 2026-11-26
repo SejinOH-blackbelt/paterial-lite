@@ -17,6 +17,8 @@ import {
   releaseHands,
   ringBell,
   updatePrayer,
+  clapTime,
+  upcomingClaps,
 } from '../src/game/missionGames';
 import { createRng } from '../src/game/random';
 import { beatInterval } from '../src/game/rhythm';
@@ -101,22 +103,25 @@ describe('ジグソー（製造所）', () => {
 });
 
 describe('土のお祈り（土の祠）', () => {
-  /** 正しい作法：鈴 → 手を合わせる → 拍手2回（拍にそろえて）→ 鈴 */
-  function pray(g = createPrayerGame(0)) {
-    expect(ringBell(g)).toBe('ok');
+  /** 手を合わせ終えたところまで進める（拍手の拍が決まる） */
+  function toClap(g = createPrayerGame(0)) {
+    ringBell(g);
     pressHands(g, 1);
     expect(holdProgress(g, 1 + MISSION_GAME.prayerHoldSeconds / 2)).toBeCloseTo(0.5, 5);
     updatePrayer(g, 1 + MISSION_GAME.prayerHoldSeconds);
     expect(g.stage).toBe(2);
     releaseHands(g, 1 + MISSION_GAME.prayerHoldSeconds + 0.1);
-    expect(pressHands(g, 4 * B + 0.03)).toBe('ok');
-    expect(pressHands(g, 5 * B - 0.03)).toBe('ok');
-    expect(g.stage).toBe(3);
     return g;
   }
 
-  it('作法どおりにすると、できあがり', () => {
-    const g = pray();
+  it('拍手する拍は先に決まる（手を合わせ終えてから clapLeadBeats 拍あと）。作法どおりで、できあがり', () => {
+    const g = toClap();
+    const [k1, k2] = upcomingClaps(g);
+    expect(k2).toBe(k1 + 1);
+    expect(clapTime(g, k1) - (1 + MISSION_GAME.prayerHoldSeconds)).toBeGreaterThan((MISSION_GAME.clapLeadBeats - 1) * B);
+    expect(pressHands(g, clapTime(g, k1) + 0.03)).toBe('ok');
+    expect(pressHands(g, clapTime(g, k2) - 0.03)).toBe('ok');
+    expect(g.stage).toBe(3);
     expect(ringBell(g)).toBe('done');
     expect(g.result).toBe('success');
   });
@@ -129,33 +134,30 @@ describe('土のお祈り（土の祠）', () => {
     expect(g.stage).toBe(0);
   });
 
-  it('拍からずれた拍手は miss', () => {
-    const g = createPrayerGame(0);
-    ringBell(g);
-    pressHands(g, 1);
-    updatePrayer(g, 2);
-    expect(pressHands(g, 4 * B + B / 2)).toBe('miss');
+  it('決まった拍からずれた拍手（早すぎ）は miss', () => {
+    const g = toClap();
+    const [k1] = upcomingClaps(g);
+    expect(pressHands(g, clapTime(g, k1) - B)).toBe('miss');
     expect(g.stage).toBe(0);
   });
 
-  it('拍手は隣の拍に続けて2回。間があくと、そこから数え直す', () => {
-    const g = createPrayerGame(0);
-    ringBell(g);
-    pressHands(g, 1);
-    updatePrayer(g, 2);
-    pressHands(g, 4 * B);
-    pressHands(g, 6 * B); // 1拍あいた
+  it('叩きそびれたら、まちがいにせず、少し先の拍で決め直す', () => {
+    const g = toClap();
+    const [k1] = upcomingClaps(g);
+    const late = clapTime(g, k1) + MISSION_GAME.clapWindow + 0.05;
+    expect(updatePrayer(g, late)).toBe('ignored');
     expect(g.stage).toBe(2);
-    pressHands(g, 7 * B);
+    expect(upcomingClaps(g)[0]).toBeGreaterThan(k1);
+    const [n1, n2] = upcomingClaps(g);
+    pressHands(g, clapTime(g, n1));
+    pressHands(g, clapTime(g, n2));
     expect(g.stage).toBe(3);
   });
 
   it('順番をまちがえる（最初に手を押す・拍手の前に鈴）と miss', () => {
     const g = createPrayerGame(0);
     expect(pressHands(g, 0.5)).toBe('miss');
-    ringBell(g);
-    pressHands(g, 1);
-    updatePrayer(g, 2);
+    toClap(g);
     expect(ringBell(g)).toBe('miss');
     expect(g.stage).toBe(0);
   });
