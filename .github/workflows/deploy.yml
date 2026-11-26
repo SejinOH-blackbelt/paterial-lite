@@ -12,13 +12,15 @@ permissions:
   pages: write
   id-token: write
 
-# 公開が重なったら、新しいほうを優先する
+# 公開が重なったら、新しいほうを優先する（ブランチごとに分けて、ほかのブランチの手動実行で main の公開が取り消されないように）
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
+    # 手動実行で main 以外のブランチを選んでも、公開しない
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
