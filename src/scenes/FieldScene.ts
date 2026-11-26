@@ -454,7 +454,10 @@ export class FieldScene extends Phaser.Scene {
       }
       if (this.player.session !== null && over.includes(this.button)) this.hit(p);
     });
-    this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.pad.move(p));
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+      this.pad.move(p);
+      this.missionView?.pointerMove(p); // 土のなぞる・風のスワイプ
+    });
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
       this.pad.up(p);
       this.missionView?.pointerUp(p); // 土のお祈りで、手を離したとき

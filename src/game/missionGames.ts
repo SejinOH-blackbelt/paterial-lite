@@ -342,13 +342,15 @@ export interface HeatGame {
   missed: number | null;
   /** 拍からずれてもよい秒数 */
   window: number;
+  /** 最後にやり直しを決めた時刻。これより前に触れた操作は無視する */
+  restartedAt: number;
   result: 'playing' | 'success';
 }
 
 export function createHeatGame(now: number, origin: number, rng: Rng, notes: number = AFFINITY.heatNotes.plain, window: number = AFFINITY.heatWindow.plain): HeatGame {
   const choices = MISSION_GAME.heat.holdBeats;
   const holds = Array.from({ length: notes }, () => choices[Math.floor(rng() * choices.length)]);
-  const g: HeatGame = { kind: 'heat', origin, notesNeeded: notes, done: 0, holds, pressBeat: 0, holding: false, missed: null, window, result: 'playing' };
+  const g: HeatGame = { kind: 'heat', origin, notesNeeded: notes, done: 0, holds, pressBeat: 0, holding: false, missed: null, window, restartedAt: -Infinity, result: 'playing' };
   rescheduleHeat(g, now);
   return g;
 }
@@ -357,6 +359,8 @@ const beatOf = (g: HeatGame, t: number) => Math.ceil((t - g.origin) / beatInterv
 
 /** 少し先の拍から、いまの回をやり直す */
 function rescheduleHeat(g: HeatGame, t: number): void {
+  g.restartedAt = Math.max(g.restartedAt, t);
+  t = g.restartedAt;
   g.holding = false;
   g.pressBeat = beatOf(g, t) + MISSION_GAME.heat.leadBeats;
 }
@@ -373,6 +377,7 @@ export function heatReleaseTime(g: HeatGame): number {
 export function pressHeat(g: HeatGame, t: number): Step {
   if (g.result !== 'playing' || g.holding) return 'ignored';
   if (g.missed !== null && Math.abs(t - heatPressTime(g, g.missed)) <= g.window) g.pressBeat = g.missed;
+  else if (t < g.restartedAt) return 'ignored'; // 失敗が決まったあとに届いた、前の試みの操作
   g.missed = null;
   if (Math.abs(t - heatPressTime(g)) > g.window) {
     rescheduleHeat(g, t);
@@ -429,7 +434,142 @@ export function heatLevel(g: HeatGame, now: number): number {
   return Math.min(1, 0.35 + 0.4 * Math.max(0, p));
 }
 
-export type MissionGame = HeatGame | DrumGame | PegGame | JigsawGame | PrayerGame;
+// ---------- 水・土・風・雷（拍に合わせた操作のまとまり） ----------
+
+/**
+ * 4つのミニゲームに共通のしくみ：予告された拍で、決まった操作（タップ・スワイプ）をする。
+ * いくつかの操作で「ひとまとまり」。まとまりを決まった数できたら完了。
+ *   水・網で魚すくい（net）：拍ごとに続けてタップ（トントントン）。止まったり、ずれたりすると魚が逃げる
+ *   土・成形（shape）：拍ごとに「叩く（タップ）」と「なぞる（下へスワイプ）」がまざる
+ *   風・気流チャージ（wind）：拍ごとに、基準の線を越えるように右へスワイプ
+ *   雷・暗闇を照らす（dark）：間のあいた、予告された拍だけ、予告された灯籠をタップ（位置も判定）
+ * ずれる・ちがう操作・ちがう灯籠は 'miss'（そのまとまりを少し先の拍からやり直す。できたまとまりは減らない）。
+ * まとまりの最初を押しそびれたときは、まちがいにせず決め直す（やさしく）。途中で止まったら 'miss'。
+ */
+export type PhraseKind = 'net' | 'shape' | 'wind' | 'dark';
+export type PhraseAction = 'tap' | 'swipe';
+
+export interface Cue {
+  /** まとまりの始まりから何拍目か */
+  beat: number;
+  action: PhraseAction;
+  /** 雷：どの灯籠か（0 から） */
+  lane?: number;
+}
+
+export interface PhraseGame {
+  kind: PhraseKind;
+  origin: number;
+  window: number;
+  /** まとまりごとの操作の並び（はじめに全部決めておく） */
+  phrases: Cue[][];
+  done: number;
+  /** いまのまとまりが始まる拍の番号と、何番目の操作まで済んだか */
+  startBeat: number;
+  pos: number;
+  /** 最初を押しそびれて決め直す前の始まりの拍（遅れて届いたタップを、前の拍で判定できるように） */
+  missed: number | null;
+  /** 最後にやり直しを決めた時刻。これより前に触れた操作は、終わった試みのものなので無視する */
+  restartedAt: number;
+  result: 'playing' | 'success';
+}
+
+function makeCues(kind: PhraseKind, length: number, rng: Rng): Cue[] {
+  const cues: Cue[] = [];
+  if (kind === 'net') for (let i = 0; i < length; i++) cues.push({ beat: i, action: 'tap' });
+  if (kind === 'wind') for (let i = 0; i < length; i++) cues.push({ beat: i, action: 'swipe' });
+  if (kind === 'shape') {
+    // 叩くとなぞるを、どちらも1回以上まぜる
+    const acts: PhraseAction[] = Array.from({ length }, () => (rng() < 0.5 ? 'tap' : 'swipe'));
+    if (!acts.includes('tap')) acts[0] = 'tap';
+    if (!acts.includes('swipe')) acts[length - 1] = 'swipe';
+    acts.forEach((action, i) => cues.push({ beat: i, action }));
+  }
+  if (kind === 'dark') {
+    // 1拍か2拍あけて、毎回ちがう灯籠
+    let beat = 0;
+    let lane = -1;
+    for (let i = 0; i < length; i++) {
+      let next = Math.floor(rng() * MISSION_GAME.phrase.darkLanes);
+      if (next === lane) next = (next + 1) % MISSION_GAME.phrase.darkLanes;
+      lane = next;
+      cues.push({ beat, action: 'tap', lane });
+      beat += rng() < 0.5 ? 1 : 2;
+    }
+  }
+  return cues;
+}
+
+export function createPhraseGame(kind: PhraseKind, now: number, origin: number, rng: Rng, length: number = AFFINITY.phraseLength.plain, window: number = AFFINITY.heatWindow.plain): PhraseGame {
+  const count = MISSION_GAME.phrase.phrases[kind];
+  const phrases = Array.from({ length: count }, () => makeCues(kind, length, rng));
+  const g: PhraseGame = { kind, origin, window, phrases, done: 0, startBeat: 0, pos: 0, missed: null, restartedAt: -Infinity, result: 'playing' };
+  restartPhrase(g, now);
+  return g;
+}
+
+function restartPhrase(g: PhraseGame, t: number): void {
+  g.restartedAt = Math.max(g.restartedAt, t);
+  t = g.restartedAt; // 遅れて届いた古い時刻で、やり直しの拍を前に戻さない
+  g.pos = 0;
+  g.startBeat = Math.ceil((t - g.origin) / beatInterval()) + MISSION_GAME.phrase.leadBeats;
+}
+
+/** いまのまとまりの操作の並び */
+export function currentCues(g: PhraseGame): Cue[] {
+  return g.phrases[Math.min(g.done, g.phrases.length - 1)];
+}
+
+/** いまのまとまりの i 番目の操作をする時刻 */
+export function cueTime(g: PhraseGame, i: number, start = g.startBeat): number {
+  return g.origin + (start + currentCues(g)[i].beat) * beatInterval();
+}
+
+/** 操作した（タップ・スワイプ）。lane：雷で押した灯籠 */
+export function actPhrase(g: PhraseGame, t: number, action: PhraseAction, lane?: number): Step {
+  if (g.result !== 'playing') return 'ignored';
+  // 押しそびれて決め直したあとに届いた、前の拍に合ったタップなら、前の拍で判定する
+  if (g.missed !== null && g.pos === 0 && Math.abs(t - cueTime(g, 0, g.missed)) <= g.window) g.startBeat = g.missed;
+  else if (t < g.restartedAt) return 'ignored'; // 失敗が決まったあとに届いた、前の試みの操作
+  g.missed = null;
+  const cues = currentCues(g);
+  const cue = cues[g.pos];
+  const wrong = action !== cue.action || (cue.lane !== undefined && lane !== cue.lane);
+  if (wrong || Math.abs(t - cueTime(g, g.pos)) > g.window) {
+    restartPhrase(g, t);
+    return 'miss';
+  }
+  g.pos++;
+  if (g.pos < cues.length) return 'ok';
+  const last = cues[cues.length - 1].beat;
+  g.done++;
+  if (g.done >= g.phrases.length) {
+    g.result = 'success';
+    return 'done';
+  }
+  g.startBeat += last + MISSION_GAME.phrase.gapBeats;
+  g.pos = 0;
+  return 'ok';
+}
+
+/**
+ * 毎コマ呼ぶ：まとまりの最初を押しそびれたら、少し先の拍で決め直す（まちがいにしない）。
+ * まとまりの途中で止まったら 'miss'（遅れて届く操作を待つため、少し待ってから決める）
+ */
+export function updatePhrase(g: PhraseGame, now: number): Step {
+  if (g.result !== 'playing') return 'ignored';
+  const late = cueTime(g, g.pos) + g.window;
+  if (g.pos === 0 && now > late) {
+    g.missed = g.startBeat;
+    restartPhrase(g, now);
+  } else if (g.pos > 0 && now > late + MISSION_GAME.phrase.lateGrace) {
+    restartPhrase(g, now);
+    return 'miss';
+  }
+  return 'ignored';
+}
+
+export type MissionGame = HeatGame | PhraseGame | DrumGame | PegGame | JigsawGame | PrayerGame;
 export type MissionGameKind = MissionGame['kind'];
 
 /**
@@ -449,5 +589,10 @@ export function createMissionGame(kind: MissionGameKind, now: number, origin: nu
       return createPrayerGame(origin, AFFINITY.claps[a], AFFINITY.clapWindow[a]);
     case 'heat':
       return createHeatGame(now, origin, rng, AFFINITY.heatNotes[a], AFFINITY.heatWindow[a]);
+    case 'net':
+    case 'shape':
+    case 'wind':
+    case 'dark':
+      return createPhraseGame(kind, now, origin, rng, AFFINITY.phraseLength[a], AFFINITY.heatWindow[a]);
   }
 }

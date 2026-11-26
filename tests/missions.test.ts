@@ -34,7 +34,7 @@ describe('スイッチのミッション', () => {
     expect(startMission(h, board, [h], 0, rng, { origin: 0 })?.state).toBe('notReady');
     h.held.earth = 7;
     expect(startMission(h, board, [h], 0, rng, { origin: 0 })?.state).toBe('ready');
-    expect(h.task?.game?.kind).toBe('prayer'); // 土は仮に拍手のミニゲーム
+    expect(h.task?.game?.kind).toBe('shape'); // 土は成形のミニゲーム
     expect(finishAsBot(h, board)?.kind).toBe('done');
     expect(board.missions[0].spots[0].on).toBe(true);
     expect(h.held.earth).toBe(7 - missionType('earth').needPerSpot);

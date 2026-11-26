@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { MISSION_GAME } from '../src/game/config';
 import {
+  actPhrase,
+  createPhraseGame,
+  cueTime,
+  currentCues,
+  updatePhrase,
   HEAT_BAND,
   createHeatGame,
   createMissionGame,
@@ -263,5 +268,96 @@ describe('温度キープ（火）', () => {
     const good = createMissionGame('heat', 0, 0, createRng(1), 'good');
     const weak = createMissionGame('heat', 0, 0, createRng(1), 'weak');
     expect(good.kind === 'heat' && weak.kind === 'heat' && good.notesNeeded < weak.notesNeeded).toBe(true);
+  });
+});
+
+describe('水・土・風・雷（拍に合わせた操作のまとまり）', () => {
+  const play = (g: ReturnType<typeof createPhraseGame>, off = 0) => {
+    // いまのまとまりを、拍どおりに全部する
+    let last: string = 'ignored';
+    const cues = currentCues(g);
+    for (let i = g.pos; i < cues.length; i++) last = actPhrase(g, cueTime(g, i) + off, cues[i].action, cues[i].lane);
+    return last;
+  };
+
+  it('水：拍ごとに続けてタップ。まとまりを決まった数できたら完了', () => {
+    const g = createPhraseGame('net', 0, 0, createRng(1), 3, 0.14);
+    expect(currentCues(g).map((c) => c.beat)).toEqual([0, 1, 2]);
+    expect(currentCues(g).every((c) => c.action === 'tap')).toBe(true);
+    expect(play(g, 0.05)).toBe('ok');
+    expect(g.done).toBe(1);
+    expect(play(g)).toBe('done');
+    expect(g.result).toBe('success');
+  });
+
+  it('ずれたタップは miss。まとまりを最初からやり直す（できたまとまりは減らない）', () => {
+    const g = createPhraseGame('net', 0, 0, createRng(1), 3, 0.14);
+    play(g);
+    actPhrase(g, cueTime(g, 0), 'tap');
+    expect(actPhrase(g, cueTime(g, 1) + 0.3, 'tap')).toBe('miss');
+    expect(g.pos).toBe(0);
+    expect(g.done).toBe(1);
+  });
+
+  it('途中で止まると miss（遅れて届く操作を少し待ってから）。最初を押しそびれたときは、まちがいにしない', () => {
+    const g = createPhraseGame('net', 0, 0, createRng(1), 3, 0.14);
+    const first = cueTime(g, 0);
+    expect(updatePhrase(g, first + 0.3)).toBe('ignored');
+    expect(cueTime(g, 0)).toBeGreaterThan(first);
+    expect(actPhrase(g, first + 0.02, 'tap')).toBe('ok'); // 遅れて届いた、前の拍に合ったタップ
+    expect(updatePhrase(g, cueTime(g, 1) + 0.14 + 0.05)).toBe('ignored'); // まだ待つ
+    expect(updatePhrase(g, cueTime(g, 1) + 0.14 + MISSION_GAME.phrase.lateGrace + 0.01)).toBe('miss');
+  });
+
+  it('土：叩く（タップ）となぞる（スワイプ）がまざる。ちがう操作は miss', () => {
+    for (let seed = 1; seed < 20; seed++) {
+      const g = createPhraseGame('shape', 0, 0, createRng(seed), 4, 0.14);
+      const acts = currentCues(g).map((c) => c.action);
+      expect(acts).toContain('tap');
+      expect(acts).toContain('swipe');
+    }
+    const g = createPhraseGame('shape', 0, 0, createRng(2), 4, 0.14);
+    const c = currentCues(g)[0];
+    expect(actPhrase(g, cueTime(g, 0), c.action === 'tap' ? 'swipe' : 'tap')).toBe('miss');
+  });
+
+  it('風：拍ごとにスワイプ。まとまりは3つ', () => {
+    const g = createPhraseGame('wind', 0, 0, createRng(1), 2, 0.14);
+    expect(g.phrases).toHaveLength(MISSION_GAME.phrase.phrases.wind);
+    expect(currentCues(g).every((c) => c.action === 'swipe')).toBe(true);
+    play(g);
+    play(g);
+    expect(play(g)).toBe('done');
+  });
+
+  it('雷：間のあいた拍で、予告された灯籠だけ。ちがう灯籠は miss。同じ灯籠は続かない', () => {
+    const g = createPhraseGame('dark', 0, 0, createRng(4), 5, 0.14);
+    const cues = currentCues(g);
+    for (let i = 1; i < cues.length; i++) {
+      expect(cues[i].beat - cues[i - 1].beat).toBeGreaterThanOrEqual(1);
+      expect(cues[i].lane).not.toBe(cues[i - 1].lane);
+    }
+    const wrongLane = ((cues[0].lane ?? 0) + 1) % MISSION_GAME.phrase.darkLanes;
+    expect(actPhrase(g, cueTime(g, 0), 'tap', wrongLane)).toBe('miss');
+    expect(play(g)).toBe('ok');
+  });
+
+  it('得意ほど操作が少なく、苦手ほど多い（ずれてもよい幅もせまい）', () => {
+    const good = createMissionGame('net', 0, 0, createRng(1), 'good');
+    const weak = createMissionGame('net', 0, 0, createRng(1), 'weak');
+    if (good.kind !== 'net' || weak.kind !== 'net') throw new Error('kind');
+    expect(good.phrases[0].length).toBeLessThan(weak.phrases[0].length);
+    expect(good.window).toBeGreaterThan(weak.window);
+  });
+
+  it('失敗が決まったあとに届いた前の試みの操作は、やり直しの拍を動かさない', () => {
+    const g = createPhraseGame('net', 0, 0, createRng(1), 3, 0.14);
+    const t0 = cueTime(g, 0);
+    actPhrase(g, t0, 'tap');
+    const t1 = cueTime(g, 1);
+    expect(updatePhrase(g, t1 + 0.14 + MISSION_GAME.phrase.lateGrace + 0.01)).toBe('miss');
+    const restart = g.startBeat;
+    expect(actPhrase(g, t1, 'tap')).toBe('ignored'); // 遅れて届いた、前の試みのタップ
+    expect(g.startBeat).toBe(restart);
   });
 });

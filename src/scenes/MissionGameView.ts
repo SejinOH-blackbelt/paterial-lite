@@ -4,6 +4,12 @@
 import Phaser from 'phaser';
 import { COLORS, MISSION_GAME, SCREEN } from '../game/config';
 import {
+  actPhrase,
+  cueTime,
+  currentCues,
+  updatePhrase,
+  type PhraseAction,
+  type PhraseGame,
   HEAT_BAND,
   heatLevel,
   heatPressTime,
@@ -39,6 +45,7 @@ import { beatInterval } from '../game/rhythm';
 import type { GameAudio } from './audio';
 import { drawPart } from './textures';
 import { FONT, INK, pinToScreen } from './ui';
+import { makeMissionArt, MISSION_BG_TEX, MISSION_PART_TEX } from './missionArt';
 
 /** パネルの位置と大きさ（上の表示と、下のスティックのあいだ） */
 const PANEL = { x: 12, y: 116, w: SCREEN.width - 24, h: 378 } as const;
@@ -54,6 +61,11 @@ const RING = 58;
 const RING_GROW = 46;
 /** ジグソーの絵の大きさ（2×2 に切る） */
 const ART = 160;
+
+/** 水・土・風・雷のミニゲームか */
+function isPhrase(g: MissionGame): g is PhraseGame {
+  return g.kind === 'net' || g.kind === 'shape' || g.kind === 'wind' || g.kind === 'dark';
+}
 
 export interface MissionViewDeps {
   audio: GameAudio;
@@ -108,6 +120,7 @@ export class MissionGameView {
     else if (game.kind === 'pegs') this.buildPegs(game);
     else if (game.kind === 'jigsaw') this.buildJigsaw(game);
     else if (game.kind === 'heat') this.buildHeat(game);
+    else if (isPhrase(game)) this.buildPhrase(game);
     else this.buildPrayer(game);
     pinToScreen(this.root);
     this.update();
@@ -120,6 +133,7 @@ export class MissionGameView {
 
   /** 指を離した（土のお祈りで、手を合わせるのをやめたとき） */
   pointerUp(p: Phaser.Input.Pointer): void {
+    if (this.drag?.id === p.id) this.drag = null;
     if (p.id !== this.holdPointer) return;
     this.holdPointer = null;
     if (this.game.kind === 'prayer') this.step(releaseHands(this.game, this.deps.tapTime(p)));
@@ -489,7 +503,218 @@ export class MissionGameView {
     else if (g.kind === 'pegs') this.drawPegs(g, now);
     else if (g.kind === 'jigsaw') this.drawJigsaw(g);
     else if (g.kind === 'heat') this.drawHeat(g, now);
+    else if (isPhrase(g)) this.drawPhrase(g, now);
     else this.drawPrayer(g, now);
+  }
+
+  // ---------- 水・土・風・雷 ----------
+
+  /** 絵の部品（毎コマ、位置や絵を変える） */
+  private phraseParts: Phaser.GameObjects.Image[] = [];
+  private phraseLabels: Phaser.GameObjects.Text[] = [];
+  /** スワイプ中の指（越えた線の判定に使う。1回のなぞりで1回だけ） */
+  private drag: { id: number; x: number; y: number; t: number; used: boolean } | null = null;
+  /** 予約した拍の音が、どのまとまりに合わせたものか */
+  private phraseGuideKey = '';
+  /** 操作がうまくいった瞬間（絵を一瞬はずませる） */
+  private phraseFlash = 0;
+
+  private readonly pondAt = { x: CX, y: PANEL.y + 250 };
+  private readonly malletAt = { x: CX - 92, y: PANEL.y + 282 };
+  private readonly clayArea = { x: CX + 54, y: PANEL.y + 250, w: 150, h: 190 };
+  private readonly windLineX = CX;
+  /** 雷の灯籠の位置 */
+  private laneX(i: number): number {
+    const n = MISSION_GAME.phrase.darkLanes;
+    return CX + (i - (n - 1) / 2) * 76;
+  }
+  private readonly laneY = PANEL.y + 262;
+
+  /** その操作をする場所（予告の輪を出す場所） */
+  private cueAt(g: PhraseGame, action: PhraseAction, lane?: number): { x: number; y: number } {
+    if (g.kind === 'net') return this.pondAt;
+    if (g.kind === 'dark') return { x: this.laneX(lane ?? 0), y: this.laneY - 18 };
+    if (g.kind === 'wind') return { x: this.windLineX, y: PANEL.y + 250 };
+    return action === 'tap' ? this.malletAt : { x: this.clayArea.x, y: this.clayArea.y };
+  }
+
+  private buildPhrase(g: PhraseGame): void {
+    makeMissionArt(this.scene);
+    const element = g.kind === 'net' ? 'water' : g.kind === 'shape' ? 'earth' : g.kind === 'wind' ? 'wind' : 'thunder';
+    // 背景（Codex の浮世絵風）。上の説明の字が読めるように、上に和紙の帯をしく
+    const bg = this.scene.add.image(PANEL.x, PANEL.y, MISSION_BG_TEX(element)).setOrigin(0).setDisplaySize(PANEL.w, PANEL.h);
+    const band = this.scene.add.rectangle(PANEL.x + 6, PANEL.y + 6, PANEL.w - 12, 70, COLORS.scanPaper, 0.88).setOrigin(0);
+    this.root.addAt(bg, 1);
+    this.root.addAt(band, 2);
+    const act = (t: number, action: PhraseAction, lane?: number) => {
+      const s = actPhrase(g, t, action, lane);
+      if (s === 'ok' || s === 'done') {
+        this.phraseFlash = this.deps.now() + 0.15;
+        this.deps.audio.tone(g.kind === 'dark' ? 880 : g.kind === 'wind' ? 440 : 523.25);
+      }
+      this.step(s);
+    };
+    if (g.kind === 'net') {
+      this.phraseParts.push(this.scene.add.image(this.pondAt.x - 40, this.pondAt.y + 30, MISSION_PART_TEX.water.fish.carp[0]).setScale(1.3));
+      this.phraseParts.push(this.scene.add.image(this.pondAt.x + 50, this.pondAt.y + 50, MISSION_PART_TEX.water.fish.goldfish[0]).setScale(1.3));
+      this.phraseParts.push(this.scene.add.image(this.pondAt.x, this.pondAt.y, MISSION_PART_TEX.water.net).setScale(1.6));
+      this.hotspot(this.pondAt.x, this.pondAt.y + 20, 110, (p) => act(this.deps.tapTime(p), 'tap'));
+    } else if (g.kind === 'shape') {
+      this.phraseParts.push(this.scene.add.image(this.clayArea.x, this.clayArea.y + 50, MISSION_PART_TEX.earth.wheel).setScale(1.5));
+      this.phraseParts.push(this.scene.add.image(this.clayArea.x, this.clayArea.y + 4, MISSION_PART_TEX.earth.clay[0]).setScale(1.6));
+      this.hotspot(this.malletAt.x, this.malletAt.y, 44, (p) => act(this.deps.tapTime(p), 'tap'));
+      const tapLabel = this.scene.add.text(this.malletAt.x, this.malletAt.y, '叩く', { fontFamily: FONT, fontSize: '16px', fontStyle: 'bold', color: INK }).setOrigin(0.5);
+      const swipeLabel = this.scene.add
+        .text(this.clayArea.x, this.clayArea.y - this.clayArea.h / 2 - 2, 'なぞる ↓', { fontFamily: FONT, fontSize: '13px', fontStyle: 'bold', color: INK, backgroundColor: '#fff3dc' })
+        .setOrigin(0.5);
+      this.phraseLabels.push(tapLabel, swipeLabel);
+      // なぞる：粘土の上から下へ、真ん中の線を越える
+      const z = this.scene.add.rectangle(this.clayArea.x, this.clayArea.y, this.clayArea.w, this.clayArea.h, COLORS.ink, 0).setInteractive();
+      z.on('pointerdown', (p: Phaser.Input.Pointer) => this.startDrag(p));
+      this.root.add(z);
+      this.hitAreas.push(z);
+    } else if (g.kind === 'wind') {
+      this.phraseParts.push(this.scene.add.image(CX + 92, PANEL.y + 250, MISSION_PART_TEX.wind.rotor[0]).setScale(1.7));
+      this.phraseParts.push(this.scene.add.image(CX - 60, PANEL.y + 250, MISSION_PART_TEX.wind.stream).setScale(1.4));
+      // スワイプ：左から右へ、真ん中の線を越える
+      const z = this.scene.add.rectangle(CX, PANEL.y + 250, PANEL.w - 20, 220, COLORS.ink, 0).setInteractive();
+      z.on('pointerdown', (p: Phaser.Input.Pointer) => this.startDrag(p));
+      this.root.add(z);
+      this.hitAreas.push(z);
+    } else {
+      for (let i = 0; i < MISSION_GAME.phrase.darkLanes; i++) {
+        this.phraseParts.push(this.scene.add.image(this.laneX(i), this.laneY, MISSION_PART_TEX.thunder.lantern).setScale(1.2));
+        this.hotspot(this.laneX(i), this.laneY - 14, 34, (p) => act(this.deps.tapTime(p), 'tap', i));
+      }
+    }
+    this.root.add(this.phraseParts);
+    // 予告の輪や印は、絵の上に描く（字はさらにその上）
+    this.root.bringToTop(this.art);
+    this.root.add(this.phraseLabels);
+    this.phraseAct = act;
+  }
+
+  private phraseAct: ((t: number, action: PhraseAction, lane?: number) => void) | null = null;
+
+  /** なぞり始め（先に始めた指を、離すまで追う。ほかの指では上書きしない） */
+  private startDrag(p: Phaser.Input.Pointer): void {
+    if (this.drag) return;
+    this.drag = { id: p.id, x: p.x, y: p.y, t: this.deps.tapTime(p), used: false };
+  }
+
+  /** 指を動かした（土のなぞる・風のスワイプ：線を越えた瞬間に判定する） */
+  pointerMove(p: Phaser.Input.Pointer): void {
+    const d = this.drag;
+    const g = this.game;
+    if (!d || d.id !== p.id || d.used || !this.phraseAct || (g.kind !== 'shape' && g.kind !== 'wind')) return;
+    const t = this.deps.tapTime(p);
+    const [from, to, line] = g.kind === 'wind' ? [d.x, p.x, this.windLineX] : [d.y, p.y, this.clayArea.y];
+    const crossed = from < line && to >= line;
+    const prev = { t: d.t };
+    d.x = p.x;
+    d.y = p.y;
+    d.t = t;
+    if (!crossed) return;
+    d.used = true;
+    // 線を越えた瞬間の時刻：前後の移動点のあいだを、線までの距離で割りふる（移動点が間引かれても、越えた瞬間で判定する）
+    const frac = (line - from) / Math.max(1e-6, to - from);
+    this.phraseAct(prev.t + (t - prev.t) * frac, 'swipe');
+  }
+
+  private drawPhrase(g: PhraseGame, now: number): void {
+    if (updatePhrase(g, now) === 'miss') {
+      this.step('miss'); // 途中で止まった
+      return;
+    }
+    const cues = currentCues(g);
+    const total = g.phrases.length;
+    const hint: Record<PhraseGame['kind'], string> = {
+      net: '輪が重なるたびに 池を続けてタップ（トントントン）',
+      shape: '輪が重なったら、黄色は「叩く」をタップ、\n青は粘土を上から下へ なぞる',
+      wind: '輪が重なったら、線を越えるように 右へスワイプ',
+      dark: '稲光の印が出た灯籠を、輪が重なった瞬間に タップ',
+    };
+    this.title.setText(`${hint[g.kind]}（${g.done}/${total}）`);
+    const a = this.art;
+    const approach = MISSION_GAME.phrase.leadBeats * beatInterval();
+    const bounce = now < this.phraseFlash ? 1.12 : 1;
+    // 操作の目印（輪のゴール）
+    if (g.kind === 'shape') {
+      a.fillStyle(COLORS.ink).fillCircle(this.malletAt.x, this.malletAt.y, 40);
+      a.fillStyle(COLORS.clayLight).fillCircle(this.malletAt.x, this.malletAt.y, 37);
+      a.lineStyle(3, COLORS.ink, 0.5).lineBetween(this.clayArea.x - 60, this.clayArea.y, this.clayArea.x + 60, this.clayArea.y);
+    }
+    if (g.kind === 'wind') a.lineStyle(4, COLORS.ink, 0.5).lineBetween(this.windLineX, PANEL.y + 160, this.windLineX, PANEL.y + 340);
+    // これからの操作：外から輪が縮んでくる（雷は、その灯籠の上に稲光の印も出す）
+    cues.forEach((c, i) => {
+      if (i < g.pos) return;
+      const until = cueTime(g, i) - now;
+      if (until > approach || until < -g.window) return;
+      const at = this.cueAt(g, c.action, c.lane);
+      const r = 34 + (Math.max(0, until) / approach) * RING_GROW;
+      const fade = Math.min(1, (approach - until) / (approach * 0.3));
+      const col = c.action === 'swipe' ? COLORS.partFlag : COLORS.meterNeedle;
+      a.lineStyle(7, COLORS.ink, 0.6 * fade).strokeCircle(at.x, at.y, r);
+      a.lineStyle(4, col, fade).strokeCircle(at.x, at.y, r);
+      if (c.action === 'swipe') {
+        // スワイプの向きの矢印
+        const [dx, dy] = g.kind === 'wind' ? [1, 0] : [0, 1];
+        a.lineStyle(5, col, fade).lineBetween(at.x - dx * 22, at.y - dy * 22, at.x + dx * 22, at.y + dy * 22);
+        a.fillStyle(col, fade).fillTriangle(at.x + dx * 30, at.y + dy * 30, at.x + dx * 16 - dy * 9, at.y + dy * 16 - dx * 9, at.x + dx * 16 + dy * 9, at.y + dy * 16 + dx * 9);
+      }
+    });
+    // 絵の動き
+    const frame = Math.floor(now * 6);
+    if (g.kind === 'net') {
+      const [carp, gold, net] = this.phraseParts;
+      carp.setTexture(MISSION_PART_TEX.water.fish.carp[frame % 3]).setX(this.pondAt.x - 40 + Math.sin(now * 2) * 30);
+      gold.setTexture(MISSION_PART_TEX.water.fish.goldfish[(frame + 1) % 3]).setX(this.pondAt.x + 50 + Math.cos(now * 1.7) * 26);
+      net.setScale(1.6 * bounce).setY(this.pondAt.y + (bounce > 1 ? 14 : 0));
+    } else if (g.kind === 'shape') {
+      const [wheel, clay] = this.phraseParts;
+      wheel.setRotation(now * 3);
+      const k = Math.min(3, Math.floor(((g.done + g.pos / Math.max(1, cues.length)) / total) * 4));
+      clay.setTexture(MISSION_PART_TEX.earth.clay[k]).setScale(1.6 * bounce);
+    } else if (g.kind === 'wind') {
+      const [rotor, stream] = this.phraseParts;
+      const speed = 2 + g.done * 3 + g.pos;
+      rotor.setTexture(MISSION_PART_TEX.wind.rotor[Math.floor(now * speed) % 4]).setScale(1.7 * bounce);
+      stream.setAlpha(0.4 + 0.6 * Math.min(1, (g.done + g.pos / cues.length) / total));
+    } else {
+      // 灯った灯籠（このまとまりで、もう押せたもの）
+      const lit = new Set(cues.slice(0, g.pos).map((c) => c.lane));
+      this.phraseParts.forEach((img, i) => img.setTexture(lit.has(i) ? MISSION_PART_TEX.thunder.litLantern : MISSION_PART_TEX.thunder.lantern));
+      // 次に押す灯籠の上に、稲光の予告
+      const next = cues[g.pos];
+      if (next && cueTime(g, g.pos) - now <= approach) {
+        a.fillStyle(COLORS.uiHoney).fillTriangle(this.laneX(next.lane ?? 0) - 6, this.laneY - 92, this.laneX(next.lane ?? 0) + 8, this.laneY - 92, this.laneX(next.lane ?? 0) - 2, this.laneY - 70);
+      }
+    }
+    // できたまとまりの数（下に丸）
+    for (let i = 0; i < total; i++) {
+      const x = CX + (i - (total - 1) / 2) * 22;
+      a.fillStyle(COLORS.ink).fillCircle(x, PANEL.y + PANEL.h - 36, 8);
+      a.fillStyle(i < g.done ? COLORS.uiMoss : COLORS.uiPaperEdge).fillCircle(x, PANEL.y + PANEL.h - 36, 6);
+    }
+    this.schedulePhraseGuide(g, now);
+  }
+
+  /** 拍の音を少し先まで予約する（操作する拍は高い音）。まとまりが決め直されたら、予約し直す */
+  private schedulePhraseGuide(g: PhraseGame, now: number): void {
+    const key = `${g.startBeat}:${g.done}`;
+    const b = beatInterval();
+    if (key !== this.phraseGuideKey) {
+      this.phraseGuideKey = key;
+      for (const cancel of this.scheduled) cancel();
+      this.scheduled = [];
+      this.guideBeat = Math.ceil((now - g.origin) / b) - 1;
+    }
+    const next = Math.ceil((now - g.origin) / b);
+    const accents = currentCues(g).map((c) => g.startBeat + c.beat);
+    for (let k = Math.max(next, this.guideBeat + 1); g.origin + k * b < now + 0.25; k++) {
+      this.scheduled.push(this.deps.audio.tick(g.origin + k * b, accents.includes(k)));
+      this.guideBeat = k;
+    }
   }
 
   // ---------- 温度キープ（火） ----------
