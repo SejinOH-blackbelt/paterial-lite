@@ -249,6 +249,10 @@ export interface ResultWire {
   votes: [number, number][];
   sup: number;
   mat: number[];
+  /** 罰金・賠償・下がった支持度（発表に使う。親機の数にそろえる） */
+  fine: number;
+  comp: number;
+  lost: number;
 }
 
 export type NetMessage = CallRequest | MeetWire | SayWire | VoteWire | ResultWire | Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | OverWire | StartWire;

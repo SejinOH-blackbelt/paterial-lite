@@ -728,6 +728,8 @@ export class FieldScene extends Phaser.Scene {
     this.netUnlisten = net.relay.listen((from, data) => this.onNet(from, data as NetMessage));
     net.relay.onClosed = () => {
       if (!this.scene.isActive() && !this.scene.isPaused()) return;
+      // 勝ち負けが決まったあと（親機が終わって接続を閉じた）なら、通信切れではない。発表とリザルトをそのまま続ける
+      if (this.match.phase === 'over') return;
       // 会議の最中なら、会議の画面を閉じて採取場に戻ってから知らせる（止まったままの画面では時間が進まないため）
       if (this.scene.isPaused()) {
         this.scene.stop('Meeting');
@@ -1274,6 +1276,8 @@ export class FieldScene extends Phaser.Scene {
     if (!this.isSim()) {
       // 子機：会議を開くのは親機（親機が、呼び出せるかを確かめる）
       if (!reportableBody(this.match, this.playerPawn) && !canEmergency(this.match, this.playerPawn)) return false;
+      // 押した瞬間の場所で親機が確かめられるように、先に今のようすを送る（同じ通り道なので順番は入れかわらない）
+      this.netSend('host', { k: 'me', p: pawnToWire(this.player, this.driving) } satisfies SelfState);
       this.netSend('host', { k: 'call' } satisfies CallRequest);
       return true;
     }

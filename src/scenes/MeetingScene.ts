@@ -488,6 +488,8 @@ export class MeetingScene extends Phaser.Scene {
       case 'say': {
         // 親機：その人の発言だけ受けつけて、みんなへ回す。子機：親機から届いた、自分以外の発言を出す
         if (host ? msg.s !== fromSeat : fromSeat !== 0 || msg.s === net.mySeat) return;
+        // 文字チャットはなし：決まったスタンプだけを受けつける
+        if (!(STAMPS as readonly string[]).includes(msg.stamp)) return;
         const p = pawns[msg.s];
         if (!p) return;
         if (host) net.relay.send('all', msg);
@@ -548,11 +550,17 @@ export class MeetingScene extends Phaser.Scene {
         votes: votes.map(([v, t]) => [this.seatOf(v), t ? this.seatOf(t) : -1]),
         sup: match.support,
         mat: match.pawns.map((p, i) => p.h.materials - before[i]),
+        fine: result.fine,
+        comp: result.compensation,
+        lost: result.supportLost,
       } satisfies ResultWire);
     }
     if (fromHost) {
       // 子機：支持度と自分の素材は親機の数に合わせる（ほかの人の素材は、このあとのようすで届く）
       match.support = fromHost.sup;
+      result.fine = fromHost.fine;
+      result.compensation = fromHost.comp;
+      result.supportLost = fromHost.lost;
       const me = this.ctx.player;
       me.h.materials = before[this.seatOf(me)] + (fromHost.mat[this.seatOf(me)] ?? 0);
     }
