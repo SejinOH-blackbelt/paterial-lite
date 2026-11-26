@@ -3,7 +3,8 @@
 //   得意：同じ、または自分が相手を助ける（相生）
 //   普通：相手が自分を助ける（相生）
 //   苦手：相手が自分を打ち消す（相剋）
-//   不可：自分が相手を打ち消してしまう（相剋）。ただし土のミッションはパテ全員の原点なので不可にせず苦手
+//   不可：自分が相手を打ち消してしまう（相剋）。そのままではできない（依代の祠で別のエレメントに乗りうつる）
+// パテは魂で、エレメントの体にやどる。5つのエレメントは対等（どれも得意2・普通1・苦手1・不可1）
 import { ELEMENT_KE, ELEMENT_SHENG, ELEMENTS, MISSION_DEAL, MISSIONS } from './config';
 import type { Rng } from './random';
 
@@ -16,8 +17,8 @@ export function affinity(me: ElementId, mission: ElementId): Affinity {
   if (me === mission || ELEMENT_SHENG[me] === mission) return 'good';
   if (ELEMENT_SHENG[mission] === me) return 'plain';
   if (ELEMENT_KE[mission] === me) return 'weak';
-  // 残りは「自分が相手を打ち消す」：不可。ただし土は全員の原点なので苦手まで
-  return mission === 'earth' ? 'weak' : 'never';
+  // 残りは「自分が相手を打ち消してしまう」：不可
+  return 'never';
 }
 
 /** 得意・普通・苦手・不可の表示名 */

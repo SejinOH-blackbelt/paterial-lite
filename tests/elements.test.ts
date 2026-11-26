@@ -18,24 +18,12 @@ describe('エレメントの相性', () => {
     expect(affinity('wind', 'fire')).toBe('weak'); // 火が風を打ち消す
   });
 
-  it('土のミッションは不可にならない（本来は不可の風のパテも苦手）', () => {
-    expect(affinity('wind', 'earth')).toBe('weak');
-    for (const e of ELEMENTS) expect(affinity(e, 'earth')).not.toBe('never');
-  });
-
-  it('どのエレメントも、得意2・普通1・苦手1・不可1（風だけは土の例外で、不可なし・苦手2）', () => {
+  it('5つのエレメントは対等：どれも得意2・普通1・苦手1・不可1（パテは魂なので、土も特別あつかいしない）', () => {
     for (const me of ELEMENTS) {
       const count = (a: string) => ELEMENTS.filter((m) => affinity(me, m) === a).length;
-      expect(count('good')).toBe(2);
-      expect(count('plain')).toBe(1);
-      if (me === 'wind') {
-        expect(count('weak')).toBe(2);
-        expect(count('never')).toBe(0);
-      } else {
-        expect(count('weak')).toBe(1);
-        expect(count('never')).toBe(1);
-      }
+      expect([count('good'), count('plain'), count('weak'), count('never')]).toEqual([2, 1, 1, 1]);
     }
+    expect(affinity('wind', 'earth')).toBe('never'); // 風は土を吹き飛ばしてしまう
   });
 });
 
