@@ -23,8 +23,12 @@ npm test        # 自動テスト
 - [x] M5 呼び出しと会議と勝敗
 - [x] M5.5 王様と支持度とエレメント
 - [x] M6 ミッション（加工のミニゲームと土のお祈り）
-- [ ] M7 見た目と音
+- [x] M7 見た目と音（絵本風の枠、浮世絵風の採取場、BGM）
 - [ ] M8 公開
+
+## 遊ぶ（公開版）
+
+https://sejinoh-blackbelt.github.io/paterial-lite/ （だれでも開ける。main に送るたびに自動で公開し直す。手順と確認項目は [docs/m8-publish.md](docs/m8-publish.md)）
 
 ## スマホで試す
 
