@@ -134,6 +134,17 @@ describe('土のお祈り（土の祠）', () => {
     expect(g.stage).toBe(0);
   });
 
+  it('受付が終わった直後に画面が先に決め直しても、時間内に触れていた拍手は前の拍で判定する', () => {
+    const g = toClap();
+    const [k1] = upcomingClaps(g);
+    const touched = clapTime(g, k1) + MISSION_GAME.clapWindow - 0.02; // 受付ぎりぎりに触れた
+    updatePrayer(g, clapTime(g, k1) + MISSION_GAME.clapWindow + 0.03); // その処理より先に画面が更新された
+    expect(upcomingClaps(g)[0]).toBeGreaterThan(k1);
+    expect(pressHands(g, touched)).toBe('ok');
+    expect(g.claps).toBe(1);
+    expect(upcomingClaps(g)[0]).toBe(k1 + 1);
+  });
+
   it('決まった拍からずれた拍手（早すぎ）は miss', () => {
     const g = toClap();
     const [k1] = upcomingClaps(g);

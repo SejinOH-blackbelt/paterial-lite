@@ -123,6 +123,11 @@ export class MissionGameView {
   private step(s: Step): void {
     if (s === 'ignored') return;
     if (s === 'miss') {
+      // やり直しになるので、先に予約していた案内の音（拍手の拍など）は鳴らさない
+      for (const cancel of this.scheduled) cancel();
+      this.scheduled = [];
+      this.guideBeat = -Infinity;
+      if (this.game.kind === 'drum') this.demoScheduled = -1; // お手本は見せ直すときに予約し直す
       // まちがえた：パネルを小さく揺らす（やり直せば済む）
       this.scene.tweens.add({ targets: this.root, x: { from: -6, to: 0 }, duration: 260, ease: 'Elastic.Out' });
     }

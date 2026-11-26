@@ -187,19 +187,25 @@ export interface PrayerGame {
   /** 拍手の数と、次に拍手する拍の番号（拍手は続けて隣の拍に叩く） */
   claps: number;
   clapBeat: number;
+  /**
+   * 叩きそびれて決め直す前の拍と拍手の数。決め直したあとに届いたタップでも、
+   * 触れた時刻が前の拍に合っていれば、そちらで判定する（処理の遅れで不正解にしない）
+   */
+  missed: { beat: number; claps: number } | null;
   /** 0拍目の時刻（拍の基準。音の時計） */
   origin: number;
   result: 'playing' | 'success';
 }
 
 export function createPrayerGame(origin: number): PrayerGame {
-  return { kind: 'prayer', stage: 0, holdStart: null, claps: 0, clapBeat: 0, origin, result: 'playing' };
+  return { kind: 'prayer', stage: 0, holdStart: null, claps: 0, clapBeat: 0, missed: null, origin, result: 'playing' };
 }
 
 function missPrayer(g: PrayerGame): Step {
   g.stage = 0;
   g.holdStart = null;
   g.claps = 0;
+  g.missed = null;
   return 'miss';
 }
 
@@ -225,6 +231,12 @@ export function pressHands(g: PrayerGame, t: number): Step {
     return 'ok';
   }
   if (g.stage !== 2) return missPrayer(g);
+  // 決め直す前の拍に合っていたタップなら、決め直しを取り消してそちらで判定する
+  if (g.missed && Math.abs(t - clapTime(g, g.missed.beat)) <= MISSION_GAME.clapWindow) {
+    g.clapBeat = g.missed.beat;
+    g.claps = g.missed.claps;
+  }
+  g.missed = null;
   // 拍手：決めておいた拍から、ずれが小さければ OK（早すぎ・遅すぎは miss）
   if (Math.abs(t - clapTime(g, g.clapBeat)) > MISSION_GAME.clapWindow) return missPrayer(g);
   g.claps++;
@@ -269,6 +281,7 @@ export function updatePrayer(g: PrayerGame, now: number): Step {
     return 'ok';
   }
   if (g.stage === 2 && now > clapTime(g, g.clapBeat) + MISSION_GAME.clapWindow) {
+    g.missed = { beat: g.clapBeat, claps: g.claps };
     g.claps = 0;
     g.clapBeat = leadBeat(g, now);
   }
