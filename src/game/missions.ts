@@ -1,9 +1,11 @@
-// ミッション（加工とお祈り）と施設のルール。画面表示（Phaser）には依存しません。
-// ・加工：素材を決まった数だけ集めてから施設の前に立つと、ミニゲームが始まる。できたら素材を使って「加工済み」
-// ・お祈り：土の祠の前に立つと、土のお祈りが始まる
+// ミッション（共同ミッションのスイッチ）と施設のルール。画面表示（Phaser）には依存しません。
+// ・ミッションは2人で受け持ち、数か所のスイッチを回る（盤の作りは board.ts）
+// ・スイッチの前でアクションを押すと、ミニゲームが始まる。できたら、そのエレメントの資源を使ってスイッチがオンになる
+// ・スパイは「本当にやる」か「ふりをする」を選べる。ふりはスイッチが入らない（資源も使わない）
 // ・プレイヤーはミニゲームを遊ぶ。Botは決まった時間がたつと終わる（ときどきまちがえて、やり直す）
 
-import { AFFINITY, FACILITIES, FACILITY, MISSION_BOT, MISSION_WEIGHT, MISSIONS, VISION } from './config';
+import { AFFINITY, FACILITIES, FACILITY, MATCH, MISSION_BOT, SPOT, VISION } from './config';
+import { missionComplete, missionType, spotNear, type Board, type MissionInst } from './board';
 import { affinity, type Affinity } from './elements';
 import type { Harvester } from './harvest';
 import { createMissionGame, type MissionGame } from './missionGames';
@@ -12,26 +14,32 @@ import type { Rng } from './random';
 
 export type Facility = (typeof FACILITIES)[number];
 export type FacilityId = Facility['id'];
-export type Mission = (typeof MISSIONS)[number];
-export type MissionId = Mission['id'];
 
-/** 施設でミッションをしているところ */
+/** スイッチの前でミッションをしているところ */
 export interface MissionTask {
-  missionId: MissionId;
+  /** 盤の中のミッションの番号 */
+  missionId: number;
+  /** そのミッションの何番目のスイッチか */
+  spot: number;
   start: number;
   /** プレイヤーが遊ぶミニゲーム（Botは null） */
   game: MissionGame | null;
   /** Bot：この時刻に終わる（willFail ならまちがえて、やり直す） */
   endsAt: number;
   willFail: boolean;
+  /** スパイの「ふりをする」（終わってもスイッチは入らない） */
+  fake: boolean;
+  /** スイッチが入ったとき、国の仕事ゲージに入る割合（市民 1、スパイ MATCH.spyCredit） */
+  credit: number;
 }
 
 /** ミッションの出来事（画面側で音を鳴らし、近くのBotが聞く） */
 export interface MissionEvent {
   h: Harvester;
-  missionId: MissionId;
-  /** miss：まちがえた、done：できた */
-  kind: 'miss' | 'done';
+  missionId: number;
+  spot: number;
+  /** miss：まちがえた、done：スイッチが入った、fake：ふりをし終えた（スイッチは入らない） */
+  kind: 'miss' | 'done' | 'fake';
   time: number;
   at: Point;
 }
@@ -40,15 +48,6 @@ const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 
 export function facilityById(id: string): Facility {
   return FACILITIES.find((f) => f.id === id)!;
-}
-
-export function missionById(id: string): Mission {
-  return MISSIONS.find((m) => m.id === id)!;
-}
-
-/** その施設でできるミッション */
-export function missionAt(facilityId: string): Mission {
-  return MISSIONS.find((m) => m.facility === facilityId)!;
 }
 
 /** 施設の前の、パテが立つ場所 */
@@ -61,7 +60,7 @@ export function facilityCenter(f: Facility): Point {
   return { x: f.x, y: f.y - FACILITY.centerUp };
 }
 
-/** いる場所からミッションができる施設（真ん中から useRadius 以内でいちばん近いもの。正面でなくてもよい。なければ null） */
+/** いる場所のそばの施設（真ん中から useRadius 以内でいちばん近いもの。正面でなくてもよい。なければ null） */
 export function facilityNear(p: Point): Facility | null {
   // 真ん中からの近さ（どちら側でも）と、正面の立つ位置からの近さ（前と同じ広さ）の、どちらかに入ればよい
   const near = FACILITIES.map((f) => ({
@@ -75,182 +74,173 @@ export function facilityNear(p: Point): Facility | null {
 
 // ---------- 進み具合 ----------
 
-export function isFinished(h: Harvester, id: MissionId): boolean {
-  return h.finished.has(id);
-}
-
-/**
- * 加工に必要な素材がそろっているか（お祈りはいつでもできる）。
- * その素材を need 個集めたうえで、手持ちの素材も need 個以上あること
- * （会議のお詫びで素材を払って手持ちが減ったら、採り足してから加工する）
- */
-export function hasMaterials(h: Harvester, m: Mission): boolean {
-  return materialsShort(h, m) === 0;
-}
-
-/** 配られたミッションか（このパテがするものか） */
-export function isAssigned(h: Harvester, id: MissionId): boolean {
+/** 受け持っているミッションか */
+export function isAssigned(h: Harvester, id: number): boolean {
   return h.missions.includes(id);
 }
 
-/** いまのエレメントでの、そのミッションへの向き不向き */
-export function missionAffinity(h: Harvester, m: Mission): Affinity {
-  return affinity(h.element, m.element);
+/** 受け持っているミッション */
+export function myMissions(h: Harvester, board: Board): MissionInst[] {
+  return board.missions.filter((m) => isAssigned(h, m.id));
 }
 
-/** 配られていて、まだ終わっていなくて、素材がそろっていて、いまのエレメントでできる（不可でない）ミッションか */
-export function missionReady(h: Harvester, m: Mission): boolean {
-  return isAssigned(h, m.id) && !isFinished(h, m.id) && hasMaterials(h, m) && missionAffinity(h, m) !== 'never';
+/** いまの体のエレメントでの、そのミッションへの向き不向き */
+export function missionAffinity(h: Harvester, m: MissionInst): Affinity {
+  return affinity(h.element, missionType(m.type).element);
 }
 
-/** 配られたミッション */
-export function assignedMissions(h: Harvester): Mission[] {
-  return MISSIONS.filter((m) => isAssigned(h, m.id));
+/** スイッチを1つオンにするのに足りない資源の数（足りていれば 0） */
+export function materialsShort(h: Harvester, m: MissionInst): number {
+  const t = missionType(m.type);
+  return Math.max(0, t.needPerSpot - h.held[t.element]);
 }
 
-/** 加工に足りない素材の数（足りていれば 0）。集めた数と手持ちの、足りないほう */
-export function materialsShort(h: Harvester, m: Mission): number {
-  if (m.kind === null) return 0;
-  return Math.max(0, m.need - (h.gathered[m.kind] ?? 0), m.need - h.materials);
+/** 受け持ちのうち、完了した（スイッチが全部入った）ミッションの数 */
+export function missionsDone(h: Harvester, board: Board): number {
+  return myMissions(h, board).filter(missionComplete).length;
 }
 
-/** 1つのミッションの、国の仕事ゲージに入る量（素材1個で1、終えるとさらに MISSION_WEIGHT） */
-export function missionUnits(h: Harvester, m: Mission): number {
-  const gathered = m.kind === null ? 0 : Math.min(m.need, h.gathered[m.kind] ?? 0);
-  return gathered + (isFinished(h, m.id) ? (m.kind === null ? MISSION_WEIGHT.prayer : MISSION_WEIGHT.craft) : 0);
+export function allMissionsDone(h: Harvester, board: Board): boolean {
+  return missionsDone(h, board) === h.missions.length;
 }
 
-/** 1つのミッションが全部終わったときの量 */
-export function missionMaxUnits(m: Mission): number {
-  return m.need + (m.kind === null ? MISSION_WEIGHT.prayer : MISSION_WEIGHT.craft);
+/** ほかのパテが、そのスイッチでいまミッションをしている */
+export function spotBusy(all: readonly Harvester[], me: Harvester, missionId: number, spot: number): boolean {
+  return all.some((o) => o !== me && o.task?.missionId === missionId && o.task.spot === spot);
 }
 
-/** 1体の、配られたミッションの量の合計 */
-export function unitsOf(h: Harvester): number {
-  return assignedMissions(h).reduce((n, m) => n + missionUnits(h, m), 0);
-}
+// ---------- スイッチでミッションをする ----------
 
-/** 1体の、配られたミッションを全部終えたときの量 */
-export function maxUnitsOf(h: Harvester): number {
-  return assignedMissions(h).reduce((n, m) => n + missionMaxUnits(m), 0);
-}
-
-/** 配られたミッションのうち、終えた数 */
-export function missionsDone(h: Harvester): number {
-  return assignedMissions(h).filter((m) => isFinished(h, m.id)).length;
-}
-
-export function allMissionsDone(h: Harvester): boolean {
-  return missionsDone(h) === h.missions.length;
-}
-
-// ---------- 施設でミッションをする ----------
+export type SpotState = 'ready' | 'notReady' | 'on' | 'never' | 'notMine' | 'busy';
 
 /**
- * 施設のそばにいるとき、そのミッションを始める。
- * 結果：started 始めた、notMine 配られていない、finished もう終わっている、never いまのエレメントでは不可、
- * notReady 素材が足りない、null 施設のそばではない・いまは始められない
- * game：プレイヤーなら、そのミニゲームを作るための now・origin（拍の基準）・rng。Botなら null（決まった時間で終わる）
+ * 「アクション」ボタンで、そばのスイッチのミッションを始められるか。
+ * ready：始められる、notReady：資源が足りない、on：もう入っている、never：いまの体では不可、
+ * notMine：受け持っていない、busy：ほかのパテがしている。null：そばにスイッチがない・いまはできない
+ * canFake：スパイが「ふりをする」を選べるか（入っていない・だれもしていないスイッチなら、どれでも）
+ */
+export function missionChance(
+  h: Harvester,
+  board: Board,
+  all: readonly Harvester[],
+  isSpy = false,
+): { mission: MissionInst; spot: number; state: SpotState; affinity: Affinity; canFake: boolean } | null {
+  if (h.frozen || h.task || h.session || h.possess) return null;
+  const near = spotNear(board, h.walker.pos);
+  if (!near) return null;
+  const m = near.mission;
+  const aff = missionAffinity(h, m);
+  const busy = spotBusy(all, h, m.id, near.index);
+  const on = m.spots[near.index].on;
+  const state: SpotState = busy
+    ? 'busy'
+    : on
+      ? 'on'
+      : !isAssigned(h, m.id)
+        ? 'notMine'
+        : aff === 'never'
+          ? 'never'
+          : materialsShort(h, m) > 0
+            ? 'notReady'
+            : 'ready';
+  return { mission: m, spot: near.index, state, affinity: aff, canFake: isSpy && !busy && !on };
+}
+
+/**
+ * そばのスイッチでミッションを始める。
+ * fake：スパイの「ふりをする」（資源も相性もいらない。見た目と音は同じミニゲーム）。
+ * spy：本当にやるのがスパイか（ゲージに入る割合が MATCH.spyCredit になる）。
+ * player：プレイヤーなら、ミニゲームを作るための origin（拍の基準）。Botなら null（決まった時間で終わる）。
+ * 結果は missionChance と同じ形（始めたら state が ready）。始められなければ、その理由を返して何もしない
  */
 export function startMission(
   h: Harvester,
+  board: Board,
+  all: readonly Harvester[],
   now: number,
   rng: Rng,
   player: { origin: number } | null,
-): { result: 'started' | 'notReady' | 'finished' | 'never' | 'notMine'; mission: Mission } | null {
-  if (h.frozen || h.task || h.session || h.possess || h.walker.target || h.driving) return null;
-  const f = facilityNear(h.walker.pos);
-  if (!f) return null;
-  const m = missionAt(f.id);
-  if (!isAssigned(h, m.id)) return { result: 'notMine', mission: m };
-  if (isFinished(h, m.id)) return { result: 'finished', mission: m };
-  const aff = missionAffinity(h, m);
-  if (aff === 'never') return { result: 'never', mission: m };
-  if (!hasMaterials(h, m)) return { result: 'notReady', mission: m };
-  // 得意ほど短く・まちがえにくく、苦手ほど長く・まちがえやすい
+  opts: { fake?: boolean; spy?: boolean } = {},
+): ReturnType<typeof missionChance> {
+  if (h.walker.target || h.driving) return null;
+  const c = missionChance(h, board, all, !!opts.spy);
+  if (!c) return null;
+  const fake = !!opts.fake;
+  if (fake ? !c.canFake : c.state !== 'ready') return c;
+  const t = missionType(c.mission.type);
+  // 得意ほど短く・まちがえにくく、苦手ほど長く・まちがえやすい（ふりで不可のときは、苦手と同じ）
+  const aff = c.affinity === 'never' ? 'weak' : c.affinity;
+  h.claim = null;
+  h.waitingFor = null;
   h.task = {
-    missionId: m.id,
+    missionId: c.mission.id,
+    spot: c.spot,
     start: now,
-    game: player ? createMissionGame(m.game, now, player.origin, rng, aff) : null,
-    endsAt: now + MISSION_BOT.workSeconds[m.game] * AFFINITY.workScale[aff],
+    game: player ? createMissionGame(t.game, now, player.origin, rng, aff) : null,
+    endsAt: now + MISSION_BOT.workSeconds[t.game] * AFFINITY.workScale[aff],
     willFail: rng() < AFFINITY.failChance[aff],
+    fake,
+    credit: opts.spy ? MATCH.spyCredit : 1,
   };
-  const c = facilityCenter(f);
-  faceTo(h.walker, facingFor(c.x - h.walker.pos.x, c.y - h.walker.pos.y, 'up')); // 施設のほうを向く（どちら側にいても）
-  return { result: 'started', mission: m };
+  const s = c.mission.spots[c.spot];
+  faceTo(h.walker, facingFor(s.x - h.walker.pos.x, s.y - 12 - h.walker.pos.y, 'up')); // スイッチのほうを向く
+  return c;
 }
 
-/** ミッションを終える（加工なら素材を使う） */
-export function finishMission(h: Harvester, now: number): MissionEvent | null {
+/**
+ * ミッションを終える。本当にやったなら、資源を使ってスイッチをオンにする
+ * （そのあいだに相方が先に入れていたら、資源は使わない）
+ */
+export function finishMission(h: Harvester, board: Board, now: number): MissionEvent | null {
   const task = h.task;
   if (!task) return null;
-  const m = missionById(task.missionId);
-  h.finished.add(m.id);
-  if (m.kind !== null) h.materials -= m.need; // 始めるときに手持ちを確かめているので、足りている
-  // 雷のミッションを終えると、しばらく視界がまるくなる（暗闇が晴れる）
-  if (m.element === 'thunder') h.lightUntil = now + VISION.lightSeconds;
   h.task = null;
-  return { h, missionId: m.id, kind: 'done', time: now, at: { ...h.walker.pos } };
+  const ev: MissionEvent = { h, missionId: task.missionId, spot: task.spot, kind: task.fake ? 'fake' : 'done', time: now, at: { ...h.walker.pos } };
+  if (task.fake) return ev;
+  const m = board.missions[task.missionId];
+  const spot = m?.spots[task.spot];
+  if (!spot || spot.on) return ev;
+  const t = missionType(m.type);
+  h.held[t.element] = Math.max(0, h.held[t.element] - t.needPerSpot);
+  spot.on = true;
+  spot.credit = task.credit;
+  // 雷のミッションでスイッチを入れると、しばらく視界がまるくなる（暗闇が晴れる）
+  if (t.element === 'thunder') h.lightUntil = now + VISION.lightSeconds;
+  return ev;
 }
 
 /** プレイヤーがミニゲームでまちがえたとき・Botがまちがえたときの出来事 */
 export function missEvent(h: Harvester, now: number): MissionEvent | null {
   if (!h.task) return null;
-  return { h, missionId: h.task.missionId, kind: 'miss', time: now, at: { ...h.walker.pos } };
+  return { h, missionId: h.task.missionId, spot: h.task.spot, kind: 'miss', time: now, at: { ...h.walker.pos } };
 }
 
 /**
  * 毎コマ呼ぶ（Botだけ）：時間がたったらミッションを終える。まちがえる番なら、まちがえてやり直す。
  */
-export function updateBotTask(h: Harvester, now: number, rng: Rng): MissionEvent | null {
+export function updateBotTask(h: Harvester, board: Board, now: number, rng: Rng): MissionEvent | null {
   const task = h.task;
   if (!task || task.game || now < task.endsAt) return null;
   if (task.willFail) {
     const ev = missEvent(h, now);
     task.endsAt = now + MISSION_BOT.retrySeconds;
-    const aff = missionAffinity(h, missionById(task.missionId));
+    const aff = missionAffinity(h, board.missions[task.missionId]);
     task.willFail = rng() < AFFINITY.failChance[aff === 'never' ? 'weak' : aff];
     return ev;
   }
-  return finishMission(h, now);
-}
-
-/** そばにある施設（facilityNear と同じ） */
-export const nearbyFacility = facilityNear;
-
-/**
- * 「アクション」ボタンで、そばの施設のミッションを始められるか。
- * ready：始められる、notReady：素材が足りない、finished：もう終えた、null：そばに施設がない・いまはできない
- */
-export function missionChance(
-  h: Harvester,
-): { facility: Facility; mission: Mission; state: 'ready' | 'notReady' | 'finished' | 'never' | 'notMine'; affinity: Affinity } | null {
-  if (h.frozen || h.task || h.session || h.possess) return null;
-  const f = nearbyFacility(h.walker.pos);
-  if (!f) return null;
-  const m = missionAt(f.id);
-  const aff = missionAffinity(h, m);
-  const state = !isAssigned(h, m.id)
-    ? 'notMine'
-    : isFinished(h, m.id)
-      ? 'finished'
-      : aff === 'never'
-        ? 'never'
-        : hasMaterials(h, m)
-          ? 'ready'
-          : 'notReady';
-  return { facility: f, mission: m, state, affinity: aff };
+  return finishMission(h, board, now);
 }
 
 /**
- * 「アクション」ボタンを押した：始められるなら施設の前へ寄る（着いたら startMission で始める）。
- * 結果は missionChance と同じ（ready 以外のときは何もしない）
+ * 友達と遊ぶとき：子機から「スイッチを入れた」と届いたのを、親機が受けつけてよいか。
+ * その席が受け持つミッションで、パテがスイッチのそばにいて（届いたようすの位置で）、いまの体で不可でないこと。
+ * （ミニゲームそのものは子機の中で遊ぶので、親機が確かめられるのはここまで）
  */
-export function goToMission(h: Harvester): ReturnType<typeof missionChance> {
-  const c = missionChance(h);
-  if (!c || c.state !== 'ready') return c;
-  h.claim = null;
-  h.waitingFor = null;
-  h.walker.target = null; // その場で始める（次のコマに startMission）
-  return c;
+export function acceptRemoteDone(board: Board, h: Harvester, seat: number, missionId: number, spot: number): boolean {
+  const m = board.missions[missionId];
+  const s = m?.spots[spot];
+  if (!m || !s || s.on || h.frozen) return false;
+  if (!m.pair.includes(seat)) return false;
+  if (Math.hypot(h.walker.pos.x - s.x, h.walker.pos.y - s.y) > SPOT.useRadius * 1.5) return false;
+  return missionAffinity(h, m) !== 'never';
 }

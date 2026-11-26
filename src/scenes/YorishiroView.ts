@@ -12,7 +12,7 @@ const PANEL = { x: 12, y: 116, w: SCREEN.width - 24, h: 378 } as const;
 const CX = SCREEN.width / 2;
 const AFF_COLOR: Record<Affinity, number> = { good: 0x2f7a4a, plain: 0x7a6a55, weak: 0xb57a17, never: 0xb3322a };
 /** ミッションの短い名前（相性の表に使う） */
-const SHORT: Record<string, string> = { kiln: '窯', workshop: '製造所', foundry: '鋳造所', prayer: '祠' };
+const SHORT: Record<string, string> = { fire: '温度', water: '魚すくい', earth: '成形', wind: '気流', thunder: '暗闇' };
 
 export interface YorishiroDeps {
   /** いまの体のエレメントと、配られた（まだ終えていない）ミッション */

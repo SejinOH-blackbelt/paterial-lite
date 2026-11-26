@@ -17,7 +17,7 @@ describe('回るメーターの判定', () => {
   });
 
   it('ゾーンの真ん中からの角度で判定する', () => {
-    const { excellentDeg: e, goodDeg: g } = METER.clay;
+    const { excellentDeg: e, goodDeg: g } = METER.earth;
     expect(judgeAngle(0, e, g)).toBe('excellent');
     expect(judgeAngle(e / 2, e, g)).toBe('excellent');
     expect(judgeAngle(e / 2 + 1, e, g)).toBe('good');
@@ -25,21 +25,21 @@ describe('回るメーターの判定', () => {
   });
 
   it('始めた直後（半周より前）は判定しない。最初の通過は拍か半拍にそろう', () => {
-    const s = startSession('clay', 'clay', 10.1, 10);
-    expect(passTime(s, s.firstPass) - 10.1).toBeGreaterThanOrEqual(METER.clay.firstLapBeats * beat * 0.5);
+    const s = startSession('earth', 'earth', 10.1, 10);
+    expect(passTime(s, s.firstPass) - 10.1).toBeGreaterThanOrEqual(METER.earth.firstLapBeats * beat * 0.5);
     expect(onHalfBeat(passTime(s, s.firstPass), 10)).toBe(true);
-    expect(tapSession(s, passTime(s, s.firstPass) - METER.clay.firstLapBeats * beat * 0.75, createRng(1))).toBeNull();
+    expect(tapSession(s, passTime(s, s.firstPass) - METER.earth.firstLapBeats * beat * 0.75, createRng(1))).toBeNull();
   });
 
   it('通過の瞬間は針が真上（0度）、半周で180度', () => {
-    const s = startSession('clay', 'clay', 10, 10);
+    const s = startSession('earth', 'earth', 10, 10);
     const p = passTime(s, s.firstPass);
     expect(circ(needleAngle(s, p))).toBeCloseTo(0);
-    expect(needleAngle(s, p - (METER.clay.firstLapBeats * beat) / 2)).toBeCloseTo(180);
+    expect(needleAngle(s, p - (METER.earth.firstLapBeats * beat) / 2)).toBeCloseTo(180);
   });
 
   it('ゾーンの真ん中でタップすると Excellent（2個）、少し外れると Good（1個）', () => {
-    const s = startSession('clay', 'clay', 10, 10);
+    const s = startSession('earth', 'earth', 10, 10);
     const rng = createRng(1);
     const a = tapSession(s, passTime(s, s.firstPass), rng)!;
     expect(a.judgement).toBe('excellent');
@@ -47,13 +47,13 @@ describe('回るメーターの判定', () => {
     // 次の通過の少し後（Excellent ゾーンの外、Good ゾーンの中）
     const p2 = passTime(s, s.firstPass + 1);
     const degPerSec = 360 / (s.lapBeats * beat);
-    const b = tapSession(s, p2 + (METER.clay.excellentDeg / 2 + 10) / degPerSec, rng)!;
+    const b = tapSession(s, p2 + (METER.earth.excellentDeg / 2 + 10) / degPerSec, rng)!;
     expect(b.judgement).toBe('good');
     expect(b.gain).toBe(1);
   });
 
   it('同じ周に2回たたくと、2回目は「Bad」（連打でかせげない）', () => {
-    const s = startSession('clay', 'clay', 10, 10);
+    const s = startSession('earth', 'earth', 10, 10);
     const rng = createRng(2);
     const t = passTime(s, s.firstPass);
     expect(tapSession(s, t, rng)!.judgement).toBe('excellent');
@@ -61,7 +61,7 @@ describe('回るメーターの判定', () => {
   });
 
   it('タップするたびに次の1周の速さが変わり、通過はいつも拍か半拍にそろう', () => {
-    const s = startSession('clay', 'clay', 10, 10);
+    const s = startSession('earth', 'earth', 10, 10);
     const rng = createRng(3);
     const speeds = new Set<number>();
     let t = passTime(s, s.firstPass);
@@ -70,7 +70,7 @@ describe('回るメーターの判定', () => {
       const r = tapSession(s, t, rng)!;
       expect(r.judgement).toBe('excellent');
       expect(s.lapBeats).not.toBe(before);
-      expect((METER.clay.lapBeats as readonly number[]).includes(s.lapBeats)).toBe(true);
+      expect((METER.earth.lapBeats as readonly number[]).includes(s.lapBeats)).toBe(true);
       speeds.add(s.lapBeats);
       t = passTime(s, nextPass(s, t + 0.001));
       expect(onHalfBeat(t, 10)).toBe(true);
@@ -79,7 +79,7 @@ describe('回るメーターの判定', () => {
   });
 
   it('遅めにタップして速さが変わっても、針はワープしない', () => {
-    const s = startSession('clay', 'clay', 10, 10);
+    const s = startSession('earth', 'earth', 10, 10);
     const rng = createRng(4);
     const t = passTime(s, s.firstPass) + 0.08; // 少し遅め
     const before = needleAngle(s, t);
@@ -89,7 +89,7 @@ describe('回るメーターの判定', () => {
   });
 
   it('早めにタップしても、通過の瞬間までは今の速さのまま', () => {
-    const s = startSession('clay', 'clay', 10, 10);
+    const s = startSession('earth', 'earth', 10, 10);
     const rng = createRng(5);
     const p = passTime(s, s.firstPass);
     const mid = p - 0.05;
@@ -100,7 +100,7 @@ describe('回るメーターの判定', () => {
   });
 
   it('通過の前に続けて2回タップしても、針は飛ばない', () => {
-    const s = startSession('clay', 'clay', 10, 10);
+    const s = startSession('earth', 'earth', 10, 10);
     const rng = createRng(6);
     const p = passTime(s, s.firstPass);
     const watch = [p - 0.04, p - 0.02, p - 0.005];

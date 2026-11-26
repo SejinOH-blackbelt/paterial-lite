@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ELEMENTS, MISSION_DEAL, MISSIONS } from '../src/game/config';
-import { affinity, bestElementFor, dealMissions, missionElement, type ElementId } from '../src/game/elements';
-import { createRng } from '../src/game/random';
+import { ELEMENTS, MISSIONS } from '../src/game/config';
+import { affinity, bestElementFor, missionElement } from '../src/game/elements';
 
 describe('エレメントの相性', () => {
   it('直感どおり：水は火を消してしまうので、火のミッションは水のパテで不可', () => {
@@ -27,18 +26,7 @@ describe('エレメントの相性', () => {
   });
 });
 
-describe('ミッションを配る', () => {
-  it('決まった数を配り、そのうち1つは苦手か不可（同じたねなら同じ配り方）', () => {
-    for (const e of ELEMENTS as readonly ElementId[]) {
-      for (let seed = 1; seed < 30; seed++) {
-        const ms = dealMissions(e, createRng(seed));
-        expect(new Set(ms).size).toBe(Math.min(MISSION_DEAL.perPawn, MISSIONS.length));
-        expect(ms.some((id) => ['weak', 'never'].includes(affinity(e, missionElement(id))))).toBe(true);
-        expect(dealMissions(e, createRng(seed))).toEqual(ms);
-      }
-    }
-  });
-
+describe('乗りうつり先の選び方', () => {
   it('Bot の着替え：不可のないエレメントで、得意が多いものを選ぶ', () => {
     const ms = MISSIONS.filter((m) => m.element === 'fire' || m.element === 'earth').map((m) => m.id);
     const e = bestElementFor(ms, 'water'); // 水は火が不可

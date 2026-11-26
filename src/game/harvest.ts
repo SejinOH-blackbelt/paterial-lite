@@ -1,7 +1,7 @@
 // 素材ポイントと採取の流れのルール。画面表示（Phaser）には依存しません。
 
-import { FIELD, MISSIONS, RESOURCE, RESOURCE_POINTS, STOCK } from './config';
-import type { ElementId, MissionId } from './elements';
+import { ELEMENTS, FIELD, RESOURCE, RESOURCE_POINTS, STOCK } from './config';
+import type { ElementId } from './elements';
 import type { Possession } from './yorishiro';
 import { faceTo, facingFor, steerWalker, setTarget, type Point, type Walker } from './movement';
 import type { MissionTask } from './missions';
@@ -14,8 +14,8 @@ export type ResourcePoint = (typeof RESOURCE_POINTS)[number];
 /** 素材を集めるパテ（プレイヤーも、あとで Bot も同じ形を使う） */
 export interface Harvester {
   walker: Walker;
-  /** 集めた素材の数 */
-  materials: number;
+  /** 手持ちの資源（エレメントごと）。スイッチをオンにすると、そのミッションのエレメントの資源を使う */
+  held: Record<ElementId, number>;
   /** 採取中ならその記録。歩いている間は null */
   session: HarvestSession | null;
   /** 使う予定、または使っている素材ポイント（ほかのパテはここを使えない） */
@@ -24,18 +24,16 @@ export interface Harvester {
   waitingFor: string | null;
   /** スパイのイタズラで「土の置物」にされた（試合が終わるまで動けない） */
   frozen: boolean;
-  /** 素材の種類ごとに、これまで採取した数（ミッションの進み具合に使う） */
-  gathered: Record<string, number>;
   /** いまスティックで動かしている（そのあいだは採取を始めない・スキャンは中断） */
   driving: boolean;
-  /** 施設でミッション（加工・お祈り）をしているところ。していなければ null */
+  /** スイッチの前でミッションをしているところ。していなければ null */
   task: MissionTask | null;
-  /** 終えたミッション */
-  finished: Set<string>;
   /** いまやどっているエレメントの体（パテは魂） */
   element: ElementId;
-  /** 配られたミッション（このパテがするもの） */
-  missions: MissionId[];
+  /** 受け持つミッション（盤の中の番号。相方と2人で受け持つ） */
+  missions: number[];
+  /** Bot：向かっているスイッチ（相方とかぶらないように見せ合う）。なければ null */
+  aim: { mission: number; spot: number } | null;
   /** 依代の祠で乗りうつっているところ（していなければ null） */
   possess: Possession | null;
   /** 依代の祠から追い出されて、この時刻まで入れない */
@@ -51,21 +49,25 @@ export interface FieldState {
   regenAt: Record<string, number | null>;
 }
 
-/** element：最初のエレメント、missions：配られたミッション（省くと全部） */
-export function createHarvester(walker: Walker, element: ElementId = 'earth', missions: MissionId[] = MISSIONS.map((m) => m.id)): Harvester {
+/** 資源が空の手持ち */
+export function emptyHeld(): Record<ElementId, number> {
+  return Object.fromEntries(ELEMENTS.map((e) => [e, 0])) as Record<ElementId, number>;
+}
+
+/** element：最初のエレメント、missions：受け持つミッション（盤の中の番号） */
+export function createHarvester(walker: Walker, element: ElementId = 'earth', missions: number[] = []): Harvester {
   return {
     walker,
-    materials: 0,
+    held: emptyHeld(),
     session: null,
     claim: null,
     waitingFor: null,
     frozen: false,
-    gathered: {},
     driving: false,
     task: null,
-    finished: new Set(),
     element,
     missions: [...missions],
+    aim: null,
     possess: null,
     shrineLockUntil: -Infinity,
     lightUntil: -Infinity,
@@ -274,9 +276,7 @@ export function harvestTap(h: Harvester, f: FieldState, t: number, now: number, 
   const used = Math.min(STOCK.cost[r.judgement], f.stock[id]);
   const gain = Math.min(r.gain, used);
   f.stock[id] -= used;
-  h.materials += gain;
-  const kind = pointById(id).kind;
-  h.gathered[kind] = (h.gathered[kind] ?? 0) + gain;
+  h.held[pointById(id).kind] += gain;
   const depleted = used > 0 && f.stock[id] <= 0;
   if (depleted) {
     f.regenAt[id] = now + STOCK.regenSeconds;
@@ -284,4 +284,29 @@ export function harvestTap(h: Harvester, f: FieldState, t: number, now: number, 
     h.claim = null;
   }
   return { ...r, gain, used, depleted };
+}
+
+/** 手持ちの資源の合計 */
+export function totalHeld(h: Harvester): number {
+  return ELEMENTS.reduce((n, e) => n + h.held[e], 0);
+}
+
+/**
+ * 手持ちの資源を n 個とりあげる（会議の罰金・お詫び）。多く持っているエレメントから順に減らす。
+ * 戻り値：とりあげた資源（エレメントごと）
+ */
+export function takeHeld(h: Harvester, n: number): Record<ElementId, number> {
+  const out = emptyHeld();
+  for (let i = 0; i < n; i++) {
+    const e = [...ELEMENTS].sort((a, b) => h.held[b] - h.held[a])[0];
+    if (h.held[e] <= 0) break;
+    h.held[e]--;
+    out[e]++;
+  }
+  return out;
+}
+
+/** 資源をわたす */
+export function giveHeld(h: Harvester, bundle: Record<ElementId, number>): void {
+  for (const e of ELEMENTS) h.held[e] += bundle[e] ?? 0;
 }

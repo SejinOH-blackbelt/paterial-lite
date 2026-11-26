@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { FACILITIES, VISION } from '../src/game/config';
+import { VISION } from '../src/game/config';
+import { buildBoard } from '../src/game/board';
 import { createHarvester } from '../src/game/harvest';
-import { facilityStand, finishMission } from '../src/game/missions';
+import { finishMission } from '../src/game/missions';
 import { createWalker, faceTo } from '../src/game/movement';
 import { canSee, isLit, seeAmount } from '../src/game/vision';
 
@@ -32,11 +33,12 @@ describe('視界は前だけ', () => {
     expect(edge).toBeLessThan(1);
   });
 
-  it('雷のミッションを終えると、しばらく視界がまるくなる（後ろも見える）', () => {
-    const shrine = FACILITIES.find((f) => f.id === 'foundry')!;
-    const h = createHarvester(createWalker(facilityStand(shrine)), 'thunder', ['foundry']);
-    h.task = { missionId: 'foundry', start: 0, game: null, endsAt: 0, willFail: false };
-    finishMission(h, 100);
+  it('雷のスイッチを入れると、しばらく視界がまるくなる（後ろも見える）', () => {
+    const board = buildBoard({ types: ['thunder'], pairs: [[0, 1]], sites: [[0, 1, 2]] });
+    const s = board.missions[0].spots[0];
+    const h = createHarvester(createWalker({ x: s.x, y: s.y + 20 }), 'thunder', [0]);
+    h.task = { missionId: 0, spot: 0, start: 0, game: null, endsAt: 0, willFail: false, fake: false, credit: 1 };
+    finishMission(h, board, 100);
     expect(isLit(h, 100 + VISION.lightSeconds - 1)).toBe(true);
     faceTo(h.walker, 'right');
     expect(canSee(h, { x: h.walker.pos.x - 80, y: h.walker.pos.y }, 110)).toBe(true);

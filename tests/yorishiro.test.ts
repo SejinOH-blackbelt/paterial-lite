@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { BOT_PROFILES, FACILITIES, MISSIONS, YORISHIRO, YORISHIRO_COMMANDS } from '../src/game/config';
+import { BOT_PROFILES, YORISHIRO, YORISHIRO_COMMANDS } from '../src/game/config';
+import { buildBoard } from '../src/game/board';
 import { createBot, updateBot } from '../src/game/bot';
 import { createFieldState, createHarvester, updateHarvester, type Harvester } from '../src/game/harvest';
-import { allMissionsDone, facilityStand, maxUnitsOf, missionChance, missionsDone, startMission, unitsOf, updateBotTask } from '../src/game/missions';
+import { allMissionsDone, startMission, updateBotTask } from '../src/game/missions';
 import { createWalker, stepWalker } from '../src/game/movement';
 import { createRng } from '../src/game/random';
 import { finishPossess, kickFromShrine, pressCommand, shrineChance, startPossess } from '../src/game/yorishiro';
 
 const atShrine = () => ({ x: YORISHIRO.x, y: YORISHIRO.y + 30 });
-const fac = (id: string) => FACILITIES.find((f) => f.id === id)!;
 
 describe('依代の祠（乗りうつり）', () => {
   it('エレメントごとに決まったコマンドを全部押すと乗りうつれる（体のエレメントが変わる）', () => {
@@ -49,57 +49,42 @@ describe('依代の祠（乗りうつり）', () => {
   });
 });
 
-describe('配られたミッションと相性', () => {
-  it('配られていないミッション・不可のミッションは始められない（理由を返す）', () => {
-    const kiln = MISSIONS.find((m) => m.facility === 'kiln')!; // 火
-    const notMine = createHarvester(createWalker(facilityStand(fac('kiln'))), 'fire', ['prayer']);
-    expect(missionChance(notMine)?.state).toBe('notMine');
-    const water = createHarvester(createWalker(facilityStand(fac('kiln'))), 'water', [kiln.id]);
-    water.gathered.clay = kiln.need;
-    water.materials = kiln.need;
-    expect(missionChance(water)?.state).toBe('never'); // 水は火を消してしまう
-    expect(startMission(water, 0, createRng(1), null)?.result).toBe('never');
-  });
+describe('ミッションの相性', () => {
+  const board = () => buildBoard({ types: ['earth', 'fire'], pairs: [[0, 1], [0, 2]], sites: [[0, 1, 2], [3, 4]] });
+  const at = (b: ReturnType<typeof board>, m: number, element: Harvester['element']) => {
+    const s = b.missions[m].spots[0];
+    return createHarvester(createWalker({ x: s.x, y: s.y + 20 }), element, [m]);
+  };
 
   it('得意なミッションは早く終わり、苦手は時間がかかる（Bot）', () => {
-    const shrine = facilityStand(fac('shrine'));
-    const good = createHarvester(createWalker(shrine), 'earth', ['prayer']); // 土のお祈りに土は得意
-    const weak = createHarvester(createWalker(shrine), 'thunder', ['prayer']); // 土は雷を逃がす：雷は苦手
-    startMission(good, 0, createRng(1), null);
-    startMission(weak, 0, createRng(1), null);
+    const b = board();
+    const good = at(b, 0, 'earth'); // 土のミッションに土は得意
+    const weak = at(b, 0, 'thunder'); // 土は雷を逃がす：雷は苦手
+    good.held.earth = weak.held.earth = 5;
+    startMission(good, b, [good], 0, createRng(1), null);
+    startMission(weak, b, [weak], 0, createRng(1), null);
     expect(good.task!.endsAt).toBeLessThan(weak.task!.endsAt);
-  });
-
-  it('国の仕事ゲージと完了数は、配られたミッションの分で数える', () => {
-    const h = createHarvester(createWalker(facilityStand(fac('shrine'))), 'earth', ['prayer']);
-    expect(maxUnitsOf(h)).toBeGreaterThan(0);
-    startMission(h, 0, createRng(1), null);
-    h.task!.willFail = false;
-    updateBotTask(h, 100, createRng(1));
-    expect(missionsDone(h)).toBe(1);
-    expect(allMissionsDone(h)).toBe(true);
-    expect(unitsOf(h)).toBe(maxUnitsOf(h));
   });
 });
 
 describe('Bot の乗りうつり', () => {
   it('不可のミッションだけが残っていたら、依代の祠へ行って乗りうつり、ミッションを終える', () => {
+    const board = buildBoard({ types: ['fire'], pairs: [[0, 1]], sites: [[10, 11]] });
     const b = createBot(BOT_PROFILES[0], atShrine());
     const h: Harvester = b.h;
     h.element = 'water';
-    h.missions = ['kiln'];
-    h.gathered.clay = 8;
-    h.materials = 8;
+    h.missions = [0];
+    h.held.fire = 8;
     const f = createFieldState();
     const rng = createRng(3);
     let t = 0;
-    for (; t < 120 && !allMissionsDone(h); t += 1 / 30) {
+    for (; t < 120 && !allMissionsDone(h, board); t += 1 / 30) {
       stepWalker(h.walker, 1 / 30);
       updateHarvester(h, f, [h], t + 0.2, 0);
-      updateBotTask(h, t, rng);
-      updateBot(b, f, [h], t, rng);
+      updateBotTask(h, board, t, rng);
+      updateBot(b, f, board, [h], t, rng);
     }
     expect(h.element).not.toBe('water');
-    expect(allMissionsDone(h)).toBe(true);
+    expect(allMissionsDone(h, board)).toBe(true);
   });
 });

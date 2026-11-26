@@ -2,8 +2,9 @@
 // 画面表示（Phaser）には依存しません。
 
 import { BOT, LANDMARKS, MATCH, MISS_SOUND, SUPPORT, SUSPICION } from './config';
-import { createFieldState, type FieldState, type Harvester } from './harvest';
-import { allMissionsDone, facilityById, facilityNear, facilityStand, maxUnitsOf, unitsOf, type MissionEvent } from './missions';
+import { boardGauge, type Board } from './board';
+import { createFieldState, giveHeld, takeHeld, totalHeld, type FieldState, type Harvester } from './harvest';
+import { facilityById, facilityNear, facilityStand, type MissionEvent } from './missions';
 import { faceTo, type Point } from './movement';
 import type { Rng } from './random';
 import { canSee } from './vision';
@@ -74,6 +75,8 @@ export interface MeetingResult {
 export interface MatchState {
   pawns: Pawn[];
   field: FieldState;
+  /** 共同ミッションの盤（スイッチの進み具合を全員で共有する） */
+  board: Board;
   spy: SpyState;
   startedAt: number;
   /** 会議で止まっていた時間の合計（秒）。制限時間はこの分を数えない */
@@ -106,11 +109,12 @@ export function chooseKing(pawns: Pawn[]): Pawn {
   return king;
 }
 
-export function createMatch(pawns: Pawn[], now: number, rng: Rng): MatchState {
+export function createMatch(pawns: Pawn[], now: number, rng: Rng, board: Board): MatchState {
   const spyPawn = pawns.find((p) => p.isSpy)!;
   return {
     pawns,
     field: createFieldState(),
+    board,
     spy: createSpyState(spyPawn.h, now, rng),
     startedAt: now,
     pausedSeconds: 0,
@@ -130,23 +134,12 @@ const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 
 // ---------- ミッションとゲージ ----------
 
-// ミッションの進み具合は missions.ts（ここからも使えるように出しておく）
-export { allMissionsDone, missionsDone } from './missions';
-
 /**
- * 国の仕事ゲージ（0〜1）。市民のミッションの進み具合の合計（集めた素材・加工・お祈り）。スパイの分は入らない。
- * 置物にされた市民は、それまでに進めた分だけを数える（残りは必要な量からも外す）。
+ * 国の仕事ゲージ（0〜1）。共同ミッションのスイッチが入るとたまる（市民は全部、スパイが本当にやった分は10分の1）。
+ * 全部のスイッチの MATCH.gaugeGoal 倍がたまれば 1（くわしくは board.ts の boardGauge）
  */
 export function gauge(m: MatchState): number {
-  let done = 0;
-  let need = 0;
-  for (const p of m.pawns) {
-    if (p.isSpy) continue;
-    const prog = unitsOf(p.h);
-    done += prog;
-    need += p.h.frozen ? prog : maxUnitsOf(p.h); // 配られたミッションの分だけ
-  }
-  return need === 0 ? 0 : Math.min(1, done / need);
+  return boardGauge(m.board);
 }
 
 // ---------- 勝敗 ----------
@@ -155,14 +148,14 @@ export function gauge(m: MatchState): number {
 export function checkOutcome(m: MatchState, now: number): Outcome | null {
   if (m.outcome) return m.outcome;
   const citizens = m.pawns.filter((p) => !p.isSpy);
-  const spyPawn = m.pawns.find((p) => p.isSpy)!;
   let o: Outcome | null = null;
   // 動ける市民の数が、スパイの数まで減ったらスパイの勝ち（もう多数決で勝てないため）
   const spies = m.pawns.filter((p) => p.isSpy).length;
   const active = citizens.filter((p) => !p.h.frozen).length;
   if (citizens.length > 0 && active <= spies) o = { winner: 'spy', reason: 'frozen', time: now };
   else if (m.support <= 0) o = { winner: 'spy', reason: 'strike', time: now };
-  else if (allScanned(m.spy) && allMissionsDone(spyPawn.h)) o = { winner: 'spy', reason: 'scanned', time: now };
+  // M9②：「自分のミッションを全部終える」は外した。M10 で宝を盗む勝ち方が入るまでは、名物の全スキャンで勝ち
+  else if (allScanned(m.spy)) o = { winner: 'spy', reason: 'scanned', time: now };
   else if (gauge(m) >= 1) o = { winner: 'citizens', reason: 'gauge', time: now };
   else if (playedSeconds(m, now) >= MATCH.timeLimit) o = { winner: 'spy', reason: 'timeout', time: now };
   if (o) {
@@ -333,18 +326,17 @@ export function resolveMeeting(m: MatchState, now: number): MeetingResult {
 
   if (target?.isSpy) {
     // スパイを当てた：強制送還（てへぺろ）。集めた素材の一部を罰金として没収
-    result.fine = Math.floor(target.h.materials * MATCH.fineRate);
-    target.h.materials -= result.fine;
+    result.fine = Math.floor(totalHeld(target.h) * MATCH.fineRate);
+    takeHeld(target.h, result.fine);
     m.outcome = { winner: 'citizens', reason: 'caught', time: now };
     m.phase = 'over';
   } else if (target) {
     // ぬれぎぬ：その市民に投票したパテが、お詫びの素材を払う
     for (const [voter, t] of meeting.votes) {
       if (t !== target) continue;
-      const pay = Math.min(MATCH.compensation, voter.h.materials);
-      voter.h.materials -= pay;
-      target.h.materials += pay;
-      result.compensation += pay;
+      const paid = takeHeld(voter.h, MATCH.compensation);
+      giveHeld(target.h, paid);
+      result.compensation += Object.values(paid).reduce((n, v) => n + v, 0);
     }
     // 住民を疑ったので、王様の支持度が下がる。0 になったら、市民がストライキ（スパイの勝ち）
     result.supportLost = Math.min(m.support, SUPPORT.wrongAccusation);
@@ -414,6 +406,19 @@ export function observeMissionMiss(m: MatchState, ev: MissionEvent): void {
   if (!who?.isSpy) return;
   for (const p of m.pawns) {
     if (!p.h.frozen && p !== who && dist(p.h.walker.pos, ev.at) <= MISS_SOUND.goriRadius) addSuspicion(m, p, who, MISS_SOUND.heardGori, ev.at);
+  }
+}
+
+/**
+ * スパイが「ふりをする」を終えたとき：ミニゲームをしていたのにスイッチが入らないのを、見ていたBotが少し怪しむ
+ */
+export function observeFake(m: MatchState, ev: MissionEvent): void {
+  if (ev.kind !== 'fake') return;
+  const who = m.pawns.find((p) => p.h === ev.h);
+  if (!who) return;
+  for (const p of m.pawns) {
+    if (p === who || p.h.frozen || p.isSpy) continue;
+    if (dist(p.h.walker.pos, ev.at) <= BOT.hearRadius && canSee(p.h, ev.at, ev.time)) addSuspicion(m, p, who, SUSPICION.sawFake, ev.at);
   }
 }
 

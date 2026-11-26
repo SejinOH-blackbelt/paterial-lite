@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { LANDMARKS, MATCH, MISSIONS, SPY, SUPPORT, SUSPICION } from '../src/game/config';
-import { createHarvester } from '../src/game/harvest';
+import { LANDMARKS, MATCH, SPY, SUPPORT, SUSPICION } from '../src/game/config';
+import { dealBoard } from '../src/game/board';
+import { createHarvester, totalHeld } from '../src/game/harvest';
 import {
-  allMissionsDone,
   botVote,
   botWantsToReport,
   canEmergency,
@@ -14,7 +14,6 @@ import {
   everyoneVoted,
   gauge,
   hearStamp,
-  missionsDone,
   observeSpyEvent,
   reportableBody,
   resolveMeeting,
@@ -37,62 +36,46 @@ function setup(spyIndex = 5) {
     isPlayer: i === 0,
     emergencyLeft: MATCH.emergencyPerPawn,
   }));
-  const m = createMatch(pawns, 0, createRng(1));
+  const m = createMatch(pawns, 0, createRng(1), dealBoard(pawns.map(() => 'earth'), createRng(2)));
   return { m, pawns, spy: pawns[spyIndex] };
 }
 
-const finishMissions = (p: Pawn) => {
-  for (const ms of MISSIONS) {
-    if (ms.kind !== null) p.h.gathered[ms.kind] = ms.need;
-    p.h.finished.add(ms.id);
-  }
-};
+/** 盤のスイッチを、ゲージの量が goal に届くまで入れる（credit：1 なら市民、spyCredit ならスパイ） */
+function lightSpots(m: ReturnType<typeof setup>['m'], count: number, credit = 1) {
+  let n = 0;
+  for (const ms of m.board.missions)
+    for (const s of ms.spots) {
+      if (n >= count) return;
+      s.on = true;
+      s.credit = credit;
+      n++;
+    }
+}
+const spotCount = (m: ReturnType<typeof setup>['m']) => m.board.missions.reduce((n, ms) => n + ms.spots.length, 0);
 
-describe('ミッションと国の仕事ゲージ', () => {
-  it('素材を集めただけではミッションは終わらない（施設で加工して終わる）', () => {
-    const { m, pawns } = setup();
-    const h = pawns[0].h;
-    expect(missionsDone(h)).toBe(0);
-    const kiln = MISSIONS[0];
-    h.gathered[kiln.kind!] = kiln.need;
-    expect(missionsDone(h)).toBe(0);
-    const before = gauge(m);
-    expect(before).toBeGreaterThan(0); // 集めた素材の分は、ゲージにたまる
-    h.finished.add(kiln.id);
-    expect(missionsDone(h)).toBe(1);
-    expect(gauge(m)).toBeGreaterThan(before); // 加工するとさらにたまる
-    finishMissions(pawns[0]);
-    expect(allMissionsDone(h)).toBe(true);
-  });
-
-  it('ゲージは市民の分だけたまる（スパイがミッションを終えても増えない）', () => {
-    const { m, pawns, spy } = setup();
-    finishMissions(spy);
+describe('共同ミッションと国の仕事ゲージ', () => {
+  it('スイッチが入るとゲージがたまり、全部の gaugeGoal 倍で市民の勝ち', () => {
+    const { m } = setup();
     expect(gauge(m)).toBe(0);
-    finishMissions(pawns[0]);
-    expect(gauge(m)).toBeCloseTo(1 / 5);
+    lightSpots(m, 1);
+    expect(gauge(m)).toBeGreaterThan(0);
+    expect(checkOutcome(m, 10)).toBeNull();
+    lightSpots(m, spotCount(m));
+    expect(checkOutcome(m, 11)).toMatchObject({ winner: 'citizens', reason: 'gauge' });
   });
 
-  it('市民が全員ミッションを終えると、市民の勝ち', () => {
-    const { m, pawns } = setup();
-    pawns.filter((p) => !p.isSpy).forEach(finishMissions);
-    expect(checkOutcome(m, 10)).toMatchObject({ winner: 'citizens', reason: 'gauge' });
-  });
-
-  it('置物にされた市民の残りの分は、必要な量から外れる（ゲージを満たせなくならない）', () => {
-    const { m, pawns } = setup();
-    pawns[1].h.frozen = true;
-    pawns.filter((p) => !p.isSpy && p !== pawns[1]).forEach(finishMissions);
-    expect(gauge(m)).toBe(1);
+  it('スパイが本当にやったスイッチばかりだと、ゲージは満たせない', () => {
+    const { m } = setup();
+    lightSpots(m, spotCount(m), MATCH.spyCredit);
+    expect(gauge(m)).toBeCloseTo(MATCH.spyCredit / MATCH.gaugeGoal, 6);
+    expect(checkOutcome(m, 10)).toBeNull();
   });
 });
 
 describe('スパイの勝ち', () => {
-  it('名物を全部スキャンしても、自分のミッションが残っていれば勝てない', () => {
-    const { m, spy } = setup();
+  it('名物を全部スキャンしたら勝ち（M9②から、自分のミッションは関係ない）', () => {
+    const { m } = setup();
     m.spy.fragments = SPY.fragmentsToWin;
-    expect(checkOutcome(m, 10)).toBeNull();
-    finishMissions(spy);
     expect(checkOutcome(m, 11)).toMatchObject({ winner: 'spy', reason: 'scanned' });
   });
 
@@ -156,20 +139,20 @@ describe('呼び出し', () => {
 describe('会議と投票', () => {
   it('最多票がスパイなら市民の勝ち。スパイは素材の一部を罰金で失う', () => {
     const { m, pawns, spy } = setup();
-    spy.h.materials = 10;
+    spy.h.held.fire = 10;
     startMeeting(m, pawns[0], 'emergency', null, 5);
     for (const p of pawns) castVote(m, p, p === spy ? pawns[1] : spy);
     expect(everyoneVoted(m)).toBe(true);
     const r = resolveMeeting(m, 10);
     expect(r.wasSpy).toBe(true);
     expect(r.fine).toBe(Math.floor(10 * MATCH.fineRate));
-    expect(spy.h.materials).toBe(10 - r.fine);
+    expect(totalHeld(spy.h)).toBe(10 - r.fine);
     expect(m.outcome).toMatchObject({ winner: 'citizens', reason: 'caught' });
   });
 
   it('ぬれぎぬなら、その市民に投票したパテが賠償を払い、採取場に戻る', () => {
     const { m, pawns, spy } = setup();
-    for (const p of pawns) p.h.materials = 10;
+    for (const p of pawns) p.h.held.water = 10;
     startMeeting(m, pawns[0], 'emergency', null, 5);
     const victim = pawns[1];
     castVote(m, pawns[0], victim);
@@ -180,8 +163,8 @@ describe('会議と投票', () => {
     expect(r.target).toBe(victim);
     expect(r.wasSpy).toBe(false);
     expect(r.compensation).toBe(3 * MATCH.compensation);
-    expect(victim.h.materials).toBe(10 + 3 * MATCH.compensation);
-    expect(pawns[0].h.materials).toBe(10 - MATCH.compensation);
+    expect(totalHeld(victim.h)).toBe(10 + 3 * MATCH.compensation);
+    expect(totalHeld(pawns[0].h)).toBe(10 - MATCH.compensation);
     expect(m.phase).toBe('play');
     expect(m.outcome).toBeNull();
   });

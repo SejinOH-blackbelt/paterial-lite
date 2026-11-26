@@ -1,26 +1,52 @@
 // 墨の輪郭に朱・松葉色・藍を重ねる、採取場の素材。
 import type Phaser from 'phaser';
 import { COLORS } from '../game/config';
-import type { ResourceKind } from '../game/harvest';
 import { drawPart } from './textures';
 
-export const RES_TEX: Record<ResourceKind, string> = {
+/** 和の国の、粘土・竹・石の絵（M9②から、土・風・雷の資源の絵として使う） */
+type BaseKind = 'clay' | 'bamboo' | 'stone';
+
+export const RES_TEX: Record<BaseKind, string> = {
   clay: 'res-clay',
   bamboo: 'res-bamboo',
   stone: 'res-stone',
 };
 
-export const EMPTY_RES_TEX: Record<ResourceKind, string> = {
+export const EMPTY_RES_TEX: Record<BaseKind, string> = {
   clay: 'res-clay-empty',
   bamboo: 'res-bamboo-empty',
   stone: 'res-stone-empty',
 };
 
-export const RES_CHIP_COLOR: Record<ResourceKind, number> = {
+export const RES_CHIP_COLOR: Record<BaseKind, number> = {
   clay: COLORS.clayLight,
   bamboo: COLORS.bambooLight,
   stone: COLORS.stoneLight,
 };
+
+export const ELEMENT_RES_TEX = {
+  fire: 'res-fire',
+  water: 'res-water',
+  earth: RES_TEX.clay,
+  wind: RES_TEX.bamboo,
+  thunder: RES_TEX.stone,
+} as const;
+
+export const ELEMENT_RES_EMPTY_TEX = {
+  fire: 'res-fire-empty',
+  water: 'res-water-empty',
+  earth: EMPTY_RES_TEX.clay,
+  wind: EMPTY_RES_TEX.bamboo,
+  thunder: EMPTY_RES_TEX.stone,
+} as const;
+
+export const ELEMENT_RES_CHIP_COLOR = {
+  fire: 0xf07820,
+  water: 0x83dce9,
+  earth: RES_CHIP_COLOR.clay,
+  wind: RES_CHIP_COLOR.bamboo,
+  thunder: RES_CHIP_COLOR.stone,
+} as const;
 
 /** 足元の中心が素材ポイントの位置 */
 export const RES_SIZE = { w: 56, h: 52 } as const;
@@ -153,4 +179,44 @@ export function makeResourceTextures(scene: Phaser.Scene): void {
       ctx.restore();
     }
   });
+
+  for (const empty of [false, true]) {
+    const keys = empty ? ELEMENT_RES_EMPTY_TEX : ELEMENT_RES_TEX;
+    drawPart(scene, keys.fire, w, h, (ctx) => {
+      // 炉の縁の中に、赤い炭か灰を描く。
+      piece(ctx, 'M 5 34 Q 7 23 28 23 Q 49 23 51 34 L 47 45 Q 42 51 28 50 Q 14 51 9 45 Z',
+        clay, 'M 5 35 Q 28 46 51 35 L 51 52 H 5 Z', 'M 7 33 Q 15 23 31 25 L 17 32 Z');
+      piece(ctx, 'M 11 33 Q 16 27 28 27 Q 42 27 45 34 Q 41 40 28 40 Q 16 40 11 33 Z',
+        [0x34333e, 0x252621, 0x63575a], 'M 10 26 H 46 V 34 Q 26 29 10 36 Z', 'M 17 37 Q 28 40 40 35 L 35 40 H 20 Z');
+      if (empty) {
+        piece(ctx, 'M 15 35 L 20 31 L 24 32 L 28 29 L 34 32 L 38 31 L 42 35 Q 28 41 15 35 Z',
+          [0x9b9290, 0x67616a, 0xd2c6b8], 'M 16 35 Q 30 37 42 32 V 41 H 15 Z', 'M 22 33 L 28 30 L 34 33 L 27 34 Z');
+      } else {
+        piece(ctx, 'M 19 34 Q 11 28 18 18 Q 18 24 23 23 Q 20 14 28 5 Q 28 13 34 17 Q 37 20 36 25 Q 40 23 42 19 Q 46 30 37 34 Z',
+          [0xed6331, 0xb83d32, 0xffca57], 'M 32 12 Q 45 29 28 35 H 46 V 12 Z', 'M 22 33 Q 20 28 26 24 Q 29 21 28 17 Q 38 28 32 34 Z');
+        piece(ctx, 'M 14 34 L 19 29 L 26 31 L 31 29 L 39 30 L 43 35 Q 30 41 14 34 Z',
+          [0xc34832, 0x533239, 0xff9144], 'M 13 34 L 27 36 L 35 33 L 44 34 V 41 H 13 Z', 'M 18 34 L 20 31 L 25 33 L 29 32 L 27 35 Z M 33 32 H 38 L 40 34 L 35 35 Z');
+      }
+    });
+
+    drawPart(scene, keys.water, w, h, (ctx) => {
+      piece(ctx, 'M 3 37 L 8 29 L 15 25 L 24 26 L 32 23 L 43 26 L 51 32 L 53 40 L 48 46 Q 28 54 10 47 Z',
+        stone, 'M 2 38 Q 27 49 54 36 V 52 H 2 Z', 'M 5 36 L 9 30 L 16 27 L 23 28 L 14 32 Z M 33 25 L 43 28 L 49 33 L 38 30 Z');
+      if (empty) {
+        piece(ctx, 'M 10 37 Q 16 29 28 29 Q 41 28 47 37 Q 43 43 28 45 Q 15 44 10 37 Z',
+          [0xb59a77, 0x756858, 0xd7bb8b], 'M 9 36 Q 23 25 47 32 V 38 Q 27 31 9 40 Z', 'M 12 39 Q 29 42 46 38 L 43 45 H 12 Z');
+        ctx.strokeStyle = '#675548';
+        ctx.lineWidth = 1.2;
+        ctx.stroke(new Path2D('M 25 33 L 29 36 L 26 40 L 28 44 M 29 36 L 35 38 L 40 36 M 26 40 L 21 38 L 17 40'));
+      } else {
+        piece(ctx, 'M 10 37 Q 16 29 28 29 Q 41 28 47 37 Q 43 43 28 45 Q 15 44 10 37 Z',
+          [0x2fb5bf, 0x306486, 0xabebdf], 'M 9 39 Q 27 43 47 34 V 46 H 9 Z', 'M 12 37 Q 22 31 39 33 Q 26 34 20 38 Z');
+        piece(ctx, 'M 18 34 Q 21 29 26 29 Q 24 22 29 16 Q 28 23 33 27 Q 36 31 37 34 Q 28 38 18 34 Z',
+          [0x83dce9, 0x389eaf, 0xe6f8e4], 'M 29 24 Q 35 27 38 35 H 26 Q 33 32 29 24 Z', 'M 21 34 Q 24 31 28 31 L 29 34 Z');
+        ctx.strokeStyle = '#cff5e6';
+        ctx.lineWidth = 1.3;
+        ctx.stroke(new Path2D('M 18 39 Q 27 43 38 38 M 41 36 L 43 37'));
+      }
+    });
+  }
 }

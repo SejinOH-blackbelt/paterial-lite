@@ -1,8 +1,9 @@
 // 会議の画面。採取場の上に重ねて出します（採取場はそのあいだ止まる）。
 // 6体が輪になって並び、スタンプで話し合って投票します。ルールは src/game/match.ts。
 import Phaser from 'phaser';
-import { COLORS, PART_NAMES, SCREEN, SUPPORT, SUSPICION } from '../game/config';
-import { addNote, botVote, castVote, everyoneVoted, hearStamp, meetingTimeLeft, missionsDone, resolveMeeting, sightingOf, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
+import { COLORS, ELEMENTS, PART_NAMES, SCREEN, SUPPORT, SUSPICION } from '../game/config';
+import { missionsDone } from '../game/missions';
+import { addNote, botVote, castVote, everyoneVoted, hearStamp, meetingTimeLeft, resolveMeeting, sightingOf, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
 import type { Rng } from '../game/random';
 import type { GameAudio } from './audio';
 import type { Bgm } from './bgm';
@@ -146,7 +147,7 @@ export class MeetingScene extends Phaser.Scene {
       view.setHeadPart(p.part as never);
       view.setElement((p.element ?? null) as never);
       if (p.h.frozen) view.setStatue(true);
-      const done = missionsDone(p.h);
+      const done = missionsDone(p.h, match.board);
       panel(this, x, y + 22, 98, 23, p.h.frozen ? COLORS.uiSlate : COLORS.uiWood);
       const name = p === player ? 'きみ' : PART_NAMES[p.part as keyof typeof PART_NAMES];
       label(this, x, y + 20, `${name}  ${p.h.frozen ? '置物' : '仕事'} ${done}/${p.h.missions.length}`, 11);
@@ -541,7 +542,7 @@ export class MeetingScene extends Phaser.Scene {
       for (const p of match.pawns) if (!p.h.frozen && !match.meeting!.votes.has(p)) castVote(match, p, p.isPlayer ? null : botVote(match, p, this.ctx.rng));
     }
     const votes = [...match.meeting!.votes.entries()];
-    const before = match.pawns.map((p) => p.h.materials);
+    const before = match.pawns.map((p) => ELEMENTS.map((e) => p.h.held[e]));
     const result = resolveMeeting(match, this.now());
     if (this.ctx.net && !fromHost) {
       // 親機：みんなに結果を送る（票・支持度・素材の増減）
@@ -549,7 +550,7 @@ export class MeetingScene extends Phaser.Scene {
         k: 'result',
         votes: votes.map(([v, t]) => [this.seatOf(v), t ? this.seatOf(t) : -1]),
         sup: match.support,
-        mat: match.pawns.map((p, i) => p.h.materials - before[i]),
+        mat: match.pawns.map((p, i) => ELEMENTS.map((e, k) => p.h.held[e] - before[i][k])),
         fine: result.fine,
         comp: result.compensation,
         lost: result.supportLost,
@@ -562,7 +563,8 @@ export class MeetingScene extends Phaser.Scene {
       result.compensation = fromHost.comp;
       result.supportLost = fromHost.lost;
       const me = this.ctx.player;
-      me.h.materials = before[this.seatOf(me)] + (fromHost.mat[this.seatOf(me)] ?? 0);
+      const seat = this.seatOf(me);
+      ELEMENTS.forEach((e, k) => (me.h.held[e] = Math.max(0, before[seat][k] + (fromHost.mat[seat]?.[k] ?? 0))));
     }
     // 話し合いのボタンを片づけて、開票の場所を出す
     for (const b of [...this.stampButtons, this.voteButton, this.skipButton]) b.setVisible(false);

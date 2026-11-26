@@ -5,14 +5,13 @@
 // ・親機は、全員のようす（スナップショット）を少しずつ（1秒に何回か）みんなに送る。
 // ・時刻はスマホごとに「音の時計」がちがうので、送るときは「いまから何秒後／何秒前」に直して送る。
 
-import { ELEMENTS, MISSIONS, RESOURCE_POINTS } from '../game/config';
+import { ELEMENTS, RESOURCE_POINTS } from '../game/config';
+import type { Board, BoardPlan } from '../game/board';
 import type { FieldState, Harvester } from '../game/harvest';
-import { missionById } from '../game/missions';
 import type { Facing } from '../game/movement';
 import type { SpyState } from '../game/spy';
 
 const FACINGS: Facing[] = ['up', 'down', 'left', 'right'];
-const KINDS = ['clay', 'bamboo', 'stone'] as const;
 
 /** 1体のパテのようす（数を並べた形にして、送る量を減らす） */
 export interface PawnWire {
@@ -26,18 +25,15 @@ export interface PawnWire {
   fr: number;
   /** 採取しているポイント（RESOURCE_POINTS の番号。していなければ -1） */
   h: number;
-  /** ミッション中の施設（MISSIONS の番号。していなければ -1） */
+  /** ミッション中のミッション（盤の番号。していなければ -1）と、そのスイッチの番号 */
   tk: number;
-  /** 手持ちの素材 */
-  m: number;
-  /** 集めた素材（粘土・竹・石） */
-  g: [number, number, number];
-  /** 終えたミッション（MISSIONS の番号のビット） */
-  fin: number;
+  sp: number;
+  /** 手持ちの資源（ELEMENTS の順） */
+  m: number[];
   /** いまの体のエレメント（ELEMENTS の番号） */
   e: number;
-  /** 配られたミッション（MISSIONS の番号のビット） */
-  ms: number;
+  /** 受け持つミッション（盤の番号） */
+  ms: number[];
   /** 体の向きの角度（ラジアン。視界の扇の向き） */
   hd: number;
   /** 視界がまるい残りの秒数（雷のミッションのあと。なければ 0）。スマホごとに時計がちがうので残り秒数で送る */
@@ -59,18 +55,15 @@ export interface Snapshot {
   rg: number[];
   /** スパイ：カケラの数、スキャンした名物、塗りムラの大きさ、イタズラできるまでの秒数 */
   spy: { fr: number; sc: string[]; ps: number; pw: number };
+  /** スイッチが入っているか（盤のミッション順・スイッチ順に 1/0）。だれが入れたか（スパイか）は送らない */
+  bd: number[];
+  /** 国の仕事ゲージ（親機が計算した値。スパイが入れたスイッチの分は、子機では分からないため） */
+  gg: number;
 }
 
 /** パテのようすを送る形にする */
 export function pawnToWire(h: Harvester, walking: boolean, now = 0): PawnWire {
   const r = h.session ? RESOURCE_POINTS.findIndex((p) => p.id === h.session!.pointId) : -1;
-  const tk = h.task ? MISSIONS.findIndex((m) => m.id === h.task!.missionId) : -1;
-  let fin = 0;
-  let ms = 0;
-  MISSIONS.forEach((m, i) => {
-    if (h.finished.has(m.id)) fin |= 1 << i;
-    if (h.missions.includes(m.id)) ms |= 1 << i;
-  });
   return {
     x: Math.round(h.walker.pos.x * 10) / 10,
     y: Math.round(h.walker.pos.y * 10) / 10,
@@ -78,12 +71,11 @@ export function pawnToWire(h: Harvester, walking: boolean, now = 0): PawnWire {
     w: walking ? 1 : 0,
     fr: h.frozen ? 1 : 0,
     h: r,
-    tk,
-    m: h.materials,
-    g: KINDS.map((k) => h.gathered[k] ?? 0) as [number, number, number],
-    fin,
+    tk: h.task ? h.task.missionId : -1,
+    sp: h.task ? h.task.spot : -1,
+    m: ELEMENTS.map((e) => h.held[e]),
     e: ELEMENTS.indexOf(h.element),
-    ms,
+    ms: [...h.missions],
     hd: Math.round(h.walker.heading * 100) / 100,
     lt: Math.max(0, Math.round((h.lightUntil - now) * 10) / 10),
   };
@@ -103,17 +95,15 @@ export function applyWireToPawn(h: Harvester, w: PawnWire, makeSession: (pointId
   if (!pointId) h.session = null;
   else if (h.session?.pointId !== pointId) h.session = makeSession(pointId);
   h.claim = pointId;
-  const missionId = w.tk >= 0 ? MISSIONS[w.tk]?.id ?? null : null;
-  if (!missionId) h.task = null;
-  else if (h.task?.missionId !== missionId) {
-    // 中身（ミニゲーム）はそのスマホにあるので、ここでは「している」印だけ（終わるのも向こうが知らせる）
-    h.task = { missionId: missionById(missionId).id, start: now, game: null, endsAt: Infinity, willFail: false };
+  if (typeof w.tk !== 'number' || w.tk < 0) h.task = null;
+  else if (h.task?.missionId !== w.tk || h.task.spot !== w.sp) {
+    // 中身（ミニゲーム）はそのスマホにあるので、ここでは「している」印だけ（終わるのも向こうが知らせる）。
+    // ふりかどうかは送らない（スパイの秘密）
+    h.task = { missionId: w.tk, spot: w.sp, start: now, game: null, endsAt: Infinity, willFail: false, fake: false, credit: 1 };
   }
-  h.materials = w.m;
-  KINDS.forEach((k, i) => (h.gathered[k] = w.g[i]));
-  h.finished = new Set(MISSIONS.filter((_, i) => (w.fin & (1 << i)) !== 0).map((m) => m.id));
+  if (Array.isArray(w.m)) ELEMENTS.forEach((e, i) => (h.held[e] = typeof w.m[i] === 'number' ? w.m[i] : 0));
   if (typeof w.e === 'number' && ELEMENTS[w.e]) h.element = ELEMENTS[w.e];
-  if (typeof w.ms === 'number') h.missions = MISSIONS.filter((_, i) => (w.ms & (1 << i)) !== 0).map((m) => m.id);
+  if (Array.isArray(w.ms)) h.missions = w.ms.filter((n) => typeof n === 'number');
   if (typeof w.hd === 'number') h.walker.heading = w.hd;
   if (typeof w.lt === 'number') h.lightUntil = w.lt > 0 ? now + w.lt : -Infinity;
   return w.w === 1;
@@ -136,6 +126,26 @@ export function applyFieldWire(f: FieldState, st: number[], rg: number[], now: n
     if (typeof st[i] === 'number') f.stock[r.id] = st[i];
     f.regenAt[r.id] = typeof rg[i] === 'number' && rg[i] >= 0 ? now + rg[i] : null;
   });
+}
+
+/** スイッチのようすを送る形にする（入っていれば 1） */
+export function boardToWire(b: Board): number[] {
+  return b.missions.flatMap((m) => m.spots.map((s) => (s.on ? 1 : 0)));
+}
+
+/**
+ * 届いたスイッチのようすを当てはめる（子機）。入ったスイッチは、ゲージの計算には使わないので credit は 1 にしておく
+ * （ゲージは親機が送る gg を使う）
+ */
+export function applyBoardWire(b: Board, bd: number[]): void {
+  let i = 0;
+  for (const m of b.missions)
+    for (const s of m.spots) {
+      const on = bd[i++] === 1;
+      if (on && !s.on) s.credit = 1;
+      if (!on) s.credit = 0;
+      s.on = on;
+    }
 }
 
 /** スパイのようすを送る形にする（親機の時計で、いまから何秒か） */
@@ -191,13 +201,18 @@ export function overGain(gain: number, used: number): number {
   return Math.max(0, gain - Math.min(gain, used));
 }
 
-/** ミッションでまちがえた・できた（親機が「ゴリッ」を聞いたBotの疑いを上げ、ほかの人に音を伝える） */
+/**
+ * ミッションでまちがえた・できた・ふりをし終えた（子機 → 親機）。
+ * 親機は、done ならスイッチを入れ（スパイなら量は10分の1）、miss なら「ゴリッ」を聞いたBotの疑いを上げ、fake なら見ていたBotが少し怪しむ。
+ * 親機 → みんな にも送って、音を伝える（fake は done と同じ音にする）
+ */
 export interface MissionWire {
   k: 'mis';
   s: number;
-  kind: 'miss' | 'done';
-  /** MISSIONS の番号 */
+  kind: 'miss' | 'done' | 'fake';
+  /** 盤のミッションの番号と、スイッチの番号 */
   m: number;
+  sp: number;
 }
 
 /** スパイの出来事（スキャン・失敗・イタズラ）。witnesses と target は席の番号 */
@@ -231,14 +246,17 @@ export interface StartWire {
   seed: number;
 }
 
-/** 子機 → 親機：最初のエレメントを選び終えた */
+/** 子機 → 親機：最初のエレメントを選び終えた（選んだエレメント：ELEMENTS の番号） */
 export interface ReadyWire {
   k: 'ready';
+  e: number;
 }
 
-/** 親機 → みんな：全員が選び終えたので、いっせいに試合を始める */
+/** 親機 → みんな：全員が選び終えたので、いっせいに試合を始める（席ごとのエレメントと、共同ミッションの配り方） */
 export interface GoWire {
   k: 'go';
+  els: number[];
+  plan: BoardPlan;
 }
 
 /** 子機 → 親機：呼び出しボタンを押した（置物のそばなら呼び出し、土の祠なら緊急の呼び出し。親機が確かめる） */
@@ -276,7 +294,8 @@ export interface ResultWire {
   k: 'result';
   votes: [number, number][];
   sup: number;
-  mat: number[];
+  /** 席ごとの、資源の増減（ELEMENTS の順） */
+  mat: number[][];
   /** 罰金・賠償・下がった支持度（発表に使う。親機の数にそろえる） */
   fine: number;
   comp: number;

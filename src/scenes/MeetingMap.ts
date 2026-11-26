@@ -4,7 +4,7 @@ import Phaser from 'phaser';
 import { COLORS, FACILITIES, FIELD, LANDMARKS, RESOURCE_POINTS, WORLD } from '../game/config';
 import type { Point } from '../game/movement';
 import { FACILITY_TEX } from './facilityTextures';
-import { RES_TEX } from './resourceTextures';
+import { ELEMENT_RES_TEX } from './resourceTextures';
 import { LANDMARK_TEX } from './spyTextures';
 import { INK, label } from './ui';
 
@@ -42,7 +42,7 @@ export class MeetingMap {
     // 小さな地図は絵が小さすぎて見えないので、絵を少し大きめに描く
     const icon = big ? s * 1.25 : s * 2.4;
     for (const r of RESOURCE_POINTS) {
-      parts.push(scene.add.image(r.x * s, r.y * s, RES_TEX[r.kind]).setOrigin(0.5, 1).setScale(icon * 0.8));
+      parts.push(scene.add.image(r.x * s, r.y * s, ELEMENT_RES_TEX[r.kind]).setOrigin(0.5, 1).setScale(icon * 0.8));
     }
     for (const l of LANDMARKS) {
       parts.push(scene.add.image(l.x * s, l.y * s, LANDMARK_TEX[l.id]).setOrigin(0.5, 1).setScale(icon * 0.7));

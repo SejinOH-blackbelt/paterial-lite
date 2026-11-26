@@ -5,11 +5,12 @@
 //   苦手：相手が自分を打ち消す（相剋）
 //   不可：自分が相手を打ち消してしまう（相剋）。そのままではできない（依代の祠で別のエレメントに乗りうつる）
 // パテは魂で、エレメントの体にやどる。5つのエレメントは対等（どれも得意2・普通1・苦手1・不可1）
-import { ELEMENT_KE, ELEMENT_SHENG, ELEMENTS, MISSION_DEAL, MISSIONS } from './config';
+import { ELEMENT_KE, ELEMENT_SHENG, ELEMENTS, MISSIONS } from './config';
 import type { Rng } from './random';
 
 export type ElementId = (typeof ELEMENTS)[number];
 export type Affinity = 'good' | 'plain' | 'weak' | 'never';
+/** ミッションの種類（エレメントと同じ名前） */
 export type MissionId = (typeof MISSIONS)[number]['id'];
 
 /** 自分（パテ）が、相手（ミッション）のエレメントに対して、どれくらい向いているか */
@@ -29,34 +30,14 @@ export function missionElement(id: MissionId): ElementId {
   return MISSIONS.find((m) => m.id === id)!.element;
 }
 
-/**
- * ミッションを配る：MISSION_DEAL.perPawn 個。そのうち1つは、そのエレメントで苦手か不可のもの
- * （毎回「着替えるか、苦手なまま進めるか」を考えるように）。配る順は MISSIONS の順にそろえる
- */
-export function dealMissions(element: ElementId, rng: Rng): MissionId[] {
-  const all = MISSIONS.map((m) => m.id);
-  const hard = all.filter((id) => {
-    const a = affinity(element, missionElement(id));
-    return a === 'weak' || a === 'never';
-  });
-  const picked = new Set<MissionId>();
-  if (hard.length > 0) picked.add(hard[Math.floor(rng() * hard.length)]);
-  const rest = all.filter((id) => !picked.has(id));
-  while (picked.size < Math.min(MISSION_DEAL.perPawn, all.length)) {
-    const i = Math.floor(rng() * rest.length);
-    picked.add(rest.splice(i, 1)[0]);
-  }
-  return all.filter((id) => picked.has(id));
-}
-
 /** ランダムなエレメント */
 export function randomElement(rng: Rng): ElementId {
   return ELEMENTS[Math.floor(rng() * ELEMENTS.length)];
 }
 
 /**
- * 着替えるならどのエレメントがよいか（Bot が使う）。
- * まだ終えていないミッションで、不可がなく、得意が多いものを選ぶ（同じなら今のまま）
+ * 乗りうつるならどのエレメントがよいか（Bot が使う）。
+ * まだ終えていないミッション（の種類）で、不可がなく、得意が多いものを選ぶ（同じなら今のまま）
  */
 export function bestElementFor(missions: MissionId[], current: ElementId): ElementId {
   const score = (e: ElementId) =>

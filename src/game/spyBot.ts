@@ -5,6 +5,7 @@
 
 import { LANDMARKS, SCAN_GAME, SPY, SPY_BOT } from './config';
 import { updateBot, type Bot, type BotTapEvent } from './bot';
+import type { Board } from './board';
 import type { FieldState, Harvester } from './harvest';
 import { watchersOf } from './vision';
 import { setTarget } from './movement';
@@ -40,6 +41,7 @@ export function updateSpyBot(
   mind: SpyBotMind,
   spy: SpyState,
   field: FieldState,
+  board: Board,
   all: readonly Harvester[],
   now: number,
   rng: Rng,
@@ -106,6 +108,6 @@ export function updateSpyBot(
   }
 
   // ふだんは住民Botと同じように採取する（市民のふり）
-  out.taps = updateBot(bot, field, all, now, rng);
+  out.taps = updateBot(bot, field, board, all, now, rng);
   return out;
 }

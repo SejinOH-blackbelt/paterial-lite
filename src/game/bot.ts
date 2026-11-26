@@ -1,12 +1,14 @@
 // 住民Bot（和の国の住民）の動きのルール。画面表示（Phaser）には依存しません。
-// 自分のミッションに必要な素材を、近くの空いている素材ポイントで採取します。何周か採取したら、ひと休みして別の場所へ移ります。
-// 素材がそろったら施設へ運んで加工し、ときどき土の祠へお祈りに行きます。
+// 受け持ちのミッションに必要な資源を、近くの空いている資源ポイントで採取します。何周か採取したら、ひと休みして別の場所へ移ります。
+// 資源がそろったら、まだ入っていないスイッチへ運んでミッションをします（相方が向かっているスイッチは避ける）。
+// スパイBotは、スイッチで「本当にやる」か「ふりをする」かを選びます。
 
-import { BOT, FIELD, MISSION_BOT, MISSIONS, RESOURCE, RESOURCE_POINTS, YORISHIRO } from './config';
+import { BOT, FIELD, MISSION_BOT, RESOURCE, RESOURCE_POINTS, YORISHIRO } from './config';
+import { missionComplete, missionType, type Board } from './board';
 import { bestElementFor, type ElementId } from './elements';
 import { startPossess, updateBotPossess } from './yorishiro';
 import { createHarvester, harvestTap, moveHarvester, claimedByOther, type FieldState, type Harvester, type HarvestResult } from './harvest';
-import { assignedMissions, facilityById, facilityStand, hasMaterials, isAssigned, isFinished, materialsShort, missionAffinity, missionReady, startMission } from './missions';
+import { materialsShort, missionAffinity, myMissions, spotBusy, startMission, type MissionTask } from './missions';
 import { createWalker, setTarget, type Point } from './movement';
 import { between, gaussian, intBetween, type Rng } from './random';
 import { beatInterval, nearestPass, nextPass, passTime } from './rhythm';
@@ -32,9 +34,11 @@ export interface Bot {
   /** lastLap を叩いた採取（別の採取なら周の番号は関係ない） */
   lastSession: unknown;
   /** いま何をしているか（休むタイミングを決めるため） */
-  mode: 'idle' | 'toPoint' | 'toFacility' | 'toShrine' | 'wander';
+  mode: 'idle' | 'toPoint' | 'toSpot' | 'toShrine' | 'wander';
   /** 依代の祠で乗りうつるエレメント（向かっているとき） */
   changeTo: ElementId | null;
+  /** スパイBotか（スイッチで「ふりをする」ことがある） */
+  isSpy: boolean;
 }
 
 export interface BotTapEvent {
@@ -46,7 +50,7 @@ export interface BotTapEvent {
 }
 
 export function createBot(profile: BotProfile, pos: Point): Bot {
-  return { profile, h: createHarvesterLike(pos), tapsLeft: 0, nextTap: null, restUntil: 0, lastLap: -Infinity, lastSession: null, mode: 'idle', changeTo: null };
+  return { profile, h: createHarvesterLike(pos), tapsLeft: 0, nextTap: null, restUntil: 0, lastLap: -Infinity, lastSession: null, mode: 'idle', changeTo: null, isSpy: false };
 }
 
 function createHarvesterLike(pos: Point): Harvester {
@@ -74,9 +78,23 @@ export function freePoints(bot: Bot, field: FieldState, all: readonly Harvester[
   );
 }
 
-/** まだ足りない、ミッションに必要な素材の種類（集めた数か手持ちが、加工に足りない） */
-export function neededKinds(h: Harvester): string[] {
-  return MISSIONS.flatMap((m) => (m.kind !== null && isAssigned(h, m.id) && !isFinished(h, m.id) && materialsShort(h, m) > 0 ? [m.kind] : []));
+/** ほかのパテが向かっている・しているスイッチか（相方とかぶらないように避ける） */
+function takenByOther(all: readonly Harvester[], me: Harvester, missionId: number, spot: number): boolean {
+  return spotBusy(all, me, missionId, spot) || all.some((o) => o !== me && o.aim?.mission === missionId && o.aim.spot === spot);
+}
+
+/** 受け持ちのミッションで、まだ入っていなくて、ほかのパテが向かっていないスイッチ */
+export function openSpots(h: Harvester, board: Board, all: readonly Harvester[]) {
+  return myMissions(h, board).flatMap((m) =>
+    m.spots.flatMap((s, spot) => (!s.on && !takenByOther(all, h, m.id, spot) ? [{ mission: m, spot, at: s }] : [])),
+  );
+}
+
+/** まだ足りない、ミッションに必要な資源の種類（入れられるスイッチが残っているのに、資源が足りない） */
+export function neededKinds(h: Harvester, board: Board, all: readonly Harvester[]): string[] {
+  const kinds = new Set<string>();
+  for (const o of openSpots(h, board, all)) if (materialsShort(h, o.mission) > 0) kinds.add(missionType(o.mission.type).element);
+  return [...kinds];
 }
 
 /** 採取場のどこかへ歩く（着いたらひと休み） */
@@ -86,25 +104,25 @@ function wander(bot: Bot, rng: Rng): void {
   bot.mode = 'wander';
 }
 
-/** 施設へ向かう（着いたら、そこでミッションを始める） */
-function goToFacility(bot: Bot, facilityId: string): void {
-  bot.h.claim = null;
-  setTarget(bot.h.walker, facilityStand(facilityById(facilityId)));
-  bot.mode = 'toFacility';
-}
+/** スイッチの前に立つ場所（スイッチの少し下） */
+const spotStand = (p: Point): Point => ({ x: p.x, y: p.y + 22 });
 
 /**
- * 次にするミッションを選んで向かう。向かったら true。
- * 配られたミッションで、素材がそろっているのに不可のものがあれば、先に依代の祠へ（得意が多いエレメントに乗りうつる）。
- * 素材がそろった加工があれば、いちばん近い施設へ。なければ、ときどき（加工も採取も残っていなければ必ず）素材のいらないミッションへ。
+ * 次に入れるスイッチを選んで向かう。向かったら true。
+ * 資源がそろっているのに不可のスイッチしかなければ、先に依代の祠へ（得意が多いエレメントに乗りうつる）。
+ * スパイBotは、資源がなくても「ふり」ができるので、ときどき（ふりをしに）スイッチへ向かう。
  */
-function chooseFacility(bot: Bot, now: number, rng: Rng): boolean {
+function chooseSpot(bot: Bot, board: Board, all: readonly Harvester[], now: number, rng: Rng): boolean {
   const h = bot.h;
   const { x, y } = h.walker.pos;
-  const left = assignedMissions(h).filter((m) => !isFinished(h, m.id));
-  const blocked = left.some((m) => missionAffinity(h, m) === 'never' && hasMaterials(h, m));
-  if (blocked && now >= h.shrineLockUntil) {
-    const to = bestElementFor(left.map((m) => m.id), h.element);
+  const open = openSpots(h, board, all);
+  const stocked = open.filter((o) => materialsShort(h, o.mission) === 0);
+  const ready = stocked.filter((o) => missionAffinity(h, o.mission) !== 'never');
+  if (ready.length === 0 && stocked.length > 0 && now >= h.shrineLockUntil) {
+    const left = myMissions(h, board)
+      .filter((m) => !missionComplete(m))
+      .map((m) => m.type);
+    const to = bestElementFor(left, h.element);
     if (to !== h.element) {
       bot.changeTo = to;
       setTarget(h.walker, { x: YORISHIRO.x, y: YORISHIRO.y + 34 });
@@ -112,28 +130,34 @@ function chooseFacility(bot: Bot, now: number, rng: Rng): boolean {
       return true;
     }
   }
-  const ready = MISSIONS.filter((m) => m.kind !== null && missionReady(h, m))
-    .map((m) => facilityById(m.facility))
-    .sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
-  if (ready.length > 0) {
-    goToFacility(bot, ready[0].id);
-    return true;
-  }
-  const prayer = MISSIONS.find((m) => m.kind === null && missionReady(h, m));
-  if (prayer && (neededKinds(h).length === 0 || rng() < MISSION_BOT.prayChance)) {
-    goToFacility(bot, prayer.facility);
-    return true;
-  }
-  return false;
+  // スパイBotは、資源がないときでも、ときどき「ふり」をしに行く
+  const pool = ready.length > 0 ? ready : bot.isSpy && open.length > 0 && rng() < MISSION_BOT.spyFakeChance ? open : [];
+  if (pool.length === 0) return false;
+  const target = [...pool].sort((a, b) => Math.hypot(a.at.x - x, a.at.y - y) - Math.hypot(b.at.x - x, b.at.y - y))[0];
+  h.claim = null;
+  h.aim = { mission: target.mission.id, spot: target.spot };
+  setTarget(h.walker, spotStand(target.at));
+  bot.mode = 'toSpot';
+  return true;
 }
 
 /**
  * 毎コマ呼ぶ（updateHarvester のあと）。採取したらその出来事を返す（画面側で音と動きを出す）。
  * now：いまの時刻（音の時計）、origin：拍の0拍目
  */
-export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[], now: number, rng: Rng): BotTapEvent[] {
+export function updateBot(bot: Bot, field: FieldState, board: Board, all: readonly Harvester[], now: number, rng: Rng): BotTapEvent[] {
   const h = bot.h;
-  if (h.frozen) return []; // 置物は何もしない
+  if (h.frozen) {
+    h.aim = null;
+    return []; // 置物は何もしない
+  }
+  // 向かっているスイッチに、先に相方が入れたら、選び直す
+  if (bot.mode === 'toSpot' && h.aim && board.missions[h.aim.mission]?.spots[h.aim.spot]?.on) {
+    h.aim = null;
+    h.walker.target = null;
+    bot.mode = 'idle';
+  }
+  if (!h.task && bot.mode !== 'toSpot') h.aim = null;
   if (h.possess) {
     // 依代の祠で乗りうつり中（決まった時間で終わる）
     bot.mode = 'idle';
@@ -178,7 +202,7 @@ export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[]
     bot.tapsLeft--;
     // ミッションに必要な数が集まったら、加工しに行くため採取を切り上げる
     const kind = RESOURCE_POINTS.find((r) => r.id === pointId)!.kind;
-    const enough = MISSIONS.some((m) => m.kind === kind && missionReady(h, m)) && !neededKinds(h).includes(kind);
+    const enough = !neededKinds(h, board, all).includes(kind);
     if (enough) bot.tapsLeft = 0;
     if (bot.tapsLeft <= 0 && h.session) {
       // じゅうぶん採ったので、別の場所へ
@@ -212,16 +236,24 @@ export function updateBot(bot: Bot, field: FieldState, all: readonly Harvester[]
     bot.changeTo = null;
     if (to && startPossess(h, to, now, rng, false)) return [];
   }
-  if (bot.mode === 'toFacility') {
-    // 施設に着いた：ミッションを始める（始められなければ選び直す）
+  if (bot.mode === 'toSpot') {
+    // スイッチに着いた：ミッションを始める（始められなければ選び直す）。
+    // スパイBotは、本当にできるときでも、ときどき「ふり」をする
     bot.mode = 'idle';
-    if (startMission(h, now, rng, null)?.result === 'started') return [];
+    const c = startMission(h, board, all, now, rng, null, { spy: bot.isSpy });
+    const task = h.task as MissionTask | null; // startMission が作る
+    if (c?.state === 'ready' && task) {
+      if (bot.isSpy && rng() < MISSION_BOT.spyFakeChance) task.fake = true;
+      return [];
+    }
+    if (bot.isSpy && c?.canFake && startMission(h, board, all, now, rng, null, { spy: true, fake: true })) return [];
+    h.aim = null;
   }
   if (now < bot.restUntil) return [];
 
-  if (chooseFacility(bot, now, rng)) return [];
-  // ミッションに必要な素材を採りに行く
-  const need = neededKinds(h);
+  if (chooseSpot(bot, board, all, now, rng)) return [];
+  // ミッションに必要な資源を採りに行く
+  const need = neededKinds(h, board, all);
   if (need.length === 0) {
     // 全部終えたら、素材ポイントをふさがないように、採取場を見回る
     wander(bot, rng);

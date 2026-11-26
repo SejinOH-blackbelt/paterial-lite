@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BOT_PROFILES, LANDMARKS, SPY } from '../src/game/config';
+import { buildBoard } from '../src/game/board';
 import { createBot } from '../src/game/bot';
 import { createFieldState, createHarvester, moveHarvester, updateHarvester } from '../src/game/harvest';
 import { createWalker, stepWalker, faceTo } from '../src/game/movement';
@@ -147,13 +148,14 @@ describe('スパイBot', () => {
     const mind = createSpyBotMind();
     const s = createSpyState(spyBot.h, 0, rng);
     const all = [spyBot.h, ...citizens.map((c) => c.h)];
+    const board = buildBoard({ types: [], pairs: [], sites: [] }); // ミッションなし（スキャンとイタズラだけを見る）
     const events = [];
     for (let t = 0; t < seconds; t += 1 / 30) {
       for (const h of all) {
         stepWalker(h.walker, 1 / 30);
         updateHarvester(h, f, all, t + 0.2, 0);
       }
-      events.push(...updateSpyBot(spyBot, mind, s, f, all, t, rng).spyEvents);
+      events.push(...updateSpyBot(spyBot, mind, s, f, board, all, t, rng).spyEvents);
     }
     return { s, events };
   }

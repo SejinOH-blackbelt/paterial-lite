@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, MISSIONS, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   createHarvester,
@@ -25,6 +25,7 @@ import {
   createMatch,
   gauge,
   observeKotsu,
+  observeFake,
   observeMissionMiss,
   observePatch,
   observeSpyEvent,
@@ -36,22 +37,18 @@ import {
   type Pawn,
 } from '../game/match';
 import {
-  facilityNear,
+  acceptRemoteDone,
   finishMission,
-  goToMission,
-  isFinished,
   materialsShort,
   missEvent,
-  missionById,
   missionChance,
-  missionReady,
-  assignedMissions,
-  hasMaterials,
   missionAffinity,
+  myMissions,
   startMission,
   updateBotTask,
   type MissionEvent,
 } from '../game/missions';
+import { buildBoard, missionComplete, missionIdsOf, missionType, planBoard, spotsOn, type Board, type BoardPlan, type MissionInst } from '../game/board';
 import type { Step } from '../game/missionGames';
 import { createWalker, isWalking, steerWalker, stepWalker, type Walker } from '../game/movement';
 import { createRng, type Rng } from '../game/random';
@@ -75,11 +72,13 @@ import { HudButton } from './HudButton';
 import { YorishiroView } from './YorishiroView';
 import { finishPossess, kickFromShrine, nearYorishiro, pressCommand, shrineChance, startPossess } from '../game/yorishiro';
 import type { NetGame } from '../net/netGame';
-import { dealMissions, randomElement, type ElementId } from '../game/elements';
+import { randomElement, type ElementId } from '../game/elements';
 import { isLit, seeAmount } from '../game/vision';
 import {
+  applyBoardWire,
   applyFieldWire,
   applySpyWire,
+  boardToWire,
   applyWireToPawn,
   fieldToWire,
   pawnToWire,
@@ -109,7 +108,9 @@ import { LANDMARK_TEX, makeSpyTextures } from './spyTextures';
 import { PAD_TONES, ScanGameView } from './ScanGameView';
 import { MissionGameView } from './MissionGameView';
 import { DRESSING_TEX, FACILITY_SIZE, FACILITY_TEX, makeFacilityTextures } from './facilityTextures';
-import { EMPTY_RES_TEX, makeResourceTextures, RES_CHIP_COLOR, RES_SIZE, RES_TEX } from './resourceTextures';
+import { ELEMENT_RES_CHIP_COLOR, ELEMENT_RES_EMPTY_TEX, ELEMENT_RES_TEX, makeResourceTextures, RES_SIZE } from './resourceTextures';
+import { makeSpotTextures, SPOT_TEX } from './spotTextures';
+import { ELEMENT_COLOR } from './elementIcons';
 import { drawGround, drawPart, makeTextures, TEX } from './textures';
 
 /** 「採取」ボタンの大きさ（r）と、採取中に画面の真ん中で大きく出す位置（x, y）と拡大率（scale） */
@@ -171,6 +172,9 @@ export class FieldScene extends Phaser.Scene {
   private me = 0;
   /** 役の発表で選んだ、自分の最初のエレメント */
   private myElement: ElementId = PLAYER_ELEMENT;
+  /** 友達と遊ぶとき：親機が決めた共同ミッションの配り方と、席ごとのエレメント */
+  private plan: BoardPlan | null = null;
+  private planElements: ElementId[] | null = null;
   /** 次にようすを送る時刻（音の時計） */
   private netSendAt = 0;
   /** ほかのスマホのパテが歩いているか（絵を歩く姿にするため） */
@@ -220,10 +224,16 @@ export class FieldScene extends Phaser.Scene {
   private missionView: MissionGameView | null = null;
   /** 依代の祠の画面（開いているときだけ） */
   private yoriView: YorishiroView | null = null;
-  /** 「アクション」ボタンを押して向かっている施設（着いたらミッションを始める） */
-  private pendingFacility: string | null = null;
-  /** 施設の上の「！」（自分のミッションがそこでできるとき） */
+  /** スパイの「本当にやる／ふりをする」を選ぶ札（出ているときだけ） */
+  private spyChoice: Phaser.GameObjects.GameObject[] | null = null;
+  /** 自分のミッションのスイッチの上の印（入れられるとき「！」） */
   private facilityMarks!: Phaser.GameObjects.Graphics;
+  /** 共同ミッションの盤（試合の最初に配る） */
+  private board!: Board;
+  /** スイッチの絵（盤のミッション順・スイッチ順） */
+  private spotViews: Phaser.GameObjects.Image[][] = [];
+  /** 子機：親機から届いた国の仕事ゲージ */
+  private netGauge: number | null = null;
   /** スティック（倒した方向へ進む） */
   private pad!: Stick;
   /** いまスティックで動かしているか（歩く絵にするため） */
@@ -271,7 +281,11 @@ export class FieldScene extends Phaser.Scene {
     this.scanView = null;
     this.missionView = null;
     this.yoriView = null;
-    this.pendingFacility = null;
+    this.spyChoice = null;
+    this.spotViews = [];
+    this.netGauge = null;
+    this.plan = data?.plan ?? null;
+    this.planElements = data?.elements ?? null;
     this.quitDialog = false;
     this.scanButton = null;
     this.prankButton = null;
@@ -284,6 +298,7 @@ export class FieldScene extends Phaser.Scene {
   create(): void {
     makeTextures(this);
     makeResourceTextures(this);
+    makeSpotTextures(this);
     makePartTextures(this);
     makeSpyTextures(this);
     makeFacilityTextures(this);
@@ -299,10 +314,11 @@ export class FieldScene extends Phaser.Scene {
     this.events.once('shutdown', () => this.bgm.stop());
 
     for (const r of RESOURCE_POINTS) {
-      const img = this.add.image(r.x, r.y, RES_TEX[r.kind]).setOrigin(0.5, 1).setDepth(r.y);
+      const img = this.add.image(r.x, r.y, ELEMENT_RES_TEX[r.kind]).setOrigin(0.5, 1).setDepth(r.y);
       // 空のあいだだけ出す札（「からっぽ」と、元に戻るまでの秒数）
       const emptyText = label(this, r.x, r.y - RES_SIZE.h - 26, '', 12).setDepth(8001).setVisible(false);
-      this.resources.set(r.id, { image: img, chipColor: RES_CHIP_COLOR[r.kind], emptyText });
+      this.resources.set(r.id, { image: img, chipColor: ELEMENT_RES_CHIP_COLOR[r.kind], emptyText });
+      label(this, r.x, r.y + 12, RESOURCE_NAMES[r.kind], 10).setDepth(r.y + 1).setAlpha(0.85);
     }
 
     for (const l of LANDMARKS) {
@@ -335,6 +351,7 @@ export class FieldScene extends Phaser.Scene {
     this.dealElementsAndMissions();
     this.all = this.pates.map((e) => e.h);
     this.setupMatch();
+    this.makeSpotViews();
 
     // 採取中は、画面を暗くして、メーターとボタンを真ん中に大きく出す（まわりが見えにくくなる）
     this.focusCover = this.hud(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, 0x1a120c, 0.82).setOrigin(0).setDepth(9040).setVisible(false));
@@ -376,6 +393,7 @@ export class FieldScene extends Phaser.Scene {
       if (this.scanView?.owns(over)) return;
       if (this.missionView?.owns(over)) return; // 施設のミニゲームのパネル
       if (this.yoriView?.owns(over)) return; // 依代の祠のパネル
+      if (this.spyChoice && over.some((o) => this.spyChoice!.includes(o))) return; // スパイの「本当／ふり」の札
       if (this.pad.down(p)) return;
       if (this.player.frozen) return; // 置物にされたら、土の精としてスティックで動き回って見るだけ
       if (this.callButton.hit(over)) {
@@ -484,7 +502,7 @@ export class FieldScene extends Phaser.Scene {
       if (this.spirit && this.driving) steerWalker(this.spirit.walker, dx, dy, dt, PATE.speed * 1.3);
     } else {
       driveHarvester(this.player, dx, dy, dt); // 押していないときも呼ぶ（動かしているかの印を消すため）
-      if (this.driving) this.pendingFacility = null;
+      if (this.driving) this.closeSpyChoice();
     }
   }
 
@@ -494,7 +512,6 @@ export class FieldScene extends Phaser.Scene {
     if (!r) this.popText('そばに素材がない', '#2b1d14', 14, 0);
     else if (r.state === 'busy') this.popText('ほかのパテが採取中', '#2b1d14', 14, 0);
     else if (r.state === 'empty') this.popText('からっぽ（少し待つと戻る）', '#6f7378', 14, 0);
-    else this.pendingFacility = null;
   }
 
   /** 「アクション」ボタン：そばの施設に寄ってミッションを始める。できないときは理由を出す */
@@ -507,16 +524,69 @@ export class FieldScene extends Phaser.Scene {
       else this.openYorishiro();
       return;
     }
-    const r = goToMission(this.player);
+    if (this.spyChoice) return;
+    const r = missionChance(this.player, this.board, this.all, this.isPlayerSpy);
     if (!r) {
-      if (!this.player.task) this.popText('そばに施設がない', '#2b1d14', 14, 0);
+      if (!this.player.task) this.popText('そばにスイッチがない', '#2b1d14', 14, 0);
       return;
     }
-    if (r.state === 'notMine') this.popText('ここは きみのミッションではない', '#2b1d14', 14, 0);
-    else if (r.state === 'never') this.popText(`${ELEMENT_NAMES[this.player.element]}の体では 不可… 依代の祠で乗りうつろう`, '#b3322a', 14, 0);
-    else if (r.state === 'finished') this.popText('ここのミッションは もう できた', '#2b1d14', 14, 0);
-    else if (r.state === 'notReady') this.popText(`${RESOURCE_NAMES[r.mission.kind!]}が あと${materialsShort(this.player, r.mission)}個 ひつよう`, '#2b1d14', 14, 0);
-    else this.pendingFacility = r.facility.id;
+    // スパイ：「本当にやる」か「ふりをする」かを選ぶ（ふりは資源も相性もいらない）
+    if (r.canFake) {
+      this.openSpyChoice(r);
+      return;
+    }
+    if (r.state === 'ready') this.beginMission(false);
+    else this.popText(this.missionReason(r.state, r.mission), r.state === 'never' ? '#b3322a' : '#2b1d14', 14, 0);
+  }
+
+  /** スイッチでミッションを始められない理由 */
+  private missionReason(state: string, m: MissionInst): string {
+    const t = missionType(m.type);
+    if (state === 'notMine') return 'ここは きみのミッションではない';
+    if (state === 'never') return `${ELEMENT_NAMES[this.player.element]}の体では 不可… 依代の祠で乗りうつろう`;
+    if (state === 'on') return 'このスイッチは もう入っている';
+    if (state === 'busy') return 'ほかのパテが している';
+    return `${RESOURCE_NAMES[t.element]}が あと${materialsShort(this.player, m)}個 ひつよう`;
+  }
+
+  /** そばのスイッチでミッションを始める（fake：スパイの「ふりをする」） */
+  private beginMission(fake: boolean): void {
+    const now = this.audio.heardTime();
+    startMission(this.player, this.board, this.all, now, this.rng, { origin: this.origin }, { fake, spy: this.isPlayerSpy });
+  }
+
+  /** スパイだけ：「本当にやる」「ふりをする」の札を出す（本当にできないときは、その理由を出して押せない） */
+  private openSpyChoice(c: NonNullable<ReturnType<typeof missionChance>>): void {
+    const cx = SCREEN.width / 2;
+    const cover = this.hud(this.add.rectangle(cx, 330, 300, 150, COLORS.ink, 0.0).setDepth(9700).setInteractive());
+    const card = this.hud(panel(this, cx, 330, 290, 140, COLORS.uiStone, COLORS.stoneDark).setDepth(9701));
+    const title = this.hud(label(this, cx, 282, `${missionType(c.mission.type).name}のスイッチ`, 14).setDepth(9702));
+    const real = c.state === 'ready';
+    const realBtn = this.hud(
+      textButton(this, cx - 70, 335, 124, 46, '本当にやる', real ? COLORS.uiHoney : COLORS.uiPaperEdge, () => {
+        if (!real) return;
+        this.closeSpyChoice();
+        this.beginMission(false);
+      }, 14).setDepth(9702),
+    );
+    if (!real) realBtn.setAlpha(0.5);
+    const fakeBtn = this.hud(
+      textButton(this, cx + 70, 335, 124, 46, 'ふりをする', COLORS.uiRose, () => {
+        this.closeSpyChoice();
+        this.beginMission(true);
+      }, 14).setDepth(9702),
+    );
+    const note = this.hud(
+      label(this, cx, 378, real ? '本当にやっても、国の仕事は10分の1しか進まない' : this.missionReason(c.state, c.mission), 10).setDepth(9702),
+    );
+    const close = this.hud(textButton(this, cx + 128, 276, 30, 26, '×', COLORS.uiPaper, () => this.closeSpyChoice(), 13).setDepth(9703));
+    this.spyChoice = [cover, card, title, realBtn, fakeBtn, note, close];
+  }
+
+  private closeSpyChoice(): void {
+    if (!this.spyChoice) return;
+    for (const o of this.spyChoice) o.destroy();
+    this.spyChoice = null;
   }
 
   /** 毎コマ：ボタンを、押せるときだけ光らせる */
@@ -527,10 +597,10 @@ export class FieldScene extends Phaser.Scene {
     this.actionButton.setVisible(playing);
     // スティックで動かしているあいだは始められないので光らせない（採取中は叩けるので光る）
     this.harvestButton.setLit(me.session !== null || (!this.driving && harvestChance(me, this.field, this.all)?.state === 'ready'));
-    const m = missionChance(me);
+    const m = missionChance(me, this.board, this.all, this.isPlayerSpy);
     const shrine = shrineChance(me, this.audio.heardTime());
-    this.actionButton.setLit(!this.driving && this.pendingFacility === null && (m?.state === 'ready' || shrine?.state === 'ready'));
-    this.actionButton.setLabel(shrine ? '乗りうつる' : m ? (m.mission.kind === null ? 'お祈り' : '加工') : 'アクション');
+    this.actionButton.setLit(!this.driving && !this.spyChoice && (m?.state === 'ready' || !!m?.canFake || shrine?.state === 'ready'));
+    this.actionButton.setLabel(shrine ? '乗りうつる' : m ? 'スイッチ' : 'アクション');
     const body = reportableBody(this.match, this.playerPawn);
     const emergency = canEmergency(this.match, this.playerPawn);
     this.callButton.setVisible(playing);
@@ -646,7 +716,9 @@ export class FieldScene extends Phaser.Scene {
   }
 
   private updateMaterials(pop: boolean): void {
-    this.materialsText.setText(`素材 ${this.player.materials}`);
+    // 受け持ちのミッション（まだ完了していない）に使う資源だけを出す
+    const kinds = [...new Set(myMissions(this.player, this.board).filter((m) => !missionComplete(m)).map((m) => missionType(m.type).element))];
+    this.materialsText.setText(kinds.map((k) => `${RESOURCE_NAMES[k]}${this.player.held[k]}`).join(' ') || '資源');
     if (pop) {
       this.tweens.killTweensOf(this.materialsText);
       this.materialsText.setScale(1.25);
@@ -674,7 +746,7 @@ export class FieldScene extends Phaser.Scene {
       const ahead = this.audio.now + SCHEDULE_AHEAD;
       if (e.bot) {
         // 施設でのミッション（決まった時間で終わる。ときどきまちがえて、やり直す）
-        const mev = updateBotTask(e.h, ahead, this.rng);
+        const mev = updateBotTask(e.h, this.board, ahead, this.rng);
         if (mev) {
           this.onMissionEvent(mev, heard);
           this.shareMission(mev);
@@ -682,14 +754,14 @@ export class FieldScene extends Phaser.Scene {
       }
       if (e.bot && e === this.spyEntity && this.spyMind) {
         // スパイBot：市民のふりをして採取しながら、すきを見てスキャンやイタズラをする
-        const r = updateSpyBot(e.bot, this.spyMind, this.spy, this.field, this.all, ahead, this.rng);
+        const r = updateSpyBot(e.bot, this.spyMind, this.spy, this.field, this.board, this.all, ahead, this.rng);
         for (const ev of r.taps) this.onBotTap(e, ev, heard);
         for (const ev of r.spyEvents) {
           this.onSpyEvent(ev, heard);
           this.shareSpyEvent(ev);
         }
       } else if (e.bot) {
-        for (const ev of updateBot(e.bot, this.field, this.all, ahead, this.rng)) this.onBotTap(e, ev, heard);
+        for (const ev of updateBot(e.bot, this.field, this.board, this.all, ahead, this.rng)) this.onBotTap(e, ev, heard);
       }
     }
     this.netUpdate(heard);
@@ -798,6 +870,8 @@ export class FieldScene extends Phaser.Scene {
       st: f.st,
       rg: f.rg,
       spy: spyToWire(this.spy, patchSize(this.spy, heard), prankWait(this.spy, heard)),
+      bd: boardToWire(this.board),
+      gg: Math.round(gauge(this.match) * 1000) / 1000,
     };
     this.netSend('all', snap);
   }
@@ -829,6 +903,8 @@ export class FieldScene extends Phaser.Scene {
         this.netTime = { left: msg.tl, at: heard };
         this.netPatch = msg.spy.ps;
         applySpyWire(this.spy, msg.spy, heard, SPY.prankCooldown, this.isPlayerSpy);
+        if (Array.isArray(msg.bd)) applyBoardWire(this.board, msg.bd);
+        if (typeof msg.gg === 'number') this.netGauge = msg.gg;
         return;
       }
       case 'me': {
@@ -861,19 +937,29 @@ export class FieldScene extends Phaser.Scene {
       }
       case 'tapFix': {
         if (host || fromSeat !== 0) return;
-        const lost = Math.min(msg.lost, this.player.materials, this.player.gathered[msg.kind] ?? 0);
-        this.player.materials -= lost;
-        this.player.gathered[msg.kind] = (this.player.gathered[msg.kind] ?? 0) - lost;
+        const kind = msg.kind as ElementId;
+        if (!(kind in this.player.held)) return;
+        const lost = Math.min(msg.lost, this.player.held[kind]);
+        this.player.held[kind] -= lost;
         if (lost > 0) this.updateMaterials(true);
         return;
       }
       case 'mis': {
         if (host ? msg.s !== fromSeat : fromSeat !== 0 || msg.s === this.me) return;
         const e = this.pates[msg.s];
-        const m = MISSIONS[msg.m];
-        if (!e || !m) return;
-        if (host) this.netSend('all', msg);
-        this.onMissionEvent({ h: e.h, missionId: m.id, kind: msg.kind, time: heard, at: { ...e.h.walker.pos } }, heard);
+        const m = this.board.missions[msg.m];
+        const spot = m?.spots[msg.sp];
+        if (!e || !m || !spot) return;
+        if (host) {
+          // 子機が本当にスイッチを入れた：盤に入れる（スパイなら量は10分の1）。
+          // みんなへは、ふりも「できた」として送る（ふりかどうかは、スパイの秘密）
+          if (msg.kind === 'done' && acceptRemoteDone(this.board, e.h, msg.s, msg.m, msg.sp)) {
+            spot.on = true;
+            spot.credit = e.pawn.isSpy ? MATCH.spyCredit : 1;
+          }
+          this.netSend('all', { ...msg, kind: msg.kind === 'fake' ? 'done' : msg.kind } satisfies MissionWire);
+        }
+        this.onMissionEvent({ h: e.h, missionId: m.id, spot: msg.sp, kind: msg.kind, time: heard, at: { ...e.h.walker.pos } }, heard);
         return;
       }
       case 'spy': {
@@ -962,7 +1048,9 @@ export class FieldScene extends Phaser.Scene {
   /** ミッションの出来事を伝える（自分・Bot） */
   private shareMission(ev: MissionEvent): void {
     if (!this.net) return;
-    this.netShare({ k: 'mis', s: this.seatOf(ev.h), kind: ev.kind, m: MISSIONS.findIndex((m) => m.id === ev.missionId) } satisfies MissionWire);
+    // Bot のふりも、みんなへは「できた」として送る（ふりかどうかは、スパイの秘密。子機のスパイ本人は親機へ正直に伝える）
+    const kind = ev.kind === 'fake' && this.isSim() ? 'done' : ev.kind;
+    this.netShare({ k: 'mis', s: this.seatOf(ev.h), kind, m: ev.missionId, sp: ev.spot } satisfies MissionWire);
   }
 
   /** スパイの出来事を伝える */
@@ -1120,7 +1208,7 @@ export class FieldScene extends Phaser.Scene {
         }
       }
       const { image, emptyText } = this.resources.get(r.id)!;
-      const texture = empty ? EMPTY_RES_TEX[r.kind] : RES_TEX[r.kind];
+      const texture = empty ? ELEMENT_RES_EMPTY_TEX[r.kind] : ELEMENT_RES_TEX[r.kind];
       if (image.texture.key !== texture) {
         image.setTexture(texture);
         // 空のあいだは、色をぬいて薄くする（まだ残っているように見えないように）
@@ -1153,20 +1241,46 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * 最初のエレメントとミッションを配る。自分は選んだエレメント、ほかの席はたねから決める
-   * （友達と遊ぶときは、どのスマホでも同じになる。友達が選んだエレメントとミッションは、あとから届くようすで直る）。
-   * ミッションは1体に3つ、そのうち1つは苦手か不可
+   * 最初のエレメントと、共同ミッションを配る。
+   * ひとりのとき：自分は選んだエレメント、Bot はランダム。全員のエレメントが決まってから盤を作る（どの体にも苦手か不可が1つ以上）。
+   * 友達と遊ぶとき：親機が全員のエレメントを集めて決めた配り方（「始める」の知らせといっしょに届く）を使う
    */
   private dealElementsAndMissions(): void {
-    const base = this.net ? this.net.seed : Math.floor(this.rng() * 2 ** 31);
+    const elements: ElementId[] =
+      this.planElements && this.planElements.length === this.pates.length
+        ? [...this.planElements]
+        : this.pates.map((_, seat) => (seat === this.me ? this.myElement : randomElement(this.rng)));
+    const plan = this.plan ?? planBoard(elements, this.rng);
+    this.board = buildBoard(plan);
     this.pates.forEach((e, seat) => {
-      const element = seat === this.me ? this.myElement : randomElement(createRng(base + seat * 7919));
+      const element = elements[seat];
       e.h.element = element;
-      e.h.missions = dealMissions(element, createRng(base + seat * 104729 + 13));
+      e.h.missions = missionIdsOf(this.board, seat);
       e.pawn.element = element;
       e.view.setElement(element);
       e.shownElement = element;
     });
+  }
+
+  /** スイッチの絵を置く（入ったら絵が変わる） */
+  private makeSpotViews(): void {
+    this.spotViews = this.board.missions.map((m) =>
+      m.spots.map((s) => this.add.image(s.x, s.y, SPOT_TEX(missionType(m.type).element, s.on)).setOrigin(0.5, 1).setDepth(s.y)),
+    );
+  }
+
+  /** 毎コマ：入ったスイッチの絵を変える */
+  private syncSpotViews(): void {
+    this.board.missions.forEach((m, i) =>
+      m.spots.forEach((s, k) => {
+        const img = this.spotViews[i]?.[k];
+        const key = SPOT_TEX(missionType(m.type).element, s.on);
+        if (img && img.texture.key !== key) {
+          img.setTexture(key);
+          if (s.on) this.squash(img, 0.8);
+        }
+      }),
+    );
   }
 
   /** 試合を始める。スパイは役の発表で決まった番号のパテ */
@@ -1180,6 +1294,7 @@ export class FieldScene extends Phaser.Scene {
       this.pates.map((e) => e.pawn),
       this.audio.heardTime(),
       this.rng,
+      this.board,
     );
     this.field = this.match.field;
     this.spy = this.match.spy;
@@ -1189,6 +1304,7 @@ export class FieldScene extends Phaser.Scene {
     this.pates.find((e) => e.pawn === king)!.view.setHeadPart(KING_PART);
     // スパイが Bot の席なら、スパイBotの頭脳（動かすのは、ひとりのときと親機だけ）
     this.spyMind = this.spyEntity.bot ? createSpyBotMind() : null;
+    if (this.spyEntity.bot) this.spyEntity.bot.isSpy = true;
   }
 
   /** 画面の上：国の仕事ゲージ・残り時間・自分のミッション */
@@ -1271,7 +1387,7 @@ export class FieldScene extends Phaser.Scene {
       this.supportFill.setScale(Math.max(0, this.match.support) / SUPPORT.start, 1);
       this.supportText.setText(`${Math.max(0, this.match.support)}`);
     }
-    const progress = gauge(this.match);
+    const progress = this.netGauge ?? gauge(this.match);
     this.gaugeFill.setScale(progress, 1);
     const percent = Math.floor(progress * 100);
     if (percent !== this.hudPercent) {
@@ -1294,36 +1410,38 @@ export class FieldScene extends Phaser.Scene {
       }
       return;
     }
-    const short: Record<string, string> = { kiln: '窯', workshop: '製造所', foundry: '鋳造所', shrine: '祈り' };
-    // 配られたミッションだけ。いまの体との相性の印（得・普・苦・×）をつける
+    // 受け持ちのミッション：エレメントと、入ったスイッチの数（相方と共有）。いまの体との相性の印（得・普・苦・×）
     const mark: Record<string, string> = { good: '得', plain: '普', weak: '苦', never: '×' };
-    const lines = assignedMissions(me).map((m) => {
-      const f = short[m.facility];
-      if (isFinished(me, m.id)) return `✔${f}`;
-      const a = mark[missionAffinity(me, m)];
-      if (m.kind === null) return `お祈り[${a}]`;
-      if (hasMaterials(me, m)) return `${f}へ[${a}]`;
-      return `${RESOURCE_NAMES[m.kind]}${m.need - materialsShort(me, m)}/${m.need}[${a}]`;
+    const lines = myMissions(me, this.board).map((m) => {
+      const el = ELEMENT_NAMES[missionType(m.type).element];
+      if (missionComplete(m)) return `${el}✔`;
+      return `${el}${spotsOn(m)}/${m.spots.length}[${mark[missionAffinity(me, m)]}]`;
     });
     const text = `${ELEMENT_NAMES[me.element]}  ${lines.join('  ')}`;
     if (text === this.hudMissionText) return;
     this.hudMissionText = text;
     this.missionText.setText(text);
     this.drawFacilityMarks();
+    this.updateMaterials(false);
   }
 
-  /** 自分のミッションがいまできる施設の上に「！」を出す（暗い場所でも見えるように） */
+  /**
+   * 自分のミッションの、まだ入っていないスイッチに印を出す（暗い場所でも見えるように）。
+   * いまの体と資源で入れられるなら「！」、そうでなければ、エレメントの色の輪だけ
+   */
   private drawFacilityMarks(): void {
     const g = this.facilityMarks.clear();
     if (this.player.frozen) return;
-    for (const f of FACILITIES) {
-      const m = MISSIONS.find((x) => x.facility === f.id)!;
-      if (!missionReady(this.player, m)) continue;
-      const x = f.x + 26;
-      const y = f.y - FACILITY_SIZE.h - 10;
-      g.fillStyle(COLORS.ink).fillCircle(x, y, 10);
-      g.fillStyle(COLORS.uiHoney).fillCircle(x, y, 8);
-      g.fillStyle(COLORS.ink).fillRect(x - 1.5, y - 5, 3, 6).fillCircle(x, y + 4, 1.6);
+    for (const m of myMissions(this.player, this.board)) {
+      const ready = missionAffinity(this.player, m) !== 'never' && materialsShort(this.player, m) === 0;
+      for (const s of m.spots) {
+        if (s.on) continue;
+        const x = s.x + 16;
+        const y = s.y - 62;
+        g.fillStyle(COLORS.ink).fillCircle(x, y, 10);
+        g.fillStyle(ready ? COLORS.uiHoney : ELEMENT_COLOR[missionType(m.type).element]).fillCircle(x, y, 8);
+        if (ready) g.fillStyle(COLORS.ink).fillRect(x - 1.5, y - 5, 3, 6).fillCircle(x, y + 4, 1.6);
+      }
     }
   }
 
@@ -1646,10 +1764,11 @@ export class FieldScene extends Phaser.Scene {
   private openYorishiro(): void {
     if (this.yoriView) return;
     const me = this.player;
-    const left = me.missions.filter((id) => !me.finished.has(id));
+    const mine = myMissions(me, this.board);
+    const left = mine.filter((m) => !missionComplete(m)).map((m) => m.type);
     this.yoriView = new YorishiroView(this, {
       current: me.element,
-      missions: left.length > 0 ? left : me.missions,
+      missions: left.length > 0 ? left : mine.map((m) => m.type),
       onChoose: (e) => {
         const now = this.audio.heardTime();
         if (!startPossess(me, e, now, this.rng, true)) return;
@@ -1703,13 +1822,10 @@ export class FieldScene extends Phaser.Scene {
 
   /** 「アクション」ボタンで向かった施設の前に着いたら、そのミッションを始める（ミニゲームの画面を出す） */
   private updatePlayerMission(heard: number): void {
-    const me = this.player;
-    if (this.pendingFacility && !me.walker.target) {
-      const at = facilityNear(me.walker.pos);
-      if (at?.id === this.pendingFacility) startMission(me, heard, this.rng, { origin: this.origin });
-      this.pendingFacility = null;
-    }
+    if (this.spyChoice && (this.player.frozen || !missionChance(this.player, this.board, this.all, true)?.canFake)) this.closeSpyChoice();
+    this.syncSpotViews();
     this.syncMissionView();
+    void heard;
   }
 
   /** 施設のミニゲームの画面を、ミッション中だけ出す（動いた・会議・置物にされた、で消える） */
@@ -1721,7 +1837,7 @@ export class FieldScene extends Phaser.Scene {
       return;
     }
     if (!this.missionView) {
-      const m = missionById(this.player.task!.missionId);
+      const m = missionType(this.board.missions[this.player.task!.missionId].type);
       this.missionView = new MissionGameView(this, game, m.name, {
         audio: this.audio,
         now: () => this.audio.heardTime(),
@@ -1736,7 +1852,7 @@ export class FieldScene extends Phaser.Scene {
   /** ミニゲームでまちがえた・できたとき */
   private onPlayerMissionStep(step: Step): void {
     const now = this.audio.heardTime();
-    const ev = step === 'miss' ? missEvent(this.player, now) : step === 'done' ? finishMission(this.player, now) : null;
+    const ev = step === 'miss' ? missEvent(this.player, now) : step === 'done' ? finishMission(this.player, this.board, now) : null;
     if (ev) {
       this.onMissionEvent(ev, now);
       this.shareMission(ev);
@@ -1752,6 +1868,7 @@ export class FieldScene extends Phaser.Scene {
    */
   private onMissionEvent(ev: MissionEvent, heard: number): void {
     observeMissionMiss(this.match, ev); // 「ゴリッ」を聞いたBotが怪しむ
+    if (this.isSim()) observeFake(this.match, ev); // ふりを見ていたBotが少し怪しむ
     const e = this.pates.find((x) => x.h === ev.h);
     if (!e) return;
     const mine = ev.h === this.player;
@@ -1770,8 +1887,11 @@ export class FieldScene extends Phaser.Scene {
         if (mine) this.popText('まちがえた… もう一度', '#6f7378', 15, 4);
       } else if (mine) {
         this.audio.piron();
-        this.popText(`${missionById(ev.missionId).name} できた！`, '#2f9e44', 17, 6);
-        this.updateMaterials(true); // 加工で素材を使った
+        const m = this.board.missions[ev.missionId];
+        if (ev.kind === 'fake') this.popText('ふりをした（スイッチは入らない）', '#6f7378', 15, 6);
+        else if (m && missionComplete(m)) this.popText(`${missionType(m.type).name} 完了！`, '#2f9e44', 18, 6);
+        else if (m) this.popText(`スイッチ オン！ ${spotsOn(m)}/${m.spots.length}`, '#2f9e44', 17, 6);
+        this.updateMaterials(true); // スイッチで資源を使った
       }
     });
   }

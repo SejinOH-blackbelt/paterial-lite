@@ -187,17 +187,19 @@ export const RHYTHM = {
  * goodDeg：「Excellent」ゾーンの両側に広がる「Good」ゾーンの広さ（片側の角度）
  */
 export const METER = {
-  clay: { lapBeats: [1.5, 2, 2.5, 3], firstLapBeats: 2, excellentDeg: 60, goodDeg: 40 }, // ゆっくりめ・ゾーン広め（やさしい）
-  bamboo: { lapBeats: [1.5, 2, 2.5], firstLapBeats: 2, excellentDeg: 30, goodDeg: 24 }, // ゾーンせまい（よく見る）
-  stone: { lapBeats: [1, 1.5, 2], firstLapBeats: 1, excellentDeg: 60, goodDeg: 40 }, // 速め（反射神経）
+  earth: { lapBeats: [1.5, 2, 2.5, 3], firstLapBeats: 2, excellentDeg: 60, goodDeg: 40 }, // 粘土：ゆっくりめ・ゾーン広め（やさしい）
+  wind: { lapBeats: [1.5, 2, 2.5], firstLapBeats: 2, excellentDeg: 30, goodDeg: 24 }, // 竹：ゾーンせまい（よく見る）
+  thunder: { lapBeats: [1, 1.5, 2], firstLapBeats: 1, excellentDeg: 60, goodDeg: 40 }, // 雷石：速め（反射神経）
+  fire: { lapBeats: [1, 1.5, 2, 2.5], firstLapBeats: 1.5, excellentDeg: 46, goodDeg: 34 }, // 炭：速さがよく変わる
+  water: { lapBeats: [2, 2.5, 3], firstLapBeats: 2, excellentDeg: 40, goodDeg: 30 }, // 清水：ゆっくり・ゾーンやや狭い
 } as const;
 
 /** 素材ポイントの残りの量（素材の個数）と、空になってから元に戻るまでの秒数 */
 export const STOCK = {
-  max: { clay: 12, bamboo: 10, stone: 8 },
+  max: { earth: 9, wind: 8, thunder: 7, fire: 8, water: 8 },
   /** 1回叩くと、素材ポイントの残りがいくつ減るか。Bad でも減るので、雑に叩くと素材が無駄になる */
   cost: { excellent: 2, good: 1, bad: 1 },
-  regenSeconds: 15,
+  regenSeconds: 20,
 } as const;
 
 /** 素材ポイント */
@@ -216,15 +218,21 @@ export const RESOURCE = {
   frontRadius: 46,
 } as const;
 
-/** 採取場に置く素材ポイント（粘土の山・竹・石） */
+/**
+ * 採取場に置く資源ポイント（M9②：エレメントのエリア）。kind はエレメント。
+ * 土＝粘土の山、風＝竹、雷＝雷石、火＝炭の炉、水＝清水の泉。同じエレメントを2か所ずつ置く（遠くまで歩かずにすむように）
+ */
 export const RESOURCE_POINTS = [
-  // 広い採取場なので、同じ素材を2か所ずつ置く（遠くまで歩かずにすむように）
-  { id: 'clay', kind: 'clay', x: 140, y: 330 },
-  { id: 'bamboo', kind: 'bamboo', x: 600, y: 520 },
-  { id: 'stone', kind: 'stone', x: 330, y: 1110 },
-  { id: 'clay2', kind: 'clay', x: 580, y: 960 },
-  { id: 'bamboo2', kind: 'bamboo', x: 130, y: 760 },
-  { id: 'stone2', kind: 'stone', x: 260, y: 190 },
+  { id: 'earth', kind: 'earth', x: 140, y: 330 },
+  { id: 'wind', kind: 'wind', x: 600, y: 520 },
+  { id: 'thunder', kind: 'thunder', x: 330, y: 1110 },
+  { id: 'earth2', kind: 'earth', x: 580, y: 960 },
+  { id: 'wind2', kind: 'wind', x: 130, y: 760 },
+  { id: 'thunder2', kind: 'thunder', x: 260, y: 190 },
+  { id: 'fire', kind: 'fire', x: 500, y: 150 },
+  { id: 'fire2', kind: 'fire', x: 220, y: 880 },
+  { id: 'water', kind: 'water', x: 620, y: 380 },
+  { id: 'water2', kind: 'water', x: 200, y: 1160 },
 ] as const;
 
 /** 素材をたたいたときの見た目 */
@@ -306,7 +314,12 @@ export const YORISHIRO_COMMANDS = {
 } as const;
 
 /** ミッションの配り方：1体にいくつ配るか（そのうち1つは、そのエレメントで苦手か不可のもの） */
-export const MISSION_DEAL = { perPawn: 3 } as const;
+export const MISSION_DEAL = {
+  /** 1体が受け持つミッションの数（それぞれちがう相方と2人で） */
+  perPawn: 3,
+  /** 同じ種類のミッションは、試合の中でこの数まで（スイッチの場所の数に合わせる） */
+  maxSameType: 2,
+} as const;
 /** プレイヤーのパテのエレメント */
 export const PLAYER_ELEMENT = 'earth';
 
@@ -414,7 +427,7 @@ export const COUNTRIES = [
 export const HOME_COUNTRY = 'wa';
 
 /** 素材の呼び名 */
-export const RESOURCE_NAMES = { clay: '粘土', bamboo: '木材', stone: '鉱石' } as const;
+export const RESOURCE_NAMES = { fire: '炭', water: '清水', earth: '粘土', wind: '竹', thunder: '雷石' } as const;
 
 /** スキャンのミニゲーム（クイズ か まねっこ のどちらかがランダムに出る） */
 export const SCAN_GAME = {
@@ -460,23 +473,43 @@ export const FACILITY = {
 } as const;
 
 /**
- * ミッション。全員に同じものが割り当てられる。
- * 加工（窯・製造所・鋳造所）：その素材を need 個集めてから施設へ運び、ミニゲームで加工する（加工すると素材を need 個使う）。
- * お祈り：土の祠で「土のお祈り」をする。
- * game：施設で遊ぶミニゲーム（drum まねっこ太鼓・jigsaw ジグソー・pegs 杭むすび・prayer 土のお祈り）
+ * ミッションの種類（M9②：エレメントごとに1つ、全部で5つ）。id はエレメントと同じ。
+ * 1つのミッションには、いくつかのスイッチ（spots か所）があり、どの順で回ってもよい。全部オンにすると完了。
+ * スイッチを1つオンにするには、そのエレメントの資源を needPerSpot 個使い、ミニゲームをする。
+ * game：いまは仮のミニゲーム（drum まねっこ太鼓・jigsaw ジグソー・pegs 杭むすび・prayer 拍手）。③で1つずつ新しくする。
+ * 回る数は、遊びが長いものは2か所、短いものは3か所。
  */
 export const MISSIONS = [
-  // element：そのミッションのエレメント（M9 の①では、いまの施設に仮に当てている。②で5つの施設に置き換える）
-  { id: 'kiln', name: '窯で焼く', kind: 'clay', need: 13, facility: 'kiln', game: 'drum', element: 'fire' },
-  { id: 'workshop', name: '製造所で組み立てる', kind: 'bamboo', need: 11, facility: 'workshop', game: 'jigsaw', element: 'wind' },
-  { id: 'foundry', name: '鋳造所で流し込む', kind: 'stone', need: 10, facility: 'foundry', game: 'pegs', element: 'thunder' },
-  { id: 'prayer', name: '土のお祈り', kind: null, need: 0, facility: 'shrine', game: 'prayer', element: 'earth' },
+  { id: 'fire', name: '温度キープ', element: 'fire', game: 'drum', spots: 2, needPerSpot: 8 },
+  { id: 'water', name: '網で魚すくい', element: 'water', game: 'pegs', spots: 3, needPerSpot: 5 },
+  { id: 'earth', name: '成形', element: 'earth', game: 'prayer', spots: 3, needPerSpot: 5 },
+  { id: 'wind', name: '気流チャージ', element: 'wind', game: 'jigsaw', spots: 2, needPerSpot: 8 },
+  { id: 'thunder', name: '暗闇を照らす', element: 'thunder', game: 'pegs', spots: 3, needPerSpot: 5 },
 ] as const;
 
-/** 国の仕事ゲージ：素材1個を1として、加工やお祈りを終えたときに、さらにこれだけたまる */
+/** 国の仕事ゲージ：スイッチを1つオンにすると、使った資源の数 ＋ spot がたまる */
 export const MISSION_WEIGHT = {
-  craft: 4,
-  prayer: 4,
+  spot: 2,
+} as const;
+
+/** スイッチ（ミッションで回る場所） */
+export const SPOT = {
+  /** スイッチの足元からこれだけ近ければ、どちら側からでもアクションできる */
+  useRadius: 46,
+  /**
+   * スイッチを置ける場所の候補。試合ごとに、ここからランダムに選んで、各ミッションのスイッチを置く。
+   * 資源ポイント・施設・名物・祠から離れ、たがいに 125 以上離れた場所（9つのミッションで最大27か所使う）
+   */
+  sites: [
+    { x: 110, y: 138 }, { x: 343, y: 153 }, { x: 184, y: 239 }, { x: 309, y: 284 }, { x: 440, y: 246 },
+    { x: 601, y: 165 }, { x: 636, y: 288 }, { x: 290, y: 455 }, { x: 410, y: 409 }, { x: 532, y: 438 },
+    { x: 114, y: 494 }, { x: 233, y: 593 }, { x: 434, y: 572 }, { x: 628, y: 604 }, { x: 114, y: 666 },
+    { x: 248, y: 767 }, { x: 383, y: 793 }, { x: 489, y: 685 }, { x: 640, y: 739 }, { x: 118, y: 882 },
+    { x: 305, y: 894 }, { x: 448, y: 921 }, { x: 584, y: 855 }, { x: 83, y: 1026 }, { x: 243, y: 1071 },
+    { x: 357, y: 1008 }, { x: 521, y: 1040 }, { x: 411, y: 1148 }, { x: 593, y: 1148 },
+  ],
+  /** 同じミッションのスイッチどうしは、できるだけこれ以上離す（数か所を回る手応えのため） */
+  spreadMin: 260,
 } as const;
 
 /** 施設のミニゲーム */
@@ -508,8 +541,8 @@ export const MISSION_BOT = {
   failChance: 0.2,
   /** まちがえたあと、やり直しにかかる秒数 */
   retrySeconds: 2.5,
-  /** ひと休みのあと、まだなら土の祠へお祈りに行く確率（加工できるものがないとき） */
-  prayChance: 0.3,
+  /** スパイBotがスイッチで「ふりをする」確率（それ以外は本当にやる。資源が足りなければ必ずふり） */
+  spyFakeChance: 0.6,
 } as const;
 
 /**
@@ -539,6 +572,13 @@ export const MATCH = {
   compensation: 3,
   /** 会議のあと、全員が集まる場所の半径（鳥居のまわり） */
   regroupRadius: 64,
+  /**
+   * 国の仕事ゲージがいっぱいになる割合：全部のスイッチの量のうち、これだけたまれば市民の勝ち。
+   * スパイが本当にやったスイッチは spyCredit 倍しかたまらないので、スパイが入れたスイッチが多いと届きにくくなる
+   */
+  gaugeGoal: 0.8,
+  /** スパイが本当にやったスイッチで、ゲージに入る割合（10分の1） */
+  spyCredit: 0.1,
 } as const;
 
 /** 住民Botの疑い度（だれをどれだけ怪しいと思うか） */
@@ -559,6 +599,8 @@ export const SUSPICION = {
   voteThreshold: 12,
   /** 置物を見つけてから呼び出すまでの秒数 */
   reportDelay: 1.2,
+  /** スイッチの前でミニゲームをしていたのに、スイッチが入らなかった（ふりをした）のを見た */
+  sawFake: 10,
   /** 会議で「みてた！」とスタンプされた相手を、ほかのBotがどれだけ怪しむか */
   trustSaw: 14,
   /** 会議で「あやしい！」とスタンプされた相手を、ほかのBotがどれだけ怪しむか */
