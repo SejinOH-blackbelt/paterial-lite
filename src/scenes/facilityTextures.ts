@@ -9,6 +9,7 @@ export const FACILITY_TEX: Record<FacilityId, string> = {
   workshop: 'fac-workshop',
   shrine: 'fac-shrine',
 };
+export const DRESSING_TEX = 'fac-dressing';
 export const FACILITY_SIZE: { w: number; h: number } = { w: 76, h: 80 };
 
 const PIGMENTS = {
@@ -149,6 +150,31 @@ function drawShrine(ctx: CanvasRenderingContext2D): void {
   mark(ctx, 'M26 64 L25 66 M28 64 L28 67', PIGMENTS.landmarkVermilion, 1.2);
 }
 
+function drawDressing(ctx: CanvasRenderingContext2D): void {
+  // 藍の屋根と朱の柱で、のれんの掛かった小さな入口を囲む。
+  paint(ctx, 'M12 31 H64 L66 69 H10 Z', PIGMENTS.landmarkWood, 2.6);
+  paint(ctx, 'M17 32 H59 V68 H17 Z', PIGMENTS.landmarkWoodShade, 2);
+  paint(ctx, 'M12 32 H19 V69 H12 Z M57 32 H64 V69 H57 Z', PIGMENTS.landmarkVermilion, 2);
+  paint(ctx, 'M6 29 Q16 24 24 10 Q38 14 52 10 Q60 24 70 29 L68 35 H8 Z', PIGMENTS.landmarkIron, 2.8);
+  mark(ctx, 'M14 28 Q22 24 27 16 M27 28 Q32 23 33 17 M49 28 Q44 23 43 17 M62 28 Q54 24 49 16', PIGMENTS.stone, 1.6);
+  paint(ctx, 'M8 30 H68 L67 35 H9 Z', PIGMENTS.landmarkBrass, 2);
+  paint(ctx, 'M13 68 H63 L67 73 L64 76 H12 L9 73 Z', PIGMENTS.landmarkWood, 2.4);
+  mark(ctx, 'M16 72 H60', PIGMENTS.clayLight, 1.5);
+
+  // 火・水・土・風・雷の布を少しずつ分け、色と小さな紋で見せる。
+  paint(ctx, 'M13 38 H23 L22 56 Q17 58 12 56 Z', 0xe88a43, 1.5);
+  paint(ctx, 'M23 38 H33 L32 55 Q27 57 22 56 Z', 0x368e8a, 1.5);
+  paint(ctx, 'M33 38 H43 V57 Q38 59 32 55 Z', PIGMENTS.terracottaDark, 1.5);
+  paint(ctx, 'M43 38 H53 L54 55 Q48 58 43 57 Z', 0xe1e2dc, 1.5);
+  paint(ctx, 'M53 38 H63 L64 56 Q59 58 54 55 Z', PIGMENTS.landmarkIron, 1.5);
+  mark(ctx, 'M12 37 H64', PIGMENTS.ink, 2.6);
+  paint(ctx, 'M17 51 Q14 49 18 44 Q22 49 19 51 Z', PIGMENTS.partIvory);
+  mark(ctx, 'M25 48 Q27 46 29 48 L30 48 M25 51 Q27 49 29 51 L30 51', PIGMENTS.partIvory, 1.2);
+  paint(ctx, 'M34.5 51 L38 45 L41.5 51 Z', PIGMENTS.partIvory);
+  mark(ctx, 'M45 47 H49 Q52 47 50 45 M46 50 H51', PIGMENTS.landmarkIron, 1.2);
+  paint(ctx, 'M59 43 L56 49 H58 L57 53 L62 47 H59 L61 43 Z', PIGMENTS.uiHoney);
+}
+
 const FACILITY_DRAW: Record<FacilityId, (ctx: CanvasRenderingContext2D) => void> = {
   kiln: drawKiln,
   foundry: drawFoundry,
@@ -164,6 +190,12 @@ export function makeFacilityTextures(scene: Phaser.Scene): void {
     drawPart(scene, key, w, h, (ctx) => {
       drawShadow(ctx);
       FACILITY_DRAW[id](ctx);
+    });
+  }
+  if (!scene.textures.exists(DRESSING_TEX)) {
+    drawPart(scene, DRESSING_TEX, w, h, (ctx) => {
+      drawShadow(ctx);
+      drawDressing(ctx);
     });
   }
 }
