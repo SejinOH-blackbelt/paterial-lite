@@ -1,7 +1,7 @@
 // 会議の画面。採取場の上に重ねて出します（採取場はそのあいだ止まる）。
 // 6体が輪になって並び、スタンプで話し合って投票します。ルールは src/game/match.ts。
 import Phaser from 'phaser';
-import { COLORS, MISSIONS, PART_NAMES, SCREEN, SUSPICION } from '../game/config';
+import { COLORS, MISSIONS, PART_NAMES, SCREEN, SUPPORT, SUSPICION } from '../game/config';
 import { botVote, castVote, everyoneVoted, hearStamp, meetingTimeLeft, missionsDone, resolveMeeting, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
 import type { Rng } from '../game/random';
 import type { GameAudio } from './audio';
@@ -70,6 +70,9 @@ export class MeetingScene extends Phaser.Scene {
         : `${meeting.caller === player ? 'きみ' : nameOf(meeting.caller)}が 置物を見つけた！`;
     label(this, SCREEN.width / 2, 40, '会議', 30, cssColor(COLORS.uiHoney));
     label(this, SCREEN.width / 2, 78, why, 16);
+    // 王様の支持度（いまの値。次のぬれぎぬで 0 になるかが分かるように）
+    this.supportText = label(this, SCREEN.width - 64, 40, '', 12).setDepth(20);
+    this.showSupport();
     this.add.graphics().fillStyle(COLORS.ink).fillRoundedRect(36, 91, SCREEN.width - 72, 14, 6);
     this.timerBar = this.add.graphics();
 
@@ -240,6 +243,13 @@ export class MeetingScene extends Phaser.Scene {
     if (left <= 0 || everyoneVoted(match)) this.finish();
   }
 
+  private supportText!: Phaser.GameObjects.Text;
+
+  private showSupport(): void {
+    const s = Math.max(0, this.ctx.match.support);
+    this.supportText.setText(`支持度 ${s}`).setColor(cssColor(s <= SUPPORT.wrongAccusation ? COLORS.uiRose : COLORS.uiCream));
+  }
+
   /** 結果発表：票を見せて、スパイだったか・ぬれぎぬかを伝える */
   private finish(): void {
     this.finished = true;
@@ -248,6 +258,7 @@ export class MeetingScene extends Phaser.Scene {
     for (const p of match.pawns) if (!p.h.frozen && !match.meeting!.votes.has(p)) castVote(match, p, p.isPlayer ? null : botVote(match, p, this.ctx.rng));
     const votes = new Map(match.meeting!.votes);
     const result = resolveMeeting(match, this.now());
+    this.showSupport();
     // 票数を表示
     for (const [p, seat] of this.seats) {
       const n = [...votes.values()].filter((t) => t === p).length;

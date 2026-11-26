@@ -18,6 +18,8 @@ import {
   canEmergency,
   checkOutcome,
   chooseKing,
+  regroup,
+  toriiSpot,
   createMatch,
   gauge,
   missionProgress,
@@ -791,8 +793,26 @@ export class FieldScene extends Phaser.Scene {
   /** 支持度が 0 に：市民パテたちが座り込んでプラカードを掲げる。少し見せてからリザルトへ */
   private showStrike(): void {
     this.scene.resume();
+    // 採取や見回りの表示を消して、鳥居の前に集まった全員を見せる（視界の外でも見えるように霧も外す）
+    this.meter.clear();
+    this.button.setVisible(false);
+    this.focusCover.setVisible(false);
+    this.scanView?.destroy();
+    this.scanView = null;
+    this.fog.setVisible(false);
+    this.spirit?.view.setVisible(false);
+    this.spirit?.glow.setVisible(false);
+    this.scanButton?.setVisible(false);
+    this.prankButton?.setVisible(false);
+    this.callButton.setVisible(false);
+    regroup(this.match);
+    const { x, y } = toriiSpot();
+    this.camTarget.setPosition(x, y);
+    this.cameras.main.centerOn(x, y);
     for (const e of this.pates) {
       this.syncPate(e, 0);
+      e.view.setVisible(true).setAlpha(1);
+      e.shadow.setVisible(true).setAlpha(1);
       if (e.pawn.isSpy || e.h.frozen) continue;
       e.view.setStrike(true);
     }
@@ -800,7 +820,7 @@ export class FieldScene extends Phaser.Scene {
     this.hud(label(this, SCREEN.width / 2, 150, 'ストライキ！', 34, '#e03131').setDepth(9600));
     this.hud(label(this, SCREEN.width / 2, 190, '王様の支持度が 0 に…', 16).setDepth(9600));
     this.audio.zukoo();
-    this.time.delayedCall(2800, () => this.endMatch());
+    this.time.delayedCall(SUPPORT.strikeShowSeconds * 1000, () => this.endMatch());
   }
 
   /** 試合終了：リザルトへ */

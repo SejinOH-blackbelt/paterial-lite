@@ -407,4 +407,6 @@ export const SUPPORT = {
   start: 100,
   /** 会議でぬれぎぬ（スパイでない市民を調べた）になったときに下がる量 */
   wrongAccusation: 50,
+  /** ストライキ（プラカードを掲げた市民）を見せてから、リザルトへ進むまでの秒数 */
+  strikeShowSeconds: 2.8,
 } as const;
