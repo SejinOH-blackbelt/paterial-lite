@@ -6,16 +6,19 @@
 //     { t: 'create' }                         ルームを作る（作った人が親機）
 //     { t: 'join', room: 'ABCD' }             合言葉でルームに入る
 //     { t: 'send', to: 'all'|'host'|id, data } 同じルームの人へ伝言（data の中身は見ない）
-//     { t: 'lock' }                           親機だけ：試合を始めたので、もう人を入れない
+//     { t: 'start' }                          親機だけ：2人以上いれば試合を始める（もう人を入れない）
 //   サーバー → スマホ
 //     { t: 'joined', room, you, host }        入れた（you：自分の番号、host：親機の番号）
 //     { t: 'members', members: [{ id, host }] } ルームの顔ぶれが変わった
 //     { t: 'msg', from, data }                だれかからの伝言
-//     { t: 'error', code }                    入れなかった（no-room / full / started / bad）
+//     { t: 'started' }                        試合が始まった（親機の start が通ったとき、みんなに）
+//     { t: 'error', code }                    できなかった（no-room / full / started / few / bad）
 //     { t: 'closed' }                         親機が抜けたので、ルームがなくなった
 
 /** 1ルームの最大人数（パテは6体） */
 export const MAX_MEMBERS = 6;
+/** 試合を始められる最少人数 */
+export const MIN_MEMBERS = 2;
 
 /** 合言葉に使う文字（0 と O、1 と I など、見まちがえやすい文字は使わない） */
 const CODE_CHARS = 'ACDEFGHJKLMNPQRTUVWXY34679';
@@ -66,8 +69,8 @@ export function createRooms(random = Math.random) {
           return;
         }
         case 'join': {
-          if (current) return client.send({ t: 'error', code: 'bad' });
-          const code = String(msg.room ?? '').toUpperCase().trim();
+          if (current || typeof msg.room !== 'string') return client.send({ t: 'error', code: 'bad' });
+          const code = msg.room.toUpperCase().trim();
           const room = rooms.get(code);
           if (!room) return client.send({ t: 'error', code: 'no-room' });
           if (room.locked) return client.send({ t: 'error', code: 'started' });
@@ -78,18 +81,23 @@ export function createRooms(random = Math.random) {
           broadcastMembers(room);
           return;
         }
-        case 'lock': {
-          if (current && current.host === client.id) current.locked = true;
+        case 'start': {
+          // 人数の確認と締め切りを、ここで一度に行う（抜けた知らせが届く前に押しても、古い人数で始めない）
+          if (!current || current.host !== client.id || current.locked) return client.send({ t: 'error', code: 'bad' });
+          if (current.members.size < MIN_MEMBERS) return client.send({ t: 'error', code: 'few' });
+          current.locked = true;
+          for (const send of current.members.values()) send({ t: 'started' });
           return;
         }
         case 'send': {
           if (!current) return client.send({ t: 'error', code: 'bad' });
+          const to = msg.to;
+          if (to !== 'all' && to !== 'host' && !Number.isInteger(to)) return client.send({ t: 'error', code: 'bad' });
           const out = { t: 'msg', from: client.id, data: msg.data };
-          if (msg.to === 'all') {
+          if (to === 'all') {
             for (const [id, send] of current.members) if (id !== client.id) send(out);
           } else {
-            const to = msg.to === 'host' ? current.host : Number(msg.to);
-            current.members.get(to)?.(out);
+            current.members.get(to === 'host' ? current.host : to)?.(out);
           }
           return;
         }

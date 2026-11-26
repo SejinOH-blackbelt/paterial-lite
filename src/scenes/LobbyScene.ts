@@ -24,6 +24,7 @@ const ERROR_TEXT: Record<JoinError, string> = {
   'no-room': 'その合言葉のルームは ありません',
   full: '満員です（6人まで）',
   started: 'もう試合が 始まっています',
+  few: '2人以上 そろってから はじめてね',
   bad: 'うまく入れませんでした',
   network: 'サーバーに つながりませんでした',
 };
@@ -134,6 +135,11 @@ export class LobbyScene extends Phaser.Scene {
     relay.onMembers = () => this.drawSeats();
     relay.onError = (code) => {
       tick.remove();
+      if (relay.room) {
+        // ルームにいるときのエラー（人数が足りないなど）は、ルームの画面のまま知らせる
+        this.statusText.setText(ERROR_TEXT[code]);
+        return;
+      }
       relay.close();
       this.showMenu(ERROR_TEXT[code]);
     };
@@ -141,7 +147,7 @@ export class LobbyScene extends Phaser.Scene {
       tick.remove();
       if (this.scene.isActive()) this.showMenu(relay.room ? 'ルームを作った人が ぬけました' : ERROR_TEXT.network);
     };
-    relay.listen((_from, data) => this.onMessage(data));
+    relay.onStarted = () => this.onStarted();
     try {
       await relay.open();
     } catch {
@@ -216,18 +222,16 @@ export class LobbyScene extends Phaser.Scene {
     }
   }
 
-  /** 親機：はじめる（2人以上のとき） */
+  /** 親機：はじめる。人数はサーバーが確かめ、通ったらみんなに started が届く */
   private start(): void {
     const relay = this.relay;
-    if (!relay?.isHost || relay.members.length < 2) return;
-    relay.lock();
-    relay.send('all', { k: 'start' });
-    this.onMessage({ k: 'start' });
+    if (!relay?.isHost) return;
+    relay.start();
   }
 
-  private onMessage(data: unknown): void {
-    const msg = data as { k?: string };
-    if (msg?.k === 'start') {
+  /** 試合が始まった（サーバーからの知らせ） */
+  private onStarted(): void {
+    {
       // 試合中のやりとりは、M8.5 の次の段階で作る
       this.clear();
       this.add2(label(this, SCREEN.width / 2, 240, 'みんな そろいました！', 22, INK).setStroke(INK, 0));

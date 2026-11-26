@@ -31,8 +31,15 @@ wss.on('connection', (ws) => {
     } catch {
       return;
     }
-    rooms.handle(client, msg);
+    try {
+      rooms.handle(client, msg);
+    } catch (err) {
+      // おかしな伝言で、ほかのルームまで止めないように
+      console.error('伝言の処理に失敗:', err);
+    }
   });
+  // 大きすぎる伝言などで通信にエラーが出たら、その人の接続だけを切る（退室は close で行う）
+  ws.on('error', () => ws.terminate());
   ws.on('close', () => rooms.disconnect(client));
 });
 

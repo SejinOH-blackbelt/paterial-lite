@@ -16,6 +16,31 @@ function setup() {
 }
 
 describe('中継サーバーのルーム', () => {
+  it('はじめるのは親機だけ。2人以上いるときだけ始まり、みんなに知らせる', () => {
+    const { rooms, people } = setup();
+    const [a, b] = people;
+    rooms.handle(a.client, { t: 'create' });
+    rooms.handle(a.client, { t: 'start' });
+    expect(a.last('error')!.code).toBe('few');
+    rooms.handle(b.client, { t: 'join', room: a.last('joined')!.room });
+    rooms.handle(b.client, { t: 'start' });
+    expect(b.last('error')!.code).toBe('bad');
+    rooms.handle(a.client, { t: 'start' });
+    expect(a.last('started')).toBeTruthy();
+    expect(b.last('started')).toBeTruthy();
+  });
+
+  it('おかしな値（合言葉が文字でない、宛先が変）は bad を返し、止まらない', () => {
+    const { rooms, people } = setup();
+    const [a] = people;
+    expect(() => rooms.handle(a.client, { t: 'join', room: { toString: null } })).not.toThrow();
+    expect(a.last('error')!.code).toBe('bad');
+    rooms.handle(a.client, { t: 'create' });
+    expect(() => rooms.handle(a.client, { t: 'send', to: { valueOf: null }, data: 1 })).not.toThrow();
+    expect(a.last('error')!.code).toBe('bad');
+    expect(() => rooms.handle(a.client, null)).not.toThrow();
+  });
+
   it('ルームを作ると4文字の合言葉が出て、合言葉で入れる。顔ぶれがみんなに届く', () => {
     const { rooms, people } = setup();
     const [a, b] = people;
@@ -36,7 +61,7 @@ describe('中継サーバーのルーム', () => {
     for (let i = 1; i < MAX_MEMBERS; i++) rooms.handle(people[i].client, { t: 'join', room: code });
     rooms.handle(people[6].client, { t: 'join', room: code });
     expect(people[6].last('error')!.code).toBe('full');
-    rooms.handle(people[0].client, { t: 'lock' });
+    rooms.handle(people[0].client, { t: 'start' });
     rooms.disconnect(people[5].client);
     rooms.handle(people[6].client, { t: 'join', room: code });
     expect(people[6].last('error')!.code).toBe('started');

@@ -28,7 +28,7 @@ export interface Member {
 export type RelayStatus = 'idle' | 'waking' | 'connecting' | 'open' | 'closed';
 
 /** 入れなかった理由（サーバーの error の code） */
-export type JoinError = 'no-room' | 'full' | 'started' | 'bad' | 'network';
+export type JoinError = 'no-room' | 'full' | 'started' | 'few' | 'bad' | 'network';
 
 export class RelayClient {
   status: RelayStatus = 'idle';
@@ -44,6 +44,8 @@ export class RelayClient {
   onError: (code: JoinError) => void = () => {};
   /** 親機が抜けた・通信が切れた */
   onClosed: () => void = () => {};
+  /** 試合が始まった（サーバーが人数を確かめて、みんなに知らせたとき） */
+  onStarted: () => void = () => {};
   onStatus: (s: RelayStatus) => void = () => {};
 
   constructor(private readonly url: string = relayUrl()) {}
@@ -89,9 +91,9 @@ export class RelayClient {
     this.raw({ t: 'join', room: code });
   }
 
-  /** 親機だけ：試合を始めたので、もう人を入れない */
-  lock(): void {
-    this.raw({ t: 'lock' });
+  /** 親機だけ：試合を始める（2人以上いれば、サーバーが onStarted でみんなに知らせる） */
+  start(): void {
+    this.raw({ t: 'start' });
   }
 
   /** 同じルームの人へ伝言を送る（to：'all' みんな、'host' 親機、数字 その人） */
@@ -145,8 +147,12 @@ export class RelayClient {
       case 'error':
         this.onError((msg.code as JoinError) ?? 'bad');
         return;
+      case 'started':
+        this.onStarted();
+        return;
       case 'closed':
-        this.setStatus('closed');
+        // ルームがなくなったので、接続も閉じる（古い接続が残らないように）
+        this.close();
         this.onClosed();
         return;
     }
