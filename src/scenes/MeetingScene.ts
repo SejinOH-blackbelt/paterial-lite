@@ -62,6 +62,8 @@ export class MeetingScene extends Phaser.Scene {
   private logPanel!: Phaser.GameObjects.Image;
   private logText!: Phaser.GameObjects.Text;
   private logLines: string[] = [];
+  /** プレイヤーが会議の前に目撃したこと（記録欄の1行目に残す） */
+  private witnessLine: string | null = null;
   /** 正体を発表する時刻（音の時計。ドラムロールが鳴り終わる時刻）と、その発表 */
   private reveal: { at: number; show: () => void } | null = null;
   /** 見出しの下の「○○が呼び出し！」（結果発表のときは、ここに開票の様子を出す） */
@@ -83,6 +85,7 @@ export class MeetingScene extends Phaser.Scene {
     this.mapView = null;
     this.marks = [];
     this.logLines = [];
+    this.witnessLine = null;
     this.reveal = null;
   }
 
@@ -192,7 +195,9 @@ export class MeetingScene extends Phaser.Scene {
     const w = this.ctx.witnessed;
     if (w) {
       const nm = (p: Pawn) => (p === player ? 'きみ' : nameOf(p));
-      this.log(`きみは見た！ ${nm(w.spy)}が${nm(w.target)}を置物に`);
+      // 目撃したことは、スタンプが流れても消えないように1行目に残す
+      this.witnessLine = `きみは見た！ ${nm(w.spy)}が${nm(w.target)}を置物に`;
+      this.log(null);
     }
   }
 
@@ -294,7 +299,8 @@ export class MeetingScene extends Phaser.Scene {
     this.bubble(seat.x, seat.y - 60, target ? `${s}→${tname}${at ? '（地図）' : ''}` : s);
     const color = s === 'みてた！' ? STAMP_SAW : STAMP_SUS;
     if (target) {
-      if (!p.isSpy || this.ctx.rng() < 0.5) hearStamp(match, p, target, s === 'みてた！' ? 'saw' : 'sus');
+      // スパイBotの指さしは半分だけ効く（プレイヤーがスパイなら、ふつうに効く）
+      if (!p.isSpy || p.isPlayer || this.ctx.rng() < 0.5) hearStamp(match, p, target, s === 'みてた！' ? 'saw' : 'sus');
       this.pointArrow(p, target, color);
     }
     const who = p === this.ctx.player ? 'きみ' : PART_NAMES[p.part as keyof typeof PART_NAMES];
@@ -306,10 +312,11 @@ export class MeetingScene extends Phaser.Scene {
     this.log(`${who}：${s}${target ? `→${tname}` : ''}${at ? '（地図に印）' : ''}`);
   }
 
-  /** 発言の記録欄に1行足す（新しい3行だけ見せる） */
-  private log(line: string): void {
-    this.logLines.push(line);
-    this.logText.setText(this.logLines.slice(-3).join('\n'));
+  /** 発言の記録欄に1行足す（新しい3行だけ見せる。目撃したことがあれば、それはいつも1行目） */
+  private log(line: string | null): void {
+    if (line) this.logLines.push(line);
+    const lines = this.witnessLine ? [this.witnessLine, ...this.logLines.slice(-2)] : this.logLines.slice(-3);
+    this.logText.setText(lines.join('\n'));
   }
 
   /** speaker から target へ、指さす矢印（少しのあいだ出て、消える） */
@@ -352,7 +359,8 @@ export class MeetingScene extends Phaser.Scene {
    */
   private openMap(pending: { stamp: string; target: Pawn } | null): void {
     if (this.mapView || this.finished) return;
-    const cover = this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.9).setOrigin(0).setInteractive();
+    // 上の見出し（残り時間のバー）は隠さない。地図を見ているあいだも時間は進むため
+    const cover = this.add.rectangle(0, 110, SCREEN.width, SCREEN.height - 110, COLORS.ink, 0.92).setOrigin(0).setInteractive();
     const W = 262;
     const map = new MeetingMap(this, CENTER.x - W / 2, 150, W, true, this.statues);
     for (const m of this.marks) map.addMark(m.at, m.color, m.who);
