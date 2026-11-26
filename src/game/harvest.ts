@@ -139,19 +139,20 @@ export function harvestingOther(all: readonly Harvester[], id: string, me: Harve
  *   ただ立ち止まっただけでは始めない（プレイヤーは「採取」ボタンを押したときだけ）。
  *   先にほかのパテが採取を始めていたら、あきらめる（早い者勝ち）。
  * earliest：最初の判定に使ってよい一番早い時刻（画面側の音の予約の締め切り）。
+ * 戻り値：着いたけれど始められなかったとき、その理由（taken：先を越された、empty：空になっていた）。ほかは null
  */
-export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harvester[], earliest: number, origin: number): void {
-  if (h.frozen) return; // 置物は採取しない
-  if (h.driving) return; // スティックで動かしているあいだは採取を始めない
-  if (h.task) return; // 施設でミッション中
+export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harvester[], earliest: number, origin: number): 'taken' | 'empty' | null {
+  if (h.frozen) return null; // 置物は採取しない
+  if (h.driving) return null; // スティックで動かしているあいだは採取を始めない
+  if (h.task) return null; // 施設でミッション中
   if (h.session) {
     if (f.stock[h.session.pointId] <= 0) {
       h.session = null;
       h.claim = null;
     }
-    return;
+    return null;
   }
-  if (h.walker.target) return;
+  if (h.walker.target) return null;
   if (h.waitingFor) {
     const id = h.waitingFor;
     if (!claimedByOther(all, id, h) && f.stock[id] > 0) {
@@ -159,17 +160,18 @@ export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harve
       h.claim = id;
       setTarget(h.walker, standSpot(pointById(id)));
     }
-    return;
+    return null;
   }
-  if (!h.claim) return;
+  if (!h.claim) return null;
   const r = resourceAtStand(h.walker.pos);
-  if (!r || r.id !== h.claim) return;
+  if (!r || r.id !== h.claim) return null;
   if (harvestingOther(all, r.id, h) || f.stock[r.id] <= 0) {
     h.claim = null; // 先を越された・空だった
-    return;
+    return f.stock[r.id] <= 0 ? 'empty' : 'taken';
   }
   h.session = startSession(r.id, r.kind, earliest, origin);
   faceTo(h.walker, 'up'); // 素材のほうを向く
+  return null;
 }
 
 /**

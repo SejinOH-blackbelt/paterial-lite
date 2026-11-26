@@ -299,23 +299,38 @@ export class FieldScene extends Phaser.Scene {
       if (this.player.frozen) return; // 置物にされたら、土の精としてスティックで動き回って見るだけ
       if (this.callButton.hit(over)) {
         this.callButton.squash();
-        this.playerCalls();
+        if (!this.playerCalls()) {
+          this.popText(this.playerPawn.emergencyLeft > 0 ? '置物のそばか、土の祠のそばで押せる' : '緊急の呼び出しは もう使った', '#2b1d14', 14, 0);
+        }
         return;
       }
       if (this.scanButton?.hit(over)) {
+        this.scanButton.squash();
         // スキャン：その国の状態からクイズを作る（または、まねっこ）
-        if (startScan(this.spy, this.audio.heardTime(), { ctx: { gauge: gauge(this.match) }, rng: this.rng })) {
-          this.scanButton.squash();
+        if (this.spy.scan) return;
+        if (this.driving) this.popText('スティックを離してから押してね', '#2b1d14', 14, 0);
+        else if (!startScan(this.spy, this.audio.heardTime(), { ctx: { gauge: gauge(this.match) }, rng: this.rng })) {
+          this.popText('まだスキャンしていない名物のそばで押せる', '#2b1d14', 14, 0);
         }
         return;
       }
       if (this.prankButton?.hit(over)) {
-        const ev = prank(this.spy, this.all, this.audio.heardTime());
-        if (ev) {
-          this.prankButton.squash();
-          this.onSpyEvent(ev, this.audio.heardTime());
+        this.prankButton.squash();
+        const now = this.audio.heardTime();
+        const ev = prank(this.spy, this.all, now);
+        if (ev) this.onSpyEvent(ev, now);
+        else {
+          const wait = prankWait(this.spy, now);
+          this.popText(wait > 0 ? `イタズラは あと${Math.ceil(wait)}秒` : 'すぐそばに相手がいない', '#2b1d14', 14, 0);
         }
         return;
+      }
+      if (this.harvestButton.hit(over) || this.actionButton.hit(over)) {
+        if (this.driving && this.player.session === null) {
+          // 動かしているあいだは始められない（動くと、始める予定が取り消される）
+          this.popText('スティックを離してから押してね', '#2b1d14', 14, 0);
+          return;
+        }
       }
       if (this.harvestButton.hit(over)) {
         this.harvestButton.squash();
@@ -410,9 +425,10 @@ export class FieldScene extends Phaser.Scene {
     const playing = !me.frozen;
     this.harvestButton.setVisible(playing);
     this.actionButton.setVisible(playing);
-    this.harvestButton.setLit(me.session !== null || harvestChance(me, this.field, this.all)?.state === 'ready');
+    // スティックで動かしているあいだは始められないので光らせない（採取中は叩けるので光る）
+    this.harvestButton.setLit(me.session !== null || (!this.driving && harvestChance(me, this.field, this.all)?.state === 'ready'));
     const m = missionChance(me);
-    this.actionButton.setLit(m?.state === 'ready' && this.pendingFacility === null);
+    this.actionButton.setLit(!this.driving && m?.state === 'ready' && this.pendingFacility === null);
     this.actionButton.setLabel(m ? (m.mission.kind === null ? 'お祈り' : '加工') : 'アクション');
     const body = reportableBody(this.match, this.playerPawn);
     const emergency = canEmergency(this.match, this.playerPawn);
@@ -546,7 +562,8 @@ export class FieldScene extends Phaser.Scene {
     for (const e of this.pates) {
       stepWalker(e.h.walker, dt);
       // 最初の判定は、まだ音の予約が間に合う周から選ぶ（scheduleTicks と同じ締め切り）
-      updateHarvester(e.h, this.field, this.all, this.audio.now + SCHEDULE_AHEAD, this.origin);
+      const lost = updateHarvester(e.h, this.field, this.all, this.audio.now + SCHEDULE_AHEAD, this.origin);
+      if (lost && e.h === this.player) this.popText(lost === 'taken' ? 'ほかのパテが先に採取を始めた' : 'からっぽになっていた', '#2b1d14', 14, 0);
       // Botは少し先の時刻で判断する。そうすると採取音を、プレイヤーの拍の音と同じように先に予約でき、
       // 端末の音の遅れがあっても、聞こえる時刻と判定の時刻がそろう
       const ahead = this.audio.now + SCHEDULE_AHEAD;
@@ -853,11 +870,13 @@ export class FieldScene extends Phaser.Scene {
     }
   }
 
-  /** プレイヤーが呼び出しボタンを押した */
-  private playerCalls(): void {
+  /** プレイヤーが呼び出しボタンを押した（呼び出せなかったら false） */
+  private playerCalls(): boolean {
     const body = reportableBody(this.match, this.playerPawn);
     if (body) this.beginMeeting(this.playerPawn, 'report', body);
     else if (canEmergency(this.match, this.playerPawn)) this.beginMeeting(this.playerPawn, 'emergency', null);
+    else return false;
+    return true;
   }
 
   /** 会議を始める：採取場を止めて、会議の画面を重ねる */
@@ -1018,7 +1037,7 @@ export class FieldScene extends Phaser.Scene {
     g.clear();
     if (!this.isPlayerSpy || !this.scanButton || !this.prankButton) return;
     const scanning = this.spy.scan !== null;
-    this.scanButton.setLit(canScan(this.spy, heard) || scanning);
+    this.scanButton.setLit((canScan(this.spy, heard) && !this.driving) || scanning);
     const target = prankTarget(this.spy, this.all, heard);
     this.prankButton.setLit(!!target);
     // イタズラが使えるまでの秒数をボタンに出す

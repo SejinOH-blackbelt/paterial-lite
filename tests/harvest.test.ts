@@ -208,7 +208,7 @@ describe('採取ボタンで採取する', () => {
     expect(me.session?.pointId).toBe('clay');
     // あとから着いたパテは、採取を始めない（先を越された）
     stepWalker(far.walker, 100);
-    updateHarvester(far, f, all, 6, 0);
+    expect(updateHarvester(far, f, all, 6, 0)).toBe('taken'); // 画面側で理由を出せる
     expect(far.session).toBeNull();
     expect(far.claim).toBeNull();
   });
