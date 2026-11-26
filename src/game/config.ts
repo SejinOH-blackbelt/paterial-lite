@@ -279,7 +279,9 @@ export const AFFINITY = {
   jigsawPenalty: { good: false, plain: false, weak: true },
   /** 温度キープ：押して離す回数と、拍からずれてもよい秒数 */
   heatNotes: { good: 2, plain: 3, weak: 4 },
-  /** 水・土・風・雷：1回分（ひとまとまり）の操作の数。ずれてもよい秒数は heatWindow と同じ */
+  /** 網で魚すくい：1回すくったときに、魚群の数に足される数（得意だと多くすくえる） */
+  netBonus: { good: 1, plain: 0, weak: 0 },
+  /** 土・風・雷：1回分（ひとまとまり）の操作の数。ずれてもよい秒数は heatWindow と同じ */
   phraseLength: { good: 3, plain: 4, weak: 5 },
   heatWindow: { good: 0.18, plain: 0.14, weak: 0.1 },
 } as const;
@@ -547,7 +549,13 @@ export const MISSION_GAME = {
    * phrases：まとまりの数。leadBeats：始め（とやり直し）までの拍。gapBeats：まとまりのあいだの拍。
    * lateGrace：途中で止まったと決めるまでの待ち（秒）。darkLanes：雷の灯籠の数
    */
-  phrase: { phrases: { net: 2, shape: 2, wind: 3, dark: 2 }, leadBeats: 2, gapBeats: 2, lateGrace: 0.15, darkLanes: 4 },
+  /**
+   * 網で魚すくい（水）：魚群の影が右から左へ、intervalBeats 拍ごとに一定のリズムで流れてくる。
+   * 網の上に来た拍で「すくう」を押すと、その魚群（1〜3匹）がとれる。fishNeeded 匹とったら完了。
+   * startBeats：最初の魚群が網に来るまでの拍。travelBeats：画面の右はしから網まで泳ぐ拍。schoolSizes：魚群の大きさの出やすさ
+   */
+  net: { fishNeeded: 10, intervalBeats: 2, startBeats: 3, travelBeats: 3, schoolSizes: [1, 1, 1, 2, 2, 3] },
+  phrase: { phrases: { shape: 2, wind: 3, dark: 2 }, leadBeats: 2, gapBeats: 2, lateGrace: 0.15, darkLanes: 4 },
 } as const;
 
 /** Botが施設でミッションをするときの時間と、まちがえる確率 */

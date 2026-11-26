@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { MISSION_GAME } from '../src/game/config';
 import {
+  createNetGame,
+  schoolTime,
+  scoopNet,
+  visibleSchools,
   actPhrase,
   createPhraseGame,
   cueTime,
@@ -271,7 +275,7 @@ describe('温度キープ（火）', () => {
   });
 });
 
-describe('水・土・風・雷（拍に合わせた操作のまとまり）', () => {
+describe('土・風・雷（拍に合わせた操作のまとまり）', () => {
   const play = (g: ReturnType<typeof createPhraseGame>, off = 0) => {
     // いまのまとまりを、拍どおりに全部する
     let last: string = 'ignored';
@@ -280,31 +284,31 @@ describe('水・土・風・雷（拍に合わせた操作のまとまり）', (
     return last;
   };
 
-  it('水：拍ごとに続けてタップ。まとまりを決まった数できたら完了', () => {
-    const g = createPhraseGame('net', 0, 0, createRng(1), 3, 0.14);
+  it('拍ごとに操作する。まとまりを決まった数できたら完了', () => {
+    const g = createPhraseGame('wind', 0, 0, createRng(1), 3, 0.14);
     expect(currentCues(g).map((c) => c.beat)).toEqual([0, 1, 2]);
-    expect(currentCues(g).every((c) => c.action === 'tap')).toBe(true);
     expect(play(g, 0.05)).toBe('ok');
     expect(g.done).toBe(1);
+    expect(play(g)).toBe('ok');
     expect(play(g)).toBe('done');
     expect(g.result).toBe('success');
   });
 
   it('ずれたタップは miss。まとまりを最初からやり直す（できたまとまりは減らない）', () => {
-    const g = createPhraseGame('net', 0, 0, createRng(1), 3, 0.14);
+    const g = createPhraseGame('wind', 0, 0, createRng(1), 3, 0.14);
     play(g);
-    actPhrase(g, cueTime(g, 0), 'tap');
-    expect(actPhrase(g, cueTime(g, 1) + 0.3, 'tap')).toBe('miss');
+    actPhrase(g, cueTime(g, 0), 'swipe');
+    expect(actPhrase(g, cueTime(g, 1) + 0.3, 'swipe')).toBe('miss');
     expect(g.pos).toBe(0);
     expect(g.done).toBe(1);
   });
 
   it('途中で止まると miss（遅れて届く操作を少し待ってから）。最初を押しそびれたときは、まちがいにしない', () => {
-    const g = createPhraseGame('net', 0, 0, createRng(1), 3, 0.14);
+    const g = createPhraseGame('wind', 0, 0, createRng(1), 3, 0.14);
     const first = cueTime(g, 0);
     expect(updatePhrase(g, first + 0.3)).toBe('ignored');
     expect(cueTime(g, 0)).toBeGreaterThan(first);
-    expect(actPhrase(g, first + 0.02, 'tap')).toBe('ok'); // 遅れて届いた、前の拍に合ったタップ
+    expect(actPhrase(g, first + 0.02, 'swipe')).toBe('ok'); // 遅れて届いた、前の拍に合ったタップ
     expect(updatePhrase(g, cueTime(g, 1) + 0.14 + 0.05)).toBe('ignored'); // まだ待つ
     expect(updatePhrase(g, cueTime(g, 1) + 0.14 + MISSION_GAME.phrase.lateGrace + 0.01)).toBe('miss');
   });
@@ -313,7 +317,7 @@ describe('水・土・風・雷（拍に合わせた操作のまとまり）', (
     for (let seed = 1; seed < 20; seed++) {
       const g = createPhraseGame('shape', 0, 0, createRng(seed), 4, 0.14);
       const acts = currentCues(g).map((c) => c.action);
-      expect(acts).toContain('tap');
+      expect(acts).toContain('swipe');
       expect(acts).toContain('swipe');
     }
     const g = createPhraseGame('shape', 0, 0, createRng(2), 4, 0.14);
@@ -343,21 +347,75 @@ describe('水・土・風・雷（拍に合わせた操作のまとまり）', (
   });
 
   it('得意ほど操作が少なく、苦手ほど多い（ずれてもよい幅もせまい）', () => {
-    const good = createMissionGame('net', 0, 0, createRng(1), 'good');
-    const weak = createMissionGame('net', 0, 0, createRng(1), 'weak');
-    if (good.kind !== 'net' || weak.kind !== 'net') throw new Error('kind');
+    const good = createMissionGame('wind', 0, 0, createRng(1), 'good');
+    const weak = createMissionGame('wind', 0, 0, createRng(1), 'weak');
+    if (good.kind !== 'wind' || weak.kind !== 'wind') throw new Error('kind');
     expect(good.phrases[0].length).toBeLessThan(weak.phrases[0].length);
     expect(good.window).toBeGreaterThan(weak.window);
   });
 
   it('失敗が決まったあとに届いた前の試みの操作は、やり直しの拍を動かさない', () => {
-    const g = createPhraseGame('net', 0, 0, createRng(1), 3, 0.14);
+    const g = createPhraseGame('wind', 0, 0, createRng(1), 3, 0.14);
     const t0 = cueTime(g, 0);
-    actPhrase(g, t0, 'tap');
+    actPhrase(g, t0, 'swipe');
     const t1 = cueTime(g, 1);
     expect(updatePhrase(g, t1 + 0.14 + MISSION_GAME.phrase.lateGrace + 0.01)).toBe('miss');
     const restart = g.startBeat;
-    expect(actPhrase(g, t1, 'tap')).toBe('ignored'); // 遅れて届いた、前の試みのタップ
+    expect(actPhrase(g, t1, 'swipe')).toBe('ignored'); // 遅れて届いた、前の試みのタップ
     expect(g.startBeat).toBe(restart);
+  });
+});
+
+describe('網で魚すくい（水）', () => {
+  const make = (bonus = 0) => createNetGame(0, 0, createRng(2), bonus, 0.14);
+
+  it('魚群が網の上に来た拍で「すくう」を押すと、その魚群の数だけとれる', () => {
+    const g = make();
+    const t = schoolTime(g, 0);
+    expect(scoopNet(g, t + 0.05)).toBe('ok');
+    expect(g.caught).toBe(g.sizes[0]);
+    expect(scoopNet(g, t + 0.06)).toBe('miss'); // 同じ魚群は2回すくえない
+  });
+
+  it('魚群がいないときに押すと miss（とった魚は減らない）。見のがした魚群は通りすぎるだけ', () => {
+    const g = make();
+    scoopNet(g, schoolTime(g, 0));
+    const before = g.caught;
+    expect(scoopNet(g, schoolTime(g, 0) + MISSION_GAME.net.intervalBeats * beatInterval() / 2)).toBe('miss');
+    expect(g.caught).toBe(before);
+    expect(scoopNet(g, schoolTime(g, 2))).toBe('ok'); // 1番目は見のがしてもよい
+  });
+
+  it('魚群は一定のリズムで来る。10匹とったら完了', () => {
+    const g = make();
+    expect(schoolTime(g, 1) - schoolTime(g, 0)).toBeCloseTo(MISSION_GAME.net.intervalBeats * beatInterval(), 6);
+    let k = 0;
+    let last = 'ok';
+    while (g.result === 'playing' && k < 50) last = scoopNet(g, schoolTime(g, k++));
+    expect(last).toBe('done');
+    expect(g.caught).toBeGreaterThanOrEqual(MISSION_GAME.net.fishNeeded);
+  });
+
+  it('魚群は1匹のときも、複数のときもある', () => {
+    const g = make();
+    expect(new Set(g.sizes.slice(0, 40)).size).toBeGreaterThan(1);
+    expect(Math.min(...g.sizes)).toBe(1);
+  });
+
+  it('得意な体は、1回で多くすくえる（相性で変わる）', () => {
+    const good = createMissionGame('net', 0, 0, createRng(1), 'good');
+    const plain = createMissionGame('net', 0, 0, createRng(1), 'plain');
+    if (good.kind !== 'net' || plain.kind !== 'net') throw new Error('kind');
+    scoopNet(good, schoolTime(good, 0));
+    scoopNet(plain, schoolTime(plain, 0));
+    expect(good.caught).toBe(plain.caught + 1);
+  });
+
+  it('見えている魚群は、右から網へ近づいてくる', () => {
+    const g = make();
+    const before = visibleSchools(g, schoolTime(g, 0) - 1);
+    const after = visibleSchools(g, schoolTime(g, 0) - 0.5);
+    const s0 = (xs: typeof before) => xs.find((x) => x.k === 0)!;
+    expect(s0(after).until).toBeLessThan(s0(before).until);
   });
 });

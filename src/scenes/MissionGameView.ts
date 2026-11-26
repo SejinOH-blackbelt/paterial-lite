@@ -4,6 +4,9 @@
 import Phaser from 'phaser';
 import { COLORS, MISSION_GAME, SCREEN } from '../game/config';
 import {
+  scoopNet,
+  visibleSchools,
+  type NetGame,
   actPhrase,
   cueTime,
   currentCues,
@@ -64,7 +67,7 @@ const ART = 160;
 
 /** 水・土・風・雷のミニゲームか */
 function isPhrase(g: MissionGame): g is PhraseGame {
-  return g.kind === 'net' || g.kind === 'shape' || g.kind === 'wind' || g.kind === 'dark';
+  return g.kind === 'shape' || g.kind === 'wind' || g.kind === 'dark';
 }
 
 export interface MissionViewDeps {
@@ -121,6 +124,7 @@ export class MissionGameView {
     else if (game.kind === 'pegs') this.buildPegs(game);
     else if (game.kind === 'jigsaw') this.buildJigsaw(game);
     else if (game.kind === 'heat') this.buildHeat(game);
+    else if (game.kind === 'net') this.buildNet(game);
     else if (isPhrase(game)) this.buildPhrase(game);
     else this.buildPrayer(game);
     pinToScreen(this.root);
@@ -504,11 +508,98 @@ export class MissionGameView {
     else if (g.kind === 'pegs') this.drawPegs(g, now);
     else if (g.kind === 'jigsaw') this.drawJigsaw(g);
     else if (g.kind === 'heat') this.drawHeat(g, now);
+    else if (g.kind === 'net') this.drawNet(g, now);
     else if (isPhrase(g)) this.drawPhrase(g, now);
     else this.drawPrayer(g, now);
   }
 
-  // ---------- 水・土・風・雷 ----------
+  // ---------- 網で魚すくい（水） ----------
+
+  private readonly netAt = { x: CX, y: PANEL.y + 205 };
+  private readonly scoopAt = { x: CX, y: PANEL.y + 318 };
+  /** すくった瞬間（網を引き上げて見せる） */
+  private scoopFlash = 0;
+  private scoopGot = 0;
+
+  private buildNet(g: NetGame): void {
+    makeMissionArt(this.scene);
+    const bg = this.scene.add.image(PANEL.x, PANEL.y, MISSION_BG_TEX('water')).setOrigin(0).setDisplaySize(PANEL.w, PANEL.h);
+    const band = this.scene.add.rectangle(PANEL.x + 6, PANEL.y + 6, PANEL.w - 12, 70, COLORS.scanPaper, 0.88).setOrigin(0);
+    this.root.addAt(bg, 1);
+    this.root.addAt(band, 2);
+    this.root.bringToTop(this.art);
+    const label = this.scene.add.text(this.scoopAt.x, this.scoopAt.y, 'すくう', { fontFamily: FONT, fontSize: '18px', fontStyle: 'bold', color: INK }).setOrigin(0.5);
+    this.root.add(label);
+    this.hotspot(this.scoopAt.x, this.scoopAt.y, 44, (p) => {
+      const before = g.caught;
+      const s = scoopNet(g, this.deps.tapTime(p));
+      this.scoopFlash = this.deps.now() + 0.35;
+      this.scoopGot = g.caught - before;
+      if (s === 'ok') this.deps.audio.tone(523.25);
+      this.step(s);
+    });
+  }
+
+  private drawNet(g: NetGame, now: number): void {
+    this.title.setText(`魚群の影が 網の上に来た瞬間に「すくう」（${Math.min(g.caught, g.fishNeeded)} / ${g.fishNeeded} 匹）`);
+    const a = this.art;
+    const { x: nx, y: ny } = this.netAt;
+    const lifted = now < this.scoopFlash;
+    // 魚群の影（右から左へ。網の上に来た瞬間がすくう拍）
+    const travel = MISSION_GAME.net.travelBeats * beatInterval();
+    const right = PANEL.x + PANEL.w + 30;
+    for (const sc of visibleSchools(g, now)) {
+      if (sc.taken) continue;
+      const x = nx + (sc.until / travel) * (right - nx);
+      for (let i = 0; i < sc.size; i++) {
+        const fx = x + (i % 2) * 22 + i * 10;
+        const fy = ny + (i - (sc.size - 1) / 2) * 20 + Math.sin(now * 6 + i) * 2;
+        a.fillStyle(0x0b2233, 0.5).fillEllipse(fx, fy, 34, 13);
+        a.fillTriangle(fx + 14, fy, fx + 26, fy - 7, fx + 26, fy + 7);
+      }
+    }
+    // 大きな四つ手網（四すみに重り）。すくうと持ち上がる
+    const w = lifted ? 150 : 170;
+    const h = lifted ? 96 : 110;
+    const y = ny - (lifted ? 14 : 0);
+    a.lineStyle(4, 0x8a6418, lifted ? 1 : 0.65);
+    a.strokeRect(nx - w / 2, y - h / 2, w, h);
+    a.lineStyle(2, 0xc9a032, lifted ? 1 : 0.55);
+    for (let i = 1; i < 7; i++) {
+      a.lineBetween(nx - w / 2 + (w * i) / 7, y - h / 2, nx - w / 2 + (w * i) / 7, y + h / 2);
+      if (i < 5) a.lineBetween(nx - w / 2, y - h / 2 + (h * i) / 5, nx + w / 2, y - h / 2 + (h * i) / 5);
+    }
+    for (const [cx, cy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      a.fillStyle(COLORS.ink).fillCircle(nx + (cx * w) / 2 + cx * 6, y + (cy * h) / 2 + cy * 6, 9);
+      a.fillStyle(0x6b3f1f).fillCircle(nx + (cx * w) / 2 + cx * 6, y + (cy * h) / 2 + cy * 6, 7);
+    }
+    // すくえた魚（網の上で跳ねる）
+    if (lifted && this.scoopGot > 0) {
+      for (let i = 0; i < this.scoopGot; i++) {
+        const fx = nx - 30 + i * 22;
+        const fy = y - 6 - Math.abs(Math.sin((this.scoopFlash - now) * 18 + i)) * 10;
+        a.fillStyle(COLORS.ink).fillEllipse(fx, fy, 30, 14);
+        a.fillStyle(0xe8743b).fillEllipse(fx, fy, 26, 10);
+      }
+    }
+    // すくうボタン
+    a.fillStyle(COLORS.ink).fillCircle(this.scoopAt.x, this.scoopAt.y, 42);
+    a.fillStyle(lifted ? COLORS.uiHoney : COLORS.uiCream).fillCircle(this.scoopAt.x, this.scoopAt.y, 39);
+    this.scheduleNetGuide(g, now);
+  }
+
+  /** 拍の音を少し先まで予約する（魚群が網に来る拍は高い音） */
+  private scheduleNetGuide(g: NetGame, now: number): void {
+    const b = beatInterval();
+    const next = Math.ceil((now - g.origin) / b);
+    for (let k = Math.max(next, this.guideBeat + 1); g.origin + k * b < now + 0.25; k++) {
+      const school = (k - g.firstBeat) % MISSION_GAME.net.intervalBeats === 0 && k >= g.firstBeat;
+      this.scheduled.push(this.deps.audio.tick(g.origin + k * b, school));
+      this.guideBeat = k;
+    }
+  }
+
+  // ---------- 土・風・雷 ----------
 
   /** 絵の部品（毎コマ、位置や絵を変える） */
   private phraseParts: Phaser.GameObjects.Image[] = [];
@@ -520,7 +611,6 @@ export class MissionGameView {
   /** 操作がうまくいった瞬間（絵を一瞬はずませる） */
   private phraseFlash = 0;
 
-  private readonly pondAt = { x: CX, y: PANEL.y + 250 };
   private readonly malletAt = { x: CX - 92, y: PANEL.y + 282 };
   private readonly clayArea = { x: CX + 54, y: PANEL.y + 250, w: 150, h: 190 };
   private readonly windLineX = CX;
@@ -533,7 +623,6 @@ export class MissionGameView {
 
   /** その操作をする場所（予告の輪を出す場所） */
   private cueAt(g: PhraseGame, action: PhraseAction, lane?: number): { x: number; y: number } {
-    if (g.kind === 'net') return this.pondAt;
     if (g.kind === 'dark') return { x: this.laneX(lane ?? 0), y: this.laneY - 18 };
     if (g.kind === 'wind') return { x: this.windLineX, y: PANEL.y + 250 };
     return action === 'tap' ? this.malletAt : { x: this.clayArea.x, y: this.clayArea.y };
@@ -541,7 +630,7 @@ export class MissionGameView {
 
   private buildPhrase(g: PhraseGame): void {
     makeMissionArt(this.scene);
-    const element = g.kind === 'net' ? 'water' : g.kind === 'shape' ? 'earth' : g.kind === 'wind' ? 'wind' : 'thunder';
+    const element = g.kind === 'shape' ? 'earth' : g.kind === 'wind' ? 'wind' : 'thunder';
     // 背景（Codex の浮世絵風）。上の説明の字が読めるように、上に和紙の帯をしく
     const bg = this.scene.add.image(PANEL.x, PANEL.y, MISSION_BG_TEX(element)).setOrigin(0).setDisplaySize(PANEL.w, PANEL.h);
     const band = this.scene.add.rectangle(PANEL.x + 6, PANEL.y + 6, PANEL.w - 12, 70, COLORS.scanPaper, 0.88).setOrigin(0);
@@ -555,12 +644,7 @@ export class MissionGameView {
       }
       this.step(s);
     };
-    if (g.kind === 'net') {
-      this.phraseParts.push(this.scene.add.image(this.pondAt.x - 40, this.pondAt.y + 30, MISSION_PART_TEX.water.fish.carp[0]).setScale(1.3));
-      this.phraseParts.push(this.scene.add.image(this.pondAt.x + 50, this.pondAt.y + 50, MISSION_PART_TEX.water.fish.goldfish[0]).setScale(1.3));
-      this.phraseParts.push(this.scene.add.image(this.pondAt.x, this.pondAt.y, MISSION_PART_TEX.water.net).setScale(1.6));
-      this.hotspot(this.pondAt.x, this.pondAt.y + 20, 110, (p) => act(this.deps.tapTime(p), 'tap'));
-    } else if (g.kind === 'shape') {
+    if (g.kind === 'shape') {
       this.phraseParts.push(this.scene.add.image(this.clayArea.x, this.clayArea.y + 50, MISSION_PART_TEX.earth.wheel).setScale(1.5));
       this.phraseParts.push(this.scene.add.image(this.clayArea.x, this.clayArea.y + 4, MISSION_PART_TEX.earth.clay[0]).setScale(1.6));
       this.hotspot(this.malletAt.x, this.malletAt.y, 44, (p) => act(this.deps.tapTime(p), 'tap'));
@@ -630,7 +714,6 @@ export class MissionGameView {
     const cues = currentCues(g);
     const total = g.phrases.length;
     const hint: Record<PhraseGame['kind'], string> = {
-      net: '輪が重なるたびに 池を続けてタップ（トントントン）',
       shape: '輪が重なったら、黄色は「叩く」をタップ、\n青は粘土を上から下へ なぞる',
       wind: '輪が重なったら、線を越えるように 右へスワイプ',
       dark: '稲光の印が出た灯籠を、輪が重なった瞬間に タップ',
@@ -664,14 +747,7 @@ export class MissionGameView {
         a.fillStyle(col, fade).fillTriangle(at.x + dx * 30, at.y + dy * 30, at.x + dx * 16 - dy * 9, at.y + dy * 16 - dx * 9, at.x + dx * 16 + dy * 9, at.y + dy * 16 + dx * 9);
       }
     });
-    // 絵の動き
-    const frame = Math.floor(now * 6);
-    if (g.kind === 'net') {
-      const [carp, gold, net] = this.phraseParts;
-      carp.setTexture(MISSION_PART_TEX.water.fish.carp[frame % 3]).setX(this.pondAt.x - 40 + Math.sin(now * 2) * 30);
-      gold.setTexture(MISSION_PART_TEX.water.fish.goldfish[(frame + 1) % 3]).setX(this.pondAt.x + 50 + Math.cos(now * 1.7) * 26);
-      net.setScale(1.6 * bounce).setY(this.pondAt.y + (bounce > 1 ? 14 : 0));
-    } else if (g.kind === 'shape') {
+    if (g.kind === 'shape') {
       const [wheel, clay] = this.phraseParts;
       wheel.setRotation(now * 3);
       const k = Math.min(3, Math.floor(((g.done + g.pos / Math.max(1, cues.length)) / total) * 4));

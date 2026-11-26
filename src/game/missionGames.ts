@@ -434,19 +434,86 @@ export function heatLevel(g: HeatGame, now: number): number {
   return Math.min(1, 0.35 + 0.4 * Math.max(0, p));
 }
 
-// ---------- 水・土・風・雷（拍に合わせた操作のまとまり） ----------
+// ---------- 網で魚すくい（水） ----------
+
+/**
+ * 魚群の影が、右から左へ一定のリズムで泳いでくる（MISSION_GAME.net.intervalBeats 拍ごと）。
+ * 網の上に来た拍で「すくう」を押すと、その魚群がとれる（1〜3匹。得意な体なら bonus 匹多い）。
+ * 魚群がいないときに押すと 'miss'（とった魚は減らない）。見のがした魚群は、そのまま通りすぎるだけ。
+ */
+export interface NetGame {
+  kind: 'net';
+  origin: number;
+  window: number;
+  /** 1回すくうごとに、魚群の数に足される数 */
+  bonus: number;
+  fishNeeded: number;
+  caught: number;
+  /** 0番目の魚群が網に来る拍 */
+  firstBeat: number;
+  /** 魚群ごとの大きさ（はじめに決めておく） */
+  sizes: number[];
+  /** すくった魚群の番号 */
+  taken: Set<number>;
+  result: 'playing' | 'success';
+}
+
+export function createNetGame(now: number, origin: number, rng: Rng, bonus: number = AFFINITY.netBonus.plain, window: number = AFFINITY.heatWindow.plain): NetGame {
+  const c = MISSION_GAME.net;
+  const sizes = Array.from({ length: 200 }, () => c.schoolSizes[Math.floor(rng() * c.schoolSizes.length)]);
+  const firstBeat = Math.ceil((now - origin) / beatInterval()) + c.startBeats;
+  return { kind: 'net', origin, window, bonus, fishNeeded: c.fishNeeded, caught: 0, firstBeat, sizes, taken: new Set(), result: 'playing' };
+}
+
+/** k 番目の魚群が網の上に来る時刻 */
+export function schoolTime(g: NetGame, k: number): number {
+  return g.origin + (g.firstBeat + k * MISSION_GAME.net.intervalBeats) * beatInterval();
+}
+
+/** その時刻にいちばん近い魚群の番号 */
+function nearestSchool(g: NetGame, t: number): number {
+  return Math.round((t - schoolTime(g, 0)) / (MISSION_GAME.net.intervalBeats * beatInterval()));
+}
+
+/** 「すくう」を押した */
+export function scoopNet(g: NetGame, t: number): Step {
+  if (g.result !== 'playing') return 'ignored';
+  const k = nearestSchool(g, t);
+  if (k < 0 || k >= g.sizes.length || g.taken.has(k) || Math.abs(t - schoolTime(g, k)) > g.window) return 'miss';
+  g.taken.add(k);
+  g.caught += g.sizes[k] + g.bonus;
+  if (g.caught >= g.fishNeeded) {
+    g.result = 'success';
+    return 'done';
+  }
+  return 'ok';
+}
+
+/** 画面に見えている魚群（右はしから網まで泳いでくるあいだと、通りすぎて少しのあいだ） */
+export function visibleSchools(g: NetGame, now: number): { k: number; size: number; until: number; taken: boolean }[] {
+  const travel = MISSION_GAME.net.travelBeats * beatInterval();
+  const out: { k: number; size: number; until: number; taken: boolean }[] = [];
+  for (let k = Math.max(0, nearestSchool(g, now) - 2); k < g.sizes.length; k++) {
+    const until = schoolTime(g, k) - now;
+    if (until > travel) break;
+    if (until < -travel / 2) continue;
+    out.push({ k, size: g.sizes[k], until, taken: g.taken.has(k) });
+  }
+  return out;
+}
+
+// ---------- 土・風・雷（拍に合わせた操作のまとまり） ----------
 
 /**
  * 4つのミニゲームに共通のしくみ：予告された拍で、決まった操作（タップ・スワイプ）をする。
  * いくつかの操作で「ひとまとまり」。まとまりを決まった数できたら完了。
- *   水・網で魚すくい（net）：拍ごとに続けてタップ（トントントン）。止まったり、ずれたりすると魚が逃げる
  *   土・成形（shape）：拍ごとに「叩く（タップ）」と「なぞる（下へスワイプ）」がまざる
  *   風・気流チャージ（wind）：拍ごとに、基準の線を越えるように右へスワイプ
  *   雷・暗闇を照らす（dark）：間のあいた、予告された拍だけ、予告された灯籠をタップ（位置も判定）
  * ずれる・ちがう操作・ちがう灯籠は 'miss'（そのまとまりを少し先の拍からやり直す。できたまとまりは減らない）。
  * まとまりの最初を押しそびれたときは、まちがいにせず決め直す（やさしく）。途中で止まったら 'miss'。
  */
-export type PhraseKind = 'net' | 'shape' | 'wind' | 'dark';
+export type PhraseKind = 'shape' | 'wind' | 'dark';
 export type PhraseAction = 'tap' | 'swipe';
 
 export interface Cue {
@@ -476,7 +543,6 @@ export interface PhraseGame {
 
 function makeCues(kind: PhraseKind, length: number, rng: Rng): Cue[] {
   const cues: Cue[] = [];
-  if (kind === 'net') for (let i = 0; i < length; i++) cues.push({ beat: i, action: 'tap' });
   if (kind === 'wind') for (let i = 0; i < length; i++) cues.push({ beat: i, action: 'swipe' });
   if (kind === 'shape') {
     // 叩くとなぞるを、どちらも1回以上まぜる
@@ -569,7 +635,7 @@ export function updatePhrase(g: PhraseGame, now: number): Step {
   return 'ignored';
 }
 
-export type MissionGame = HeatGame | PhraseGame | DrumGame | PegGame | JigsawGame | PrayerGame;
+export type MissionGame = HeatGame | NetGame | PhraseGame | DrumGame | PegGame | JigsawGame | PrayerGame;
 export type MissionGameKind = MissionGame['kind'];
 
 /**
@@ -590,6 +656,7 @@ export function createMissionGame(kind: MissionGameKind, now: number, origin: nu
     case 'heat':
       return createHeatGame(now, origin, rng, AFFINITY.heatNotes[a], AFFINITY.heatWindow[a]);
     case 'net':
+      return createNetGame(now, origin, rng, AFFINITY.netBonus[a], AFFINITY.heatWindow[a]);
     case 'shape':
     case 'wind':
     case 'dark':
