@@ -1685,11 +1685,11 @@ export class FieldScene extends Phaser.Scene {
     const king = this.pates.find((x) => x.pawn.isKing);
     if (!e || !king) return;
     e.view.playBow(bowOf(by.part), by.isSpy);
-    // 声：あいさつした人の「ぺこっ」（市民はみんな同じ声、スパイだけ少しちがう）と、王様の「うむ」（はじめの「ドン！」と同じ声）。近いほど大きい
+    // 声：あいさつした人の「ぺこっ」（市民もスパイも同じ声。スパイの声は、王様になりすましたときの返事だけ・M11）と、王様の「うむ」（はじめの「ドン！」と同じ声）。近いほど大きい
     const me = this.listenerPos();
     const near = (p: { x: number; y: number }) => Math.max(0, 1 - Math.hypot(p.x - me.x, p.y - me.y) / GREET.hearRadius) ** 2;
     const v1 = near(e.h.walker.pos);
-    if (v1 > 0.03) greetCall(this.audio, by.isSpy, v1);
+    if (v1 > 0.03) greetCall(this.audio, v1);
     this.time.delayedCall(650, () => {
       // 同時にあいさつされても、王様の返事は1回（声が重なって割れないように）
       const now = this.time.now;

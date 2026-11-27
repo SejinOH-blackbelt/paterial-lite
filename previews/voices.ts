@@ -10,8 +10,6 @@ const getAudio = (): GameAudio => {
 };
 
 document.querySelectorAll<HTMLButtonElement>('[data-king]').forEach((b) =>
-  b.addEventListener('click', () => kingVoice(getAudio(), b.dataset.king as 'start' | 'reply')),
+  b.addEventListener('click', () => kingVoice(getAudio(), b.dataset.king as 'start' | 'reply', 1, b.dataset.fake === '1')),
 );
-document.querySelectorAll<HTMLButtonElement>('[data-greet]').forEach((b) =>
-  b.addEventListener('click', () => greetCall(getAudio(), b.dataset.greet === 'spy', 1)),
-);
+document.querySelectorAll<HTMLButtonElement>('[data-greet]').forEach((b) => b.addEventListener('click', () => greetCall(getAudio(), 1)));

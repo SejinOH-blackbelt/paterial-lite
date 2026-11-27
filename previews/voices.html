@@ -23,18 +23,25 @@
     <h1>パテの声（聞きくらべ）</h1>
     <p>開発用のページです（公開ページには入りません）。ボタンを押すと鳴ります。</p>
     <section>
-      <h2>王様の声</h2>
+      <h2>本物の王様</h2>
       <div class="row">
         <button data-king="start">はじめ（「ドン！」のとき）</button>
         <button data-king="reply">うむ（あいさつの返事）</button>
       </div>
     </section>
     <section>
-      <h2>あいさつの「ぺこっ」</h2>
-      <p>市民はみんな同じ声。スパイだけ少しちがう声（少し低く、語尾が上がって少しゆれる）。</p>
+      <h2>偽の王様（なりすましたスパイ。M11 で使う）</h2>
+      <p>本物の王様にぐっと寄せて、ほんの少しだけちがう（少し高く、ゆれ方が少しちがう）。</p>
       <div class="row">
-        <button data-greet="citizen">市民</button>
-        <button data-greet="spy" class="spy">スパイ</button>
+        <button data-king="reply" data-fake="1" class="spy">うむ（偽）</button>
+        <button data-king="start" data-fake="1" class="spy">はじめ（偽・くらべる用）</button>
+      </div>
+    </section>
+    <section>
+      <h2>あいさつの「ぺこっ」</h2>
+      <p>市民もスパイも同じ声（声ではばれない）。</p>
+      <div class="row">
+        <button data-greet="1">ぺこっ</button>
       </div>
     </section>
   </main>
