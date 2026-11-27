@@ -3,7 +3,7 @@
 import Phaser from 'phaser';
 import { COLORS, ELEMENTS, KING_ORDER, SCREEN, SUPPORT, SUSPICION } from '../game/config';
 import { missionsDone } from '../game/missions';
-import { addNote, botKingOrder, botVote, canKingOrder, castVote, currentStrikeChance, everyoneVoted, hearStamp, meetingTimeLeft, orderable, resolveMeeting, sightingOf, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
+import { addNote, botKingOrder, botVote, canKingOrder, castVote, currentStrikeChance, everyoneVoted, hearStamp, meetingTimeLeft, orderable, regroup, resolveMeeting, sightingOf, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
 import type { Rng } from '../game/random';
 import type { GameAudio } from './audio';
 import type { Bgm } from './bgm';
@@ -539,8 +539,8 @@ export class MeetingScene extends Phaser.Scene {
         return;
       }
       case 'order': {
-        // 親機：子機の王様からの命令（その席の人が王様のときだけ受けつける）
-        if (!host || this.decided) return;
+        // 親機：子機の王様からの命令（その席の人が王様のときだけ。開票を見せ終える前に届いたもの＝前の会議の残りは受けつけない）
+        if (!host || this.decided || !this.votesShown) return;
         const king = pawns.findIndex((p) => p.isKing);
         if (fromSeat !== king || !Number.isInteger(msg.t)) return;
         this.remoteOrder = msg.t;
@@ -769,16 +769,22 @@ export class MeetingScene extends Phaser.Scene {
     const { match } = this.ctx;
     const before = match.pawns.map((p) => ELEMENTS.map((e) => p.h.held[e]));
     const order = typeof fromHost.ord === 'number' && fromHost.ord >= 0 ? match.pawns[fromHost.ord] ?? null : null;
-    const result = resolveMeeting(match, this.now(), undefined, order);
+    // 親機が結果を決める前の支持度にそろえてから計算する（子機だけ先にストライキにならないように）。命令は親機の判断をそのまま使う
+    match.support = fromHost.sup + fromHost.lost;
+    const result = resolveMeeting(match, this.now(), undefined, order, true);
     // 支持度と自分の素材は親機の数に合わせる（ほかの人の素材は、このあとのようすで届く）
     match.support = fromHost.sup;
     result.fine = fromHost.fine;
     result.compensation = fromHost.comp;
     result.supportLost = fromHost.lost;
-    // 親機の判定でストライキが起きていたら、子機もそうする
+    // ストライキは親機の判定にそろえる（親機で起きていたら起こし、起きていなければ取り消す）
     if (fromHost.st === 1 && !match.outcome) {
       match.outcome = { winner: 'spy', reason: 'strike', time: this.now() };
       match.phase = 'over';
+    } else if (fromHost.st !== 1 && match.outcome?.reason === 'strike') {
+      match.outcome = null;
+      match.phase = 'play';
+      regroup(match); // 会議のあとの並び直し（ストライキで終わったときは、していなかったので）
     }
     const me = this.ctx.player;
     const seat = this.seatOf(me);

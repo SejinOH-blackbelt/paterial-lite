@@ -78,3 +78,24 @@ describe('王様の絶対命令', () => {
     expect(n).toBeLessThan(90);
   });
 });
+
+describe('王様の絶対命令（点検の直し）', () => {
+  it('王様 Bot は、いちばん怪しい相手がもう投票で選ばれていたら命令しない', () => {
+    const { m, pawns, spy } = setup(5);
+    pawns[0].isPlayer = false;
+    for (const p of pawns) castVote(m, p, spy); // みんなスパイに投票
+    addSuspicion(m, pawns[0], spy, SUSPICION.voteThreshold * KING_ORDER.botThreshold + 10);
+    addSuspicion(m, pawns[0], pawns[2], SUSPICION.voteThreshold * KING_ORDER.botThreshold + 1);
+    const rng = createRng(4);
+    for (let i = 0; i < 50; i++) expect(botKingOrder(m, rng)).toBeNull();
+  });
+
+  it('子機は、親機の決めた命令をそのまま使う（自分の画面の状態で取り消さない）', () => {
+    const { m, pawns, spy } = setup(5);
+    for (const p of pawns) castVote(m, p, pawns[2]);
+    m.kingOrderUsed = true; // 子機の画面では、もう使ったことになっていても
+    const r = resolveMeeting(m, 20, undefined, spy, true);
+    expect(r.ordered).toBe(true);
+    expect(r.target).toBe(spy);
+  });
+});

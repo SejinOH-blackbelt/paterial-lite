@@ -453,26 +453,28 @@ export function orderable(m: MatchState, p: Pawn): boolean {
 export function botKingOrder(m: MatchState, rng: Rng): Pawn | null {
   if (!canKingOrder(m)) return null;
   const king = m.pawns.find((p) => p.isKing)!;
+  // いちばん怪しい相手を探す（投票で選ばれた相手もふくめて）。それが投票の結果と同じなら、命令はしない
   let best: Pawn | null = null;
   let bestS = SUSPICION.voteThreshold * KING_ORDER.botThreshold;
   for (const p of m.pawns) {
-    if (!orderable(m, p)) continue;
+    if (p.isKing || p.h.frozen || p.h.departed) continue;
     const s = suspicionOf(m, king, p);
     if (s >= bestS) {
       best = p;
       bestS = s;
     }
   }
-  return best && rng() < KING_ORDER.botChance ? best : null;
+  return best && orderable(m, best) && rng() < KING_ORDER.botChance ? best : null;
 }
 
 /**
- * 会議の結果を出す。order：王様の絶対命令で調べさせる相手（使えるときだけ。投票の結果より優先。外れたら支持度が大きく下がる）
+ * 会議の結果を出す。order：王様の絶対命令で調べさせる相手（使えるときだけ。投票の結果より優先。外れたら支持度が大きく下がる）。
+ * trusted：子機が、親機の決めた命令をそのまま使うとき（自分の画面の状態で取り消さない）
  */
-export function resolveMeeting(m: MatchState, now: number, rng?: Rng, order: Pawn | null = null): MeetingResult {
+export function resolveMeeting(m: MatchState, now: number, rng?: Rng, order: Pawn | null = null, trusted = false): MeetingResult {
   const meeting = m.meeting!;
   const tally = countVotes(meeting);
-  const ordered = !!order && canKingOrder(m) && orderable(m, order);
+  const ordered = !!order && (trusted || (canKingOrder(m) && orderable(m, order)));
   if (ordered) m.kingOrderUsed = true;
   const target = ordered ? order : voteWinner(meeting);
   const result: MeetingResult = { target, wasSpy: !!target?.isSpy, tally, fine: 0, compensation: 0, supportLost: 0, ordered };
