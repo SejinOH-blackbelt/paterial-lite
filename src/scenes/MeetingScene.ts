@@ -1,14 +1,14 @@
 // 会議の画面。採取場の上に重ねて出します（採取場はそのあいだ止まる）。
 // 6体が輪になって並び、スタンプで話し合って投票します。ルールは src/game/match.ts。
 import Phaser from 'phaser';
-import { COLORS, ELEMENTS, SCREEN, SUPPORT, SUSPICION } from '../game/config';
+import { COLORS, ELEMENTS, KING_ORDER, SCREEN, SUPPORT, SUSPICION } from '../game/config';
 import { missionsDone } from '../game/missions';
-import { addNote, botVote, castVote, currentStrikeChance, everyoneVoted, hearStamp, meetingTimeLeft, resolveMeeting, sightingOf, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
+import { addNote, botKingOrder, botVote, canKingOrder, castVote, currentStrikeChance, everyoneVoted, hearStamp, meetingTimeLeft, orderable, resolveMeeting, sightingOf, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
 import type { Rng } from '../game/random';
 import type { GameAudio } from './audio';
 import type { Bgm } from './bgm';
 import type { NetGame } from '../net/netGame';
-import type { NetMessage, ResultWire, SayWire, VoteWire } from '../net/sync';
+import type { NetMessage, OrderWire, ResultWire, SayWire, TallyWire, VoteWire } from '../net/sync';
 import { PateView } from './PateView';
 import { DEPART_TEX, makeDepartTextures } from './departTextures';
 import { FONT, INK, cssColor, label, panel, textButton, fitCamera } from './ui';
@@ -95,6 +95,14 @@ export class MeetingScene extends Phaser.Scene {
     this.logLines = [];
     this.witnessLine = null;
     this.reveal = null;
+    this.orderPick = null;
+    this.orderParts = [];
+    this.votesShown = false;
+    this.pendingResult = null;
+    this.decided = false;
+    this.remoteOrder = undefined;
+    this.verdictParts = [];
+    this.remoteWait = null;
   }
 
   private now(): number {
@@ -169,7 +177,7 @@ export class MeetingScene extends Phaser.Scene {
       const voteMark = label(this, x + 28, y - 34, '', 15, cssColor(COLORS.uiHoney)).setDepth(11);
       if (!p.h.frozen) {
         const hit = this.add.zone(x, y - 22 * k, 60 * k, 66 * k).setInteractive();
-        hit.on('pointerdown', () => this.select(p));
+        hit.on('pointerdown', () => (this.orderPick ? this.orderPick(p) : this.select(p)));
       }
       this.seats.set(p, { x, y, view, ring, voteMark });
     });
@@ -496,7 +504,8 @@ export class MeetingScene extends Phaser.Scene {
 
   private onNet(from: number, msg: NetMessage): void {
     const net = this.ctx.net;
-    if (!net || !msg || this.finished) return;
+    // 開票が始まったら、話し合いの知らせ（発言・投票）は受けつけない（票・命令・結果は受けつける）
+    if (!net || !msg || (this.finished && (msg.k === 'say' || msg.k === 'vote'))) return;
     const pawns = this.ctx.match.pawns;
     const fromSeat = net.seats.indexOf(from);
     const host = this.isSim();
@@ -520,13 +529,29 @@ export class MeetingScene extends Phaser.Scene {
         this.voteFor(p, msg.tg >= 0 ? pawns[msg.tg] ?? null : null, true);
         return;
       }
-      case 'result': {
-        if (host || fromSeat !== 0) return;
-        // 親機と同じ票で結果を出す。支持度と、自分の素材の増減は親機の数に合わせる
+      case 'tally': {
+        // 親機から票が届いた：親機と同じ票で開票を見せる
+        if (host || fromSeat !== 0 || this.finished) return;
         const meeting = this.ctx.match.meeting;
-        if (!meeting) return;
-        meeting.votes = new Map(msg.votes.map(([v, t]) => [pawns[v], t >= 0 ? pawns[t] : null] as [Pawn, Pawn | null]));
+        if (!meeting || !Array.isArray(msg.votes)) return;
+        meeting.votes = new Map(msg.votes.filter(([v]) => pawns[v]).map(([v, t]) => [pawns[v], t >= 0 ? pawns[t] ?? null : null] as [Pawn, Pawn | null]));
         this.finish(msg);
+        return;
+      }
+      case 'order': {
+        // 親機：子機の王様からの命令（その席の人が王様のときだけ受けつける）
+        if (!host || this.decided) return;
+        const king = pawns.findIndex((p) => p.isKing);
+        if (fromSeat !== king || !Number.isInteger(msg.t)) return;
+        this.remoteOrder = msg.t;
+        this.remoteWait?.();
+        return;
+      }
+      case 'result': {
+        // 親機から結果が届いた：票を見せ終えていれば、すぐ発表（まだなら、見せ終えてから）
+        if (host || fromSeat !== 0 || this.decided) return;
+        if (this.votesShown) this.applyHostResult(msg);
+        else this.pendingResult = msg;
         return;
       }
     }
@@ -542,11 +567,13 @@ export class MeetingScene extends Phaser.Scene {
 
   /**
    * 結果発表。
-   * ① 開票：1票ずつ、投票した人から相手へ票が飛んでいき、数が増える
-   * ② いちばん票が多いパテにスポットライト。「○○は……」でドラムロール
-   * ③ スパイだった（クラッカーと紙吹雪）／ぬれぎぬ（ズコーとしょんぼり）／だれも調べない
+   * ① 開票：1票ずつ、投票した人から相手へ票が飛んでいき、数が増える（友達と遊ぶときは、親機が票を先に配る）
+   * ② 王様の絶対命令：1試合に1回、王様にだけ「命令する？」が KING_ORDER.seconds 秒出る（Bot の王様は自分で決める）
+   * ③ いちばん票が多いパテ（命令ならそのパテ）にスポットライト。「○○は……」でドラムロール
+   * ④ スパイだった（クラッカーと紙吹雪）／ぬれぎぬ（ズコーとしょんぼり）／だれも調べない
    */
-  private finish(fromHost?: ResultWire): void {
+  private finish(fromHost?: TallyWire): void {
+    if (this.finished) return;
     this.finished = true;
     this.bgm?.stop(); // 結果発表は、曲を止めて開票の音とドラムロールを聞かせる
     this.mapView?.close();
@@ -558,43 +585,17 @@ export class MeetingScene extends Phaser.Scene {
       for (const p of match.pawns) if (!p.h.frozen && !match.meeting!.votes.has(p)) castVote(match, p, p.isPlayer ? null : botVote(match, p, this.ctx.rng));
     }
     const votes = [...match.meeting!.votes.entries()];
-    const before = match.pawns.map((p) => ELEMENTS.map((e) => p.h.held[e]));
-    const result = resolveMeeting(match, this.now(), fromHost ? undefined : this.ctx.rng);
+    // 親機：みんなに票を配る（王様の命令を待ってから、結果を配る）
     if (this.ctx.net && !fromHost) {
-      // 親機：みんなに結果を送る（票・支持度・素材の増減）
-      this.ctx.net.relay.send('all', {
-        k: 'result',
-        votes: votes.map(([v, t]) => [this.seatOf(v), t ? this.seatOf(t) : -1]),
-        sup: match.support,
-        mat: match.pawns.map((p, i) => ELEMENTS.map((e, k) => p.h.held[e] - before[i][k])),
-        fine: result.fine,
-        comp: result.compensation,
-        lost: result.supportLost,
-        st: match.outcome?.reason === 'strike' ? 1 : 0,
-      } satisfies ResultWire);
-    }
-    if (fromHost) {
-      // 子機：支持度と自分の素材は親機の数に合わせる（ほかの人の素材は、このあとのようすで届く）
-      match.support = fromHost.sup;
-      result.fine = fromHost.fine;
-      result.compensation = fromHost.comp;
-      result.supportLost = fromHost.lost;
-      // 親機の判定でストライキが起きていたら、子機もそうする
-      if (fromHost.st === 1 && !match.outcome) {
-        match.outcome = { winner: 'spy', reason: 'strike', time: this.now() };
-        match.phase = 'over';
-      }
-      const me = this.ctx.player;
-      const seat = this.seatOf(me);
-      ELEMENTS.forEach((e, k) => (me.h.held[e] = Math.max(0, before[seat][k] + (fromHost.mat[seat]?.[k] ?? 0))));
+      this.ctx.net.relay.send('all', { k: 'tally', votes: votes.map(([v, t]) => [this.seatOf(v), t ? this.seatOf(t) : -1]) } satisfies TallyWire);
     }
     // 話し合いのボタンを片づけて、開票の場所を出す
     for (const b of [...this.stampButtons, this.voteButton, this.skipButton]) b.setVisible(false);
     this.spotlight(null);
     this.timerBar.clear();
     this.whyText.setVisible(false);
-    const head = label(this, CENTER.x, 80, '開票！', 22, cssColor(COLORS.uiHoney)).setDepth(20);
-    this.pop(head);
+    this.head = label(this, CENTER.x, 80, '開票！', 22, cssColor(COLORS.uiHoney)).setDepth(20);
+    this.pop(this.head);
     panel(this, CENTER.x, 520, 120, 40, COLORS.uiPaper).setDepth(19);
     const skipText = label(this, CENTER.x, 518, 'スキップ 0', 14, INK).setStroke(INK, 0).setDepth(20);
 
@@ -628,30 +629,194 @@ export class MeetingScene extends Phaser.Scene {
         });
       });
     });
-
     const afterVotes = 600 + votes.length * STEP * 1000 + 600;
+    this.time.delayedCall(afterVotes, () => this.orderPhase());
+  }
+
+  /** 開票の見出し（結果発表のあいだ使う） */
+  private head!: Phaser.GameObjects.Text;
+  /** 王様の命令を選んでいるあいだ、パテをタップしたとき */
+  private orderPick: ((p: Pawn) => void) | null = null;
+  /** 王様の命令の画面の部品（閉じるときに消す） */
+  private orderParts: Phaser.GameObjects.GameObject[] = [];
+  /** 票を見せ終えたか（子機：結果が先に届いたら、見せ終えてから発表する） */
+  private votesShown = false;
+  /** 子機：先に届いた結果 */
+  private pendingResult: ResultWire | null = null;
+  /** 結果を決めた・受けとったか（2回発表しないように） */
+  private decided = false;
+  /** 親機：子機の王様から届いた命令（-1 は「命令しない」。まだなら undefined） */
+  private remoteOrder: number | undefined = undefined;
+  /** 親機：子機の王様の命令が届いたら呼ぶ */
+  private remoteWait: (() => void) | null = null;
+
+  private closeOrderUI(): void {
+    for (const o of this.orderParts) o.destroy();
+    this.orderParts = [];
+    this.orderPick = null;
+    this.spotlight(null);
+  }
+
+  /** ② 王様の絶対命令（票を見せ終えたあと） */
+  private orderPhase(): void {
+    this.votesShown = true;
+    const { match, player } = this.ctx;
+    const host = this.isSim();
+    // 子機：結果がもう届いていれば、すぐ発表
+    if (!host && this.pendingResult) {
+      this.applyHostResult(this.pendingResult);
+      return;
+    }
+    const king = match.pawns.find((p) => p.isKing) ?? null;
+    if (!canKingOrder(match) || !king) {
+      if (host) this.decide(null);
+      return;
+    }
+    const seconds = KING_ORDER.seconds;
+    if (king === player) {
+      this.showOrderUI(seconds, (order) => {
+        if (host) this.decide(order);
+        else {
+          this.ctx.net?.relay.send('host', { k: 'order', t: order ? this.seatOf(order) : -1 } satisfies OrderWire);
+          this.head.setText(order ? '命令を 伝えた…' : '命令は しない');
+        }
+      });
+      return;
+    }
+    // ほかの人：王様が考えているあいだ待つ
+    this.head.setText('王様が 考えている…');
+    this.pop(this.head);
+    if (!host) return; // 子機は、親機から結果が届くのを待つ
+    if (!king.isPlayer || !this.ctx.net) {
+      // 王様 Bot：少し考えるふりをしてから決める
+      this.time.delayedCall(1500, () => this.decide(botKingOrder(match, this.ctx.rng)));
+      return;
+    }
+    // 王様が子機の人：命令が届くか、時間が来たら決める（通信の遅れのぶん、少しだけ長く待つ）
+    this.remoteWait = () => {
+      if (this.decided || this.remoteOrder === undefined) return;
+      this.decide(this.remoteOrder >= 0 ? match.pawns[this.remoteOrder] ?? null : null);
+    };
+    this.remoteWait();
+    this.time.delayedCall((seconds + 1.5) * 1000, () => this.decide(null));
+  }
+
+  /** 王様（プレイヤー）に「命令する？」を出す。パテをタップで命令、「命令しない」か時間切れで命令しない */
+  private showOrderUI(seconds: number, done: (order: Pawn | null) => void): void {
+    const { match } = this.ctx;
+    let over = false;
+    const finish = (order: Pawn | null) => {
+      if (over) return;
+      over = true;
+      this.closeOrderUI();
+      done(order);
+    };
+    this.head.setText('王様の 絶対命令');
+    this.pop(this.head);
+    const add = <T extends Phaser.GameObjects.GameObject>(o: T): T => {
+      this.orderParts.push(o);
+      return o;
+    };
+    add(panel(this, CENTER.x, 586, 330, 96, COLORS.uiWood).setDepth(25));
+    add(label(this, CENTER.x, 560, `調べさせたいパテを タップ（1試合に1回）\n外れたら 支持度 -${SUPPORT.kingOrderWrong}`, 12).setDepth(26));
+    const count = add(label(this, CENTER.x - 80, 612, '', 13, cssColor(COLORS.uiHoney)).setDepth(26));
+    add(textButton(this, CENTER.x + 80, 612, 120, 34, '命令しない', COLORS.uiPaper, () => finish(null), 14).setDepth(26));
+    let left = seconds;
+    const tick = () => {
+      if (over) return;
+      count.setText(`あと ${left} 秒`);
+      if (left-- <= 0) finish(null);
+    };
+    tick();
+    this.time.addEvent({ delay: 1000, repeat: seconds, callback: tick });
+    this.orderPick = (p) => {
+      if (!orderable(match, p)) return;
+      this.ctx.audio.kachi();
+      finish(p);
+    };
+  }
+
+  /** 親機・ひとり：命令をふくめて結果を決めて、（友達と遊ぶなら）みんなに配り、発表する */
+  private decide(order: Pawn | null): void {
+    if (this.decided || !this.isSim()) return;
+    this.decided = true;
+    this.closeOrderUI();
+    const { match } = this.ctx;
+    const before = match.pawns.map((p) => ELEMENTS.map((e) => p.h.held[e]));
+    const result = resolveMeeting(match, this.now(), this.ctx.rng, order);
+    if (this.ctx.net) {
+      // みんなに結果を送る（支持度・素材の増減・命令した相手）
+      this.ctx.net.relay.send('all', {
+        k: 'result',
+        votes: [],
+        sup: match.support,
+        mat: match.pawns.map((p, i) => ELEMENTS.map((e, k) => p.h.held[e] - before[i][k])),
+        fine: result.fine,
+        comp: result.compensation,
+        lost: result.supportLost,
+        st: match.outcome?.reason === 'strike' ? 1 : 0,
+        ord: result.ordered && result.target ? this.seatOf(result.target) : -1,
+      } satisfies ResultWire);
+    }
+    this.showResult(result);
+  }
+
+  /** 子機：親機から届いた結果を、親機と同じ形にして発表する */
+  private applyHostResult(fromHost: ResultWire): void {
+    if (this.decided) return;
+    this.decided = true;
+    this.closeOrderUI();
+    const { match } = this.ctx;
+    const before = match.pawns.map((p) => ELEMENTS.map((e) => p.h.held[e]));
+    const order = typeof fromHost.ord === 'number' && fromHost.ord >= 0 ? match.pawns[fromHost.ord] ?? null : null;
+    const result = resolveMeeting(match, this.now(), undefined, order);
+    // 支持度と自分の素材は親機の数に合わせる（ほかの人の素材は、このあとのようすで届く）
+    match.support = fromHost.sup;
+    result.fine = fromHost.fine;
+    result.compensation = fromHost.comp;
+    result.supportLost = fromHost.lost;
+    // 親機の判定でストライキが起きていたら、子機もそうする
+    if (fromHost.st === 1 && !match.outcome) {
+      match.outcome = { winner: 'spy', reason: 'strike', time: this.now() };
+      match.phase = 'over';
+    }
+    const me = this.ctx.player;
+    const seat = this.seatOf(me);
+    ELEMENTS.forEach((e, k) => (me.h.held[e] = Math.max(0, before[seat][k] + (fromHost.mat[seat]?.[k] ?? 0))));
+    this.showResult(result);
+  }
+
+  /** ③④ スポットライトとドラムロール → 正体 */
+  private showResult(result: MeetingResult): void {
+    const { match } = this.ctx;
+    const head = this.head;
     const nm = (p: Pawn) => (p === this.ctx.player ? 'きみ' : nameOf(p));
     if (!result.target) {
-      this.time.delayedCall(afterVotes, () => {
-        head.setText('同じ票・スキップが多い');
-        this.showVerdict('だれも 調べられなかった', `スパイは まだ どこかに…`, cssColor(COLORS.uiCream));
-        this.ctx.audio.bubu(0.6);
-        this.time.delayedCall(3200, () => this.ctx.onDone(result));
-      });
+      head.setText('同じ票・スキップが多い');
+      this.showVerdict('だれも 調べられなかった', `スパイは まだ どこかに…`, cssColor(COLORS.uiCream));
+      this.ctx.audio.bubu(0.6);
+      this.time.delayedCall(3200, () => this.ctx.onDone(result));
       return;
     }
     const target = result.target;
     const seat = this.seats.get(target)!;
-    // ② スポットライトとドラムロール
+    // 絶対命令なら、先にそれを知らせる
+    const lead = result.ordered ? 1600 : 0;
+    if (result.ordered) {
+      head.setText('王様の 絶対命令！');
+      this.pop(head);
+      this.ctx.audio.bell();
+      this.showVerdict('「王様の名において、', `この者を 調べよ！」 → ${nm(target)}`, cssColor(COLORS.uiHoney));
+    }
     const ROLL = 1.8;
-    this.time.delayedCall(afterVotes, () => {
+    this.time.delayedCall(lead, () => {
       head.setText(`${nm(target)}は……`);
       this.pop(head);
       this.spotlight(target);
       this.cancelRoll = this.ctx.audio.drumroll(ROLL);
       this.reveal = { at: this.now() + ROLL + 0.1, show: () => showTruth() };
     });
-    // ③ 正体
+    // 正体
     const showTruth = () => {
       this.showSupport();
       if (result.wasSpy) {
@@ -691,11 +856,17 @@ export class MeetingScene extends Phaser.Scene {
 
   /** 大きな見出しと、その下の説明（ポンと出る） */
   private showVerdict(title: string, sub: string, color: string): void {
-    panel(this, CENTER.x, 586, 330, 84, COLORS.uiWood).setDepth(19);
+    // 前の見出し（王様の命令の知らせ など）は消してから出す（文字が重ならないように）
+    for (const o of this.verdictParts) o.destroy();
+    const p = panel(this, CENTER.x, 586, 330, 84, COLORS.uiWood).setDepth(19);
     const t = label(this, CENTER.x, 568, title, 24, color).setDepth(20);
-    label(this, CENTER.x, 604, sub, 12).setDepth(20).setWordWrapWidth(310);
+    const s = label(this, CENTER.x, 604, sub, 12).setDepth(20).setWordWrapWidth(310);
+    this.verdictParts = [p, t, s];
     this.pop(t, 0.3);
   }
+
+  /** いま出ている大きな見出しの部品 */
+  private verdictParts: Phaser.GameObjects.GameObject[] = [];
 
   /** 文字をポンと大きく出す */
   private pop(obj: Phaser.GameObjects.Text, from = 0.6): void {

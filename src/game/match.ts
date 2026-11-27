@@ -1,7 +1,7 @@
 // 1試合のルール（ミッション・国の仕事ゲージ・勝敗・呼び出し・会議・投票・罰金と賠償・Botの疑い度）。
 // 画面表示（Phaser）には依存しません。
 
-import { BOT, LANDMARKS, MATCH, MISS_SOUND, RITE, SUPPORT, SUSPICION } from './config';
+import { BOT, KING_ORDER, LANDMARKS, MATCH, MISS_SOUND, RITE, SUPPORT, SUSPICION } from './config';
 import { boardGauge, isRite, missionComplete, type Board } from './board';
 import { createFieldState, giveHeld, takeHeld, totalHeld, type FieldState, type Harvester } from './harvest';
 import { facilityById, facilityNear, facilityStand, type MissionEvent } from './missions';
@@ -79,6 +79,8 @@ export interface MeetingResult {
   compensation: number;
   /** ぬれぎぬで下がった王様の支持度 */
   supportLost: number;
+  /** 王様の絶対命令で調べた（投票の結果ではない） */
+  ordered: boolean;
 }
 
 export interface MatchState {
@@ -107,6 +109,8 @@ export interface MatchState {
   support: number;
   /** 王様の儀式がすんで、支持度を戻したか（1試合に1回） */
   riteRewarded: boolean;
+  /** 王様の絶対命令を、この試合でもう使ったか（1試合に1回） */
+  kingOrderUsed: boolean;
   /** この試合の制限時間（秒）。5分版か長い版 */
   timeLimit: number;
   /** 王様にあいさつしたパテが、次にあいさつできるようになる時刻 */
@@ -176,6 +180,7 @@ export function createMatch(pawns: Pawn[], now: number, rng: Rng, board: Board, 
     sightings: new Map(),
     support: SUPPORT.start,
     riteRewarded: false,
+    kingOrderUsed: false,
     timeLimit,
     greetReady: new Map(),
     // 省いたときに試合の乱数（rng）を使わないのは、ほかの決まり（塗りムラの位置など）の並びを変えないため
@@ -407,23 +412,70 @@ export function botVote(m: MatchState, bot: Pawn, rng: Rng): Pawn | null {
 }
 
 /** 会議の結果を出し、罰金や賠償をして、採取場に戻る（勝敗が決まれば試合終了） */
-export function resolveMeeting(m: MatchState, now: number, rng?: Rng): MeetingResult {
-  const meeting = m.meeting!;
+/** 票を数える（だれに何票か。スキップは null） */
+function countVotes(meeting: Meeting): Map<Pawn | null, number> {
   const tally = new Map<Pawn | null, number>();
   for (const t of meeting.votes.values()) tally.set(t, (tally.get(t) ?? 0) + 1);
-  // いちばん票が多いものを探す（同票なら誰も調べられない。スキップが最多でも同じ）
+  return tally;
+}
+
+/** 投票で調べることになるパテ（いちばん票が多いパテ。同票・スキップが最多なら null） */
+export function voteWinner(meeting: Meeting): Pawn | null {
   let best: Pawn | null = null;
   let bestN = 0;
   let tie = false;
-  for (const [t, n] of tally) {
+  for (const [t, n] of countVotes(meeting)) {
     if (n > bestN) {
       best = t;
       bestN = n;
       tie = false;
     } else if (n === bestN) tie = true;
   }
-  const target = tie ? null : best;
-  const result: MeetingResult = { target, wasSpy: !!target?.isSpy, tally, fine: 0, compensation: 0, supportLost: 0 };
+  return tie ? null : best;
+}
+
+/** 王様の絶対命令が、この会議で使えるか（王様がいて動ける・この試合でまだ使っていない） */
+export function canKingOrder(m: MatchState): boolean {
+  if (m.kingOrderUsed || !m.meeting) return false;
+  const king = m.pawns.find((p) => p.isKing);
+  return !!king && !king.h.frozen && !king.h.departed;
+}
+
+/** 王様が絶対命令で調べさせられる相手か（動ける市民・スパイ。王様自身と、投票で決まった相手はちがう） */
+export function orderable(m: MatchState, p: Pawn): boolean {
+  return !p.isKing && !p.h.frozen && !p.h.departed && !!m.meeting && p !== voteWinner(m.meeting);
+}
+
+/**
+ * 王様 Bot の絶対命令：いちばん怪しいパテを、投票の境目の KING_ORDER.botThreshold 倍以上怪しんでいて、
+ * それが投票の結果とちがえば、ときどき命令する。命令しなければ null
+ */
+export function botKingOrder(m: MatchState, rng: Rng): Pawn | null {
+  if (!canKingOrder(m)) return null;
+  const king = m.pawns.find((p) => p.isKing)!;
+  let best: Pawn | null = null;
+  let bestS = SUSPICION.voteThreshold * KING_ORDER.botThreshold;
+  for (const p of m.pawns) {
+    if (!orderable(m, p)) continue;
+    const s = suspicionOf(m, king, p);
+    if (s >= bestS) {
+      best = p;
+      bestS = s;
+    }
+  }
+  return best && rng() < KING_ORDER.botChance ? best : null;
+}
+
+/**
+ * 会議の結果を出す。order：王様の絶対命令で調べさせる相手（使えるときだけ。投票の結果より優先。外れたら支持度が大きく下がる）
+ */
+export function resolveMeeting(m: MatchState, now: number, rng?: Rng, order: Pawn | null = null): MeetingResult {
+  const meeting = m.meeting!;
+  const tally = countVotes(meeting);
+  const ordered = !!order && canKingOrder(m) && orderable(m, order);
+  if (ordered) m.kingOrderUsed = true;
+  const target = ordered ? order : voteWinner(meeting);
+  const result: MeetingResult = { target, wasSpy: !!target?.isSpy, tally, fine: 0, compensation: 0, supportLost: 0, ordered };
 
   if (target?.isSpy) {
     // スパイを当てた：強制送還（てへぺろ）。集めた素材の一部を罰金として没収
@@ -432,9 +484,9 @@ export function resolveMeeting(m: MatchState, now: number, rng?: Rng): MeetingRe
     m.outcome = { winner: 'citizens', reason: 'caught', time: now };
     m.phase = 'over';
   } else if (target) {
-    // ぬれぎぬ：その市民に投票したパテが、お詫びの素材を払う
+    // ぬれぎぬ：その市民に投票したパテが、お詫びの素材を払う（絶対命令のときは、命令した王様だけが払う）
     for (const [voter, t] of meeting.votes) {
-      if (t !== target) continue;
+      if (ordered ? !voter.isKing : t !== target) continue;
       const paid = takeHeld(voter.h, MATCH.compensation);
       giveHeld(target.h, paid);
       result.compensation += Object.values(paid).reduce((n, v) => n + v, 0);
@@ -442,7 +494,8 @@ export function resolveMeeting(m: MatchState, now: number, rng?: Rng): MeetingRe
     // ぬれぎぬを着せられた市民は、怒って旅に出る（その試合から抜ける）
     depart(m, target);
     // 住民を疑ったので、王様の支持度が下がる。0 になったら、市民がストライキ（スパイの勝ち）
-    result.supportLost = Math.min(m.support, SUPPORT.wrongAccusation);
+    // 絶対命令で外したときは、いつもより大きく下がる
+    result.supportLost = Math.min(m.support, ordered ? SUPPORT.kingOrderWrong : SUPPORT.wrongAccusation);
     m.support -= result.supportLost;
     if (target.isKing) {
       m.outcome = { winner: 'spy', reason: 'kingLeft', time: now };

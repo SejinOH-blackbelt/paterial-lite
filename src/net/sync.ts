@@ -381,9 +381,23 @@ export interface ResultWire {
   lost: number;
   /** 親機の判定で、この会議のあとにストライキが起きたか（1） */
   st?: number;
+  /** 王様の絶対命令で調べた相手の席（命令しなかったら -1） */
+  ord?: number;
 }
 
-export type NetMessage = ReadyWire | GoWire | CallRequest | MeetWire | SayWire | VoteWire | ResultWire | Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | StealRequest | StopRequest | AlarmRequest | GreetRequest | GreetWire | HeistWire | OverWire | StartWire;
+/** 親機 → みんな：会議の票（開票を見せる。結果は、王様の命令を待ってから result で配る） */
+export interface TallyWire {
+  k: 'tally';
+  votes: [number, number][];
+}
+
+/** 子機の王様 → 親機：絶対命令で調べさせる相手の席（命令しないなら -1） */
+export interface OrderWire {
+  k: 'order';
+  t: number;
+}
+
+export type NetMessage = ReadyWire | GoWire | CallRequest | MeetWire | SayWire | VoteWire | ResultWire | TallyWire | OrderWire | Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | StealRequest | StopRequest | AlarmRequest | GreetRequest | GreetWire | HeistWire | OverWire | StartWire;
 
 /**
  * 親機が席を決める：親機は 0 番、ほかの人は入った順に 1 番から。残りは Bot。
