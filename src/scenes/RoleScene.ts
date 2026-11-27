@@ -5,7 +5,7 @@ import { planBoard, type BoardPlan } from '../game/board';
 import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
 import { PateView } from './PateView';
-import { INK, cssColor, label, panel, textButton } from './ui';
+import { INK, cssColor, label, panel, textButton, fitCamera } from './ui';
 import { ELEMENT_PICTURE as ELEMENT_ICON, makeElementPictures as makeElementIcons } from './elementPictures';
 import { randomElement, type ElementId } from '../game/elements';
 import type { NetGame } from '../net/netGame';
@@ -32,6 +32,7 @@ export class RoleScene extends Phaser.Scene {
   }
 
   create(data?: Partial<RoleData>): void {
+    fitCamera(this); // 内部の細かさに合わせてカメラを拡大する（座標は 360×640 のまま）
     const net = data?.net;
     // URL の最後が #spy なら必ずスパイ、#citizen なら必ず市民（テスト用。友達と遊ぶときは親機が決める）
     const rng = createRng(Date.now());

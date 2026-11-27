@@ -52,7 +52,7 @@ import {
 import { beatInterval } from '../game/rhythm';
 import type { GameAudio } from './audio';
 import { drawPart } from './textures';
-import { FONT, INK, pinToScreen, textButton } from './ui';
+import { FONT, INK, pinToScreen, screenPoint, textButton } from './ui';
 import { makeMissionArt, MISSION_BG_TEX, MISSION_PART_TEX } from './missionArt';
 
 /** パネルの位置と大きさ（上の表示と、下のスティックのあいだ） */
@@ -555,7 +555,8 @@ export class MissionGameView {
   private windDoneAt = 0;
 
   private toWind(p: Phaser.Input.Pointer): PathPoint {
-    return { x: p.x - this.windBox.x, y: p.y - this.windBox.y };
+    const q = screenPoint(p);
+    return { x: q.x - this.windBox.x, y: q.y - this.windBox.y };
   }
 
   private buildWind(g: WindPathGame): void {
@@ -783,7 +784,8 @@ export class MissionGameView {
   /** なぞり始め（先に始めた指を、離すまで追う。ほかの指では上書きしない） */
   private startDrag(p: Phaser.Input.Pointer): void {
     if (this.drag) return;
-    this.drag = { id: p.id, x: p.x, y: p.y, t: this.deps.tapTime(p), used: false };
+    const q = screenPoint(p);
+    this.drag = { id: p.id, x: q.x, y: q.y, t: this.deps.tapTime(p), used: false };
   }
 
   /** 指を動かした（土のなぞる・風のスワイプ：線を越えた瞬間に判定する） */
@@ -796,11 +798,12 @@ export class MissionGameView {
     }
     if (!d || d.id !== p.id || d.used || !this.phraseAct || g.kind !== 'shape') return;
     const t = this.deps.tapTime(p);
-    const [from, to, line] = [d.y, p.y, this.clayArea.y];
+    const q = screenPoint(p);
+    const [from, to, line] = [d.y, q.y, this.clayArea.y];
     const crossed = from < line && to >= line;
     const prev = { t: d.t };
-    d.x = p.x;
-    d.y = p.y;
+    d.x = q.x;
+    d.y = q.y;
     d.t = t;
     if (!crossed) return;
     d.used = true;

@@ -101,7 +101,7 @@ import type { Bgm } from './bgm';
 import type { MeetingData } from './MeetingScene';
 import type { ResultData } from './ResultScene';
 import type { RoleData } from './RoleScene';
-import { INK, label, mmss, panel, pinToScreen, textButton } from './ui';
+import { INK, label, mmss, panel, pinToScreen, textButton, fitCamera } from './ui';
 import { makePartTextures, type HeadPart } from './partTextures';
 import type { Element } from './elementTextures';
 import { PateView } from './PateView';
@@ -299,6 +299,7 @@ export class FieldScene extends Phaser.Scene {
   }
 
   create(): void {
+    fitCamera(this); // 内部の細かさに合わせてカメラを拡大する（座標は 360×640 のまま）
     makeTextures(this);
     makeResourceTextures(this);
     makeMissionArt(this); // スイッチの絵（ミッションの中身が分かる道具の形。Codex 作）
@@ -370,8 +371,7 @@ export class FieldScene extends Phaser.Scene {
     this.updateMaterials(false);
     // 採取場は画面より広いので、カメラが自分のパテを追いかける（採取場の端より外は映さない）
     this.camTarget = this.add.zone(PLAYER_START.x, PLAYER_START.y, 1, 1);
-    this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height);
-    this.cameras.main.startFollow(this.camTarget, false, 0.2, 0.2);
+    this.followCamera(1); // 最初は、すぐに自分のパテのところへ
     this.setupFog();
     this.setupHud();
     this.spyUi = this.add.graphics().setDepth(9150);
@@ -1550,7 +1550,7 @@ export class FieldScene extends Phaser.Scene {
     regroup(this.match);
     const { x, y } = toriiSpot();
     this.camTarget.setPosition(x, y);
-    this.cameras.main.centerOn(x, y);
+    this.followCamera(1);
     for (const e of this.pates) {
       this.syncPate(e, 0);
       e.view.setVisible(true).setAlpha(1);
@@ -1618,7 +1618,7 @@ export class FieldScene extends Phaser.Scene {
         gradient.addColorStop(1, rgba(VISION.fogAlpha));
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, width, height);
-      });
+      }, 1); // 霧はなめらかなぼかしだけなので、細かく描かなくてよい（大きすぎる絵にしない）
     }
     // 視界は前だけ：前の扇形と足元の円だけ穴をあけた霧（右向きに描いて、向きに合わせて回す）
     const cone = 'field-vision-cone';
@@ -1655,7 +1655,7 @@ export class FieldScene extends Phaser.Scene {
         };
         sector(VISION.coneHalf - VISION.coneFade, 1);
         for (let k = 1; k <= 4; k++) sector(VISION.coneHalf - VISION.coneFade + (VISION.coneFade * k) / 4, 0.35);
-      });
+      }, 1); // 霧は細かく描かなくてよい
     }
     this.fog = this.add.image(0, 0, cone).setDepth(8800);
     this.updateFog();
@@ -1670,6 +1670,7 @@ export class FieldScene extends Phaser.Scene {
     this.fog.setRotation(round ? 0 : this.player.walker.heading); // 向いている方向に扇を向ける
     this.fog.setPosition(x, y - 20); // パテの体の真ん中あたりを中心に見る
     this.camTarget.setPosition(x, y - 20);
+    this.followCamera(0.2);
   }
 
   /** スパイ用のボタン：スキャンとイタズラ（左、スティックの上） */
@@ -1929,6 +1930,17 @@ export class FieldScene extends Phaser.Scene {
   /** 音を聞く位置：ふだんは自分のパテ、土の精になったら土の精のいる場所 */
   private listenerPos(): { x: number; y: number } {
     return this.spirit ? this.spirit.walker.pos : this.player.walker.pos;
+  }
+
+  /**
+   * カメラが目印（自分のパテ・土の精）を追いかける。lerp：1 ならすぐ、小さいほどゆっくり近づく。
+   * 採取場の端より外は映さない。カメラは左上を基準に拡大しているので、スクロールの位置は自分で計算する
+   */
+  private followCamera(lerp: number): void {
+    const cam = this.cameras.main;
+    const tx = Phaser.Math.Clamp(this.camTarget.x - SCREEN.width / 2, 0, WORLD.width - SCREEN.width);
+    const ty = Phaser.Math.Clamp(this.camTarget.y - SCREEN.height / 2, 0, WORLD.height - SCREEN.height);
+    cam.setScroll(cam.scrollX + (tx - cam.scrollX) * lerp, cam.scrollY + (ty - cam.scrollY) * lerp);
   }
 
   /** 計算した位置と歩行状態を絵に反映する */

@@ -10,7 +10,7 @@ import type { Bgm } from './bgm';
 import type { NetGame } from '../net/netGame';
 import type { NetMessage, ResultWire, SayWire, VoteWire } from '../net/sync';
 import { PateView } from './PateView';
-import { FONT, INK, cssColor, label, panel, textButton } from './ui';
+import { FONT, INK, cssColor, label, panel, textButton, fitCamera } from './ui';
 import { MeetingMap } from './MeetingMap';
 import type { Point } from '../game/movement';
 
@@ -100,6 +100,7 @@ export class MeetingScene extends Phaser.Scene {
   }
 
   create(): void {
+    fitCamera(this); // 内部の細かさに合わせてカメラを拡大する（座標は 360×640 のまま）
     const { match, player } = this.ctx;
     const meeting = match.meeting!;
     this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.85).setOrigin(0);

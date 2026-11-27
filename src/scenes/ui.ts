@@ -1,7 +1,7 @@
 // 画面どうしで使い回す、ボタンや文字の部品
 import Phaser from 'phaser';
-import { COLORS } from '../game/config';
-import { seeded } from './textures';
+import { COLORS, RENDER } from '../game/config';
+import { seeded, setLogicalSize } from './textures';
 
 export const FONT = 'sans-serif';
 export const cssColor = (color: number): string => Phaser.Display.Color.IntegerToColor(color).rgba;
@@ -22,8 +22,11 @@ export function panel(scene: Phaser.Scene, x: number, y: number, w: number, h: n
   const key = `paper-panel-${rw}x${rh}-${color}-${edge}`;
   if (!scene.textures.exists(key)) {
     const g = scene.make.graphics({}, false);
+    const r = RENDER.scale;
+    g.scaleCanvas(r, r); // 細かく描いて、表示の大きさは元のまま（くっきり見えるように）
     drawPanel(g, PANEL_PAD, PANEL_PAD, rw, rh, color, edge);
-    g.generateTexture(key, rw + PANEL_PAD * 2, rh + PANEL_PAD * 2);
+    g.generateTexture(key, (rw + PANEL_PAD * 2) * r, (rh + PANEL_PAD * 2) * r);
+    setLogicalSize(scene, key, rw + PANEL_PAD * 2, rh + PANEL_PAD * 2);
     g.destroy();
   }
   return scene.add.image(x, y, key);
@@ -148,4 +151,17 @@ export function label(scene: Phaser.Scene, x: number, y: number, text: string, s
 export function mmss(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/**
+ * 画面のカメラを、内部の細かさ（RENDER.scale 倍）に合わせる。どの画面でも create の最初に呼ぶ。
+ * 左上を基準に RENDER.scale 倍に拡大するので、座標は SCREEN（360×640）のまま使える
+ */
+export function fitCamera(scene: Phaser.Scene): void {
+  scene.cameras.main.setOrigin(0, 0).setZoom(RENDER.scale);
+}
+
+/** 指の位置を、画面の座標（SCREEN の大きさ）に直す */
+export function screenPoint(p: Phaser.Input.Pointer): { x: number; y: number } {
+  return { x: p.x / RENDER.scale, y: p.y / RENDER.scale };
 }

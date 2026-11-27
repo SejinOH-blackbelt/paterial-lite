@@ -5,7 +5,7 @@ import type { MatchState, OutcomeReason, Pawn } from '../game/match';
 import { PateView } from './PateView';
 import type { GameAudio } from './audio';
 import type { Bgm } from './bgm';
-import { FONT, INK, cssColor, label, mmss, panel, textButton } from './ui';
+import { FONT, INK, cssColor, label, mmss, panel, textButton, fitCamera } from './ui';
 
 export interface ResultData {
   match: MatchState;
@@ -34,6 +34,7 @@ export class ResultScene extends Phaser.Scene {
   }
 
   create(data: ResultData): void {
+    fitCamera(this); // 内部の細かさに合わせてカメラを拡大する（座標は 360×640 のまま）
     const { match, player } = data;
     const o = match.outcome!;
     const spy = match.pawns.find((p) => p.isSpy)!;

@@ -8,7 +8,7 @@ import { makePartTextures } from './partTextures';
 import { PateView } from './PateView';
 import { makeSpyTextures } from './spyTextures';
 import { makeTextures } from './textures';
-import { FONT, INK, cssColor, label, panel, textButton } from './ui';
+import { FONT, INK, cssColor, label, panel, textButton, fitCamera } from './ui';
 
 const HOW_TO = [
   '和の国に、バイキングのスパイが1体まぎれこんだ！',
@@ -40,6 +40,7 @@ export class TitleScene extends Phaser.Scene {
   }
 
   create(): void {
+    fitCamera(this); // 内部の細かさに合わせてカメラを拡大する（座標は 360×640 のまま）
     makeTextures(this);
     makePartTextures(this);
     makeSpyTextures(this);

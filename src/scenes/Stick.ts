@@ -2,7 +2,7 @@
 // パソコンでは矢印キーと WASD でも動かせる（2つ押せば斜め。8方向）。
 import Phaser from 'phaser';
 import { COLORS, STICK } from '../game/config';
-import { pinToScreen } from './ui';
+import { pinToScreen, screenPoint } from './ui';
 
 export class Stick {
   private readonly base: Phaser.GameObjects.Graphics;
@@ -38,7 +38,8 @@ export class Stick {
   /** 指が置かれた。スティックのそばならつかんで true（ほかの操作には使わない） */
   down(p: Phaser.Input.Pointer): boolean {
     if (this.pointer !== null || !this.base.visible) return false;
-    if (Math.hypot(p.x - STICK.x, p.y - STICK.y) > STICK.grabRadius) return false;
+    const q = screenPoint(p);
+    if (Math.hypot(q.x - STICK.x, q.y - STICK.y) > STICK.grabRadius) return false;
     this.pointer = p.id;
     this.move(p);
     return true;
@@ -47,8 +48,9 @@ export class Stick {
   /** 指をすべらせた */
   move(p: Phaser.Input.Pointer): void {
     if (p.id !== this.pointer) return;
-    let dx = (p.x - STICK.x) / STICK.radius;
-    let dy = (p.y - STICK.y) / STICK.radius;
+    const q = screenPoint(p);
+    let dx = (q.x - STICK.x) / STICK.radius;
+    let dy = (q.y - STICK.y) / STICK.radius;
     const len = Math.hypot(dx, dy);
     if (len > 1) {
       dx /= len;

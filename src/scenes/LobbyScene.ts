@@ -12,7 +12,7 @@ import { makePartTextures, type HeadPart } from './partTextures';
 import { PateView } from './PateView';
 import { makeSpyTextures } from './spyTextures';
 import { makeTextures } from './textures';
-import { INK, cssColor, label, panel, textButton } from './ui';
+import { INK, cssColor, label, panel, textButton, fitCamera } from './ui';
 
 export interface LobbyData {
   /** URL の ?room= から来たときの合言葉（そのまま入る） */
@@ -48,6 +48,7 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   create(data: LobbyData): void {
+    fitCamera(this); // 内部の細かさに合わせてカメラを拡大する（座標は 360×640 のまま）
     makeTextures(this);
     makePartTextures(this);
     makeSpyTextures(this);

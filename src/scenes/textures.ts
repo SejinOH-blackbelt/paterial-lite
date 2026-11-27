@@ -1,6 +1,6 @@
 // パテの部品と採取場の地面を、絵本の挿絵として描く。
 import type Phaser from 'phaser';
-import { COLORS, FACILITIES, FIELD, LANDMARKS, RESOURCE_POINTS } from '../game/config';
+import { COLORS, FACILITIES, FIELD, LANDMARKS, RESOURCE_POINTS, RENDER } from '../game/config';
 
 export const TEX = {
   pateBody: 'pate-body',
@@ -22,14 +22,33 @@ export function drawPart(
   width: number,
   height: number,
   draw: (ctx: CanvasRenderingContext2D) => void,
+  res: number = RENDER.scale,
 ): void {
-  const texture = scene.textures.createCanvas(key, width, height);
+  // 絵は RENDER.scale 倍の細かさで描き、表示するときの大きさは width × height のままにする（くっきり見えるように）
+  const texture = scene.textures.createCanvas(key, Math.ceil(width * res), Math.ceil(height * res));
   if (!texture) throw new Error(`部品テクスチャを作れませんでした: ${key}`);
   const ctx = texture.context;
+  ctx.scale(res, res);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   draw(ctx);
   texture.refresh();
+  setLogicalSize(scene, key, width, height);
+}
+
+/**
+ * 細かく描いた絵（実際は大きい）を、表示では width × height の大きさとして扱う。
+ * 絵の枠（フレーム）の大きさを width × height にしたうえで、貼る範囲（UV）だけを絵の全体にする。
+ * こうすると、表示は元の大きさのまま、中身は細かい絵がそのまま縮めて貼られる（くっきり見える）
+ */
+export function setLogicalSize(scene: Phaser.Scene, key: string, width: number, height: number): void {
+  const frame = scene.textures.get(key).get();
+  if (frame.cutWidth === width && frame.cutHeight === height) return;
+  frame.setSize(width, height);
+  frame.u0 = 0;
+  frame.v0 = 0;
+  frame.u1 = 1;
+  frame.v1 = 1;
 }
 
 function clayColor(color: number): string {
@@ -185,17 +204,22 @@ export function makeTextures(scene: Phaser.Scene): void {
   if (scene.textures.exists(TEX.pateBody)) return;
   makePateTextures(scene);
   const g = scene.add.graphics();
+  const r = RENDER.scale;
 
-  // --- 足元の影 ---
+  // --- 足元の影 ---（細かく描いて、表示の大きさは元のまま）
+  g.scaleCanvas(r, r);
   g.fillStyle(0x000000, 0.22);
   g.fillEllipse(18, 5, 36, 10);
-  g.generateTexture(TEX.shadow, 36, 10);
+  g.generateTexture(TEX.shadow, 36 * r, 10 * r);
+  setLogicalSize(scene, TEX.shadow, 36, 10);
   g.clear();
 
   // --- タッチした場所の目印 ---
+  g.scaleCanvas(r, r);
   g.lineStyle(3, COLORS.ink, 0.6);
   g.strokeEllipse(14, 7, 24, 11);
-  g.generateTexture(TEX.marker, 28, 14);
+  g.generateTexture(TEX.marker, 28 * r, 14 * r);
+  setLogicalSize(scene, TEX.marker, 28, 14);
   g.destroy();
 }
 

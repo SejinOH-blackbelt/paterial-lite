@@ -7,6 +7,12 @@ export const SCREEN = {
   height: 640,
 } as const;
 
+/**
+ * 内部で描く細かさ（倍率）。画面の座標は SCREEN（360×640）のまま使い、実際の描画は2倍の 720×1280 で行う
+ * （スマホの画面に広げたときに、絵や文字がドットのように粗くならないように）
+ */
+export const RENDER = { scale: 2 } as const;
+
 /** 色（ドット絵の色数を絞るための基本パレット） */
 export const COLORS = {
   uiPaper: 0xffefd3, // 画面のカードに使う生成りの紙
