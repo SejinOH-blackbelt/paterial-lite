@@ -276,7 +276,7 @@ export class FieldScene extends Phaser.Scene {
   /** この試合の人数（ひとりで遊ぶとき。友達と遊ぶときは席の数） */
   private pawnCount: number = PLAYERS.default;
   /** 王様（プレイヤー）が選んだ宝物庫と出口（ひとりのときだけ） */
-  private treasureIds: { v: string; e: [string, string] } | null = null;
+  private treasureIds: { v: string; e: [string, string]; s?: string } | null = null;
   /** 会議で知られて、採取場から片づけた置物 */
   private clearedStatues = new Set<Harvester>();
   /** アラートの演出（赤い点滅・サイレン）をもう出したか */
@@ -392,7 +392,9 @@ export class FieldScene extends Phaser.Scene {
     }
 
     // 施設（窯・製造所・鋳造所・土の祠）と、その名前の札
+    // （土の祠は、王様が選んだ場所に、試合を作ったあとで置く）
     for (const f of FACILITIES) {
+      if (f.id === 'shrine') continue;
       this.add.image(f.x, f.y, FACILITY_TEX[f.id]).setOrigin(0.5, 1).setDepth(f.y);
       label(this, f.x, f.y - FACILITY_SIZE.h - 8, f.name, 12).setDepth(8700);
     }
@@ -2061,6 +2063,10 @@ export class FieldScene extends Phaser.Scene {
     );
     this.field = this.match.field;
     this.spy = this.match.spy;
+    // 土の祠：王様が選んだ場所（王様 Bot と、選ばなかったときは、いつもの場所）
+    const shrine = this.match.treasure.shrine;
+    this.add.image(shrine.x, shrine.y, FACILITY_TEX.shrine).setOrigin(0.5, 1).setDepth(shrine.y);
+    label(this, shrine.x, shrine.y - FACILITY_SIZE.h - 8, '土の祠', 12).setDepth(8700);
     // 王様パテ（プレイヤーが市民側なら自分）は王冠をかぶる
     const king = chooseKing(this.match.pawns);
     king.part = KING_PART;
@@ -2154,7 +2160,7 @@ export class FieldScene extends Phaser.Scene {
     });
     // まだ入っていないスイッチの場所（エレメントの色のピン）と、自分の場所（金のピン）
     const mapW = 130;
-    const map = new MeetingMap(this, x - mapW / 2, 296, mapW, false, []);
+    const map = new MeetingMap(this, x - mapW / 2, 296, mapW, false, [], this.match.treasure.shrine);
     add(map.container);
     for (const m of missions) {
       if (missionComplete(m)) continue;

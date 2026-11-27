@@ -61,9 +61,11 @@ export function facilityCenter(f: Facility): Point {
 }
 
 /** いる場所のそばの施設（真ん中から useRadius 以内でいちばん近いもの。正面でなくてもよい。なければ null） */
-export function facilityNear(p: Point): Facility | null {
+export function facilityNear(p: Point, shrineAt?: Point): Facility | null {
   // 真ん中からの近さ（どちら側でも）と、正面の立つ位置からの近さ（前と同じ広さ）の、どちらかに入ればよい
-  const near = FACILITIES.map((f) => ({
+  // 土の祠は、王様が選んだ場所（shrineAt）にあるものとして測る
+  const list = FACILITIES.map((f) => (f.id === 'shrine' && shrineAt ? ({ ...f, x: shrineAt.x, y: shrineAt.y } as Facility) : f));
+  const near = list.map((f) => ({
     f,
     d: Math.min(dist(facilityCenter(f), p) / FACILITY.useRadius, dist(facilityStand(f), p) / FACILITY.frontRadius),
   }))

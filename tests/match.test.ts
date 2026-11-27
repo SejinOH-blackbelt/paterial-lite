@@ -128,7 +128,7 @@ describe('呼び出し', () => {
     expect(canEmergency(m, pawns[0])).toBe(false);
     pawns[0].h.walker.pos = { x: torii.x, y: torii.y + 20 };
     expect(canEmergency(m, pawns[0])).toBe(false);
-    pawns[0].h.walker.pos = emergencySpot();
+    pawns[0].h.walker.pos = emergencySpot(m);
     expect(canEmergency(m, pawns[0])).toBe(true);
     startMeeting(m, pawns[0], 'emergency', null, 5);
     m.phase = 'play';

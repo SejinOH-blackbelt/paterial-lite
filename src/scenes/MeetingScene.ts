@@ -115,7 +115,7 @@ export class MeetingScene extends Phaser.Scene {
       .setStrokeStyle(2, COLORS.uiWood, 0.5);
     // 輪の真ん中に、採取場の小さな地図（タップで大きく。見かけた場所の印が出る）
     const statues = [...match.known].filter((h) => !h.departed).map((h) => h.walker.pos);
-    this.miniMap = new MeetingMap(this, CENTER.x - MINI_W / 2, 258, MINI_W, false, statues);
+    this.miniMap = new MeetingMap(this, CENTER.x - MINI_W / 2, 258, MINI_W, false, statues, this.ctx.match.treasure.shrine);
     this.add.zone(CENTER.x, 258 + this.miniMap.height / 2, MINI_W + 10, this.miniMap.height + 10)
       .setInteractive()
       .on('pointerdown', () => this.openMap(null));
@@ -391,7 +391,7 @@ export class MeetingScene extends Phaser.Scene {
     // 上の見出し（残り時間のバー）は隠さない。地図を見ているあいだも時間は進むため
     const cover = this.add.rectangle(0, 110, SCREEN.width, SCREEN.height - 110, COLORS.ink, 0.92).setOrigin(0).setInteractive();
     const W = 262;
-    const map = new MeetingMap(this, CENTER.x - W / 2, 150, W, true, this.statues);
+    const map = new MeetingMap(this, CENTER.x - W / 2, 150, W, true, this.statues, this.ctx.match.treasure.shrine);
     for (const m of this.marks) map.addMark(m.at, m.color, m.who);
     const tname = pending ? (pending.target === this.ctx.player ? 'きみ' : pawnName(pending.target)) : '';
     const title = label(this, CENTER.x, 118, pending ? `${tname}を どこで見た？` : '見かけた場所の地図', 18, cssColor(COLORS.uiHoney));

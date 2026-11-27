@@ -31,7 +31,7 @@ export interface RoleData {
   /** 友達と遊ぶとき：席ごとの名前（Bot の席と、入れていない人は ''）。ひとりのときは、自分の名前を Field が読みこむ */
   names?: string[];
   /** 王様（プレイヤー）が選んだ宝物庫と出口の場所（ひとりで遊ぶときだけ。なければ王様 Bot の決め方） */
-  treasure?: { v: string; e: [string, string] };
+  treasure?: { v: string; e: [string, string]; s?: string };
 }
 
 export class RoleScene extends Phaser.Scene {
@@ -173,13 +173,13 @@ export class RoleScene extends Phaser.Scene {
    * 友達と遊ぶとき：自分の選択を伝えて、全員がそろうのを待つ。
    * 親機は、人の席が全員「選び終えた」を送ってきたら（または待ちすぎたら）「始める」をみんなに送る
    */
-  private waitForEveryone(spyIndex: number, net: NetGame, element: ElementId, royal = false, treasure?: { v: string; e: [string, string] }): void {
+  private waitForEveryone(spyIndex: number, net: NetGame, element: ElementId, royal = false, treasure?: { v: string; e: [string, string]; s?: string }): void {
     const x = SCREEN.width / 2;
     this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.6).setOrigin(0).setInteractive();
     label(this, x, 300, royal ? '王様は 王家の体（エレメントなし）' : `${ELEMENT_NAMES[element]}の体にやどった！`, 20, cssColor(COLORS.uiHoney));
     label(this, x, 340, 'みんなが選ぶのを 待っています…', 14);
     let started = false;
-    const start = (elements: ElementId[], plan: BoardPlan, names: string[], tr?: { v: string; e: [string, string] }) => {
+    const start = (elements: ElementId[], plan: BoardPlan, names: string[], tr?: { v: string; e: [string, string]; s?: string }) => {
       if (started) return;
       started = true;
       this.scene.start('Field', { spyIndex, net, element: elements[net.mySeat] ?? element, elements, plan, names, treasure: tr } satisfies RoleData);
@@ -260,7 +260,7 @@ export class RoleScene extends Phaser.Scene {
   /** 親機：選び終えた席の名前 */
   private readyNames = new Map<number, string>();
   /** 王様の席の子機から届いた、宝物庫と出口の場所 */
-  private readyTreasure = new Map<number, { v: string; e: [string, string] }>();
+  private readyTreasure = new Map<number, { v: string; e: [string, string]; s?: string }>();
   /** 子機：届いた「始める」の知らせ（選んでいるあいだに届いたら、選び終えたらすぐ始める） */
   private goReceived: GoWire | null = null;
   private onReady: () => void = () => {};

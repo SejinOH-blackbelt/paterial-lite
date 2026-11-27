@@ -324,7 +324,7 @@ export interface ReadyWire {
   /** その人が入れた名前（入れていなければ ''） */
   n?: string;
   /** 王様の席の人だけ：選んだ宝物庫と出口の場所（id） */
-  tr?: { v: string; e: [string, string] };
+  tr?: { v: string; e: [string, string]; s?: string };
 }
 
 /** 親機 → みんな：全員が選び終えたので、いっせいに試合を始める（席ごとのエレメントと、共同ミッションの配り方） */
@@ -335,7 +335,7 @@ export interface GoWire {
   /** 席ごとの名前（Bot の席と、入れていない人は ''） */
   names?: string[];
   /** 王様（人）が選んだ宝物庫と出口の場所（id）。王様が Bot のときや選ばなかったときは無し（王様 Bot の決め方） */
-  tr?: { v: string; e: [string, string] };
+  tr?: { v: string; e: [string, string]; s?: string };
 }
 
 /** 子機 → 親機：呼び出しボタンを押した（置物のそばなら呼び出し、土の祠なら緊急の呼び出し。親機が確かめる） */

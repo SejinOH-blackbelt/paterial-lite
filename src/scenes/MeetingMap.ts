@@ -28,6 +28,8 @@ export class MeetingMap {
     width: number,
     private readonly big: boolean,
     statues: Point[],
+    /** 土の祠の場所（王様が選んだ場所。省くといつもの場所、null なら描かない） */
+    shrineAt?: Point | null,
   ) {
     this.scale = width / WORLD.width;
     this.width = width;
@@ -47,7 +49,9 @@ export class MeetingMap {
     for (const l of LANDMARKS) {
       parts.push(scene.add.image(l.x * s, l.y * s, LANDMARK_TEX[l.id]).setOrigin(0.5, 1).setScale(icon * 0.7));
     }
-    for (const f of FACILITIES) {
+    for (const f0 of FACILITIES) {
+      if (f0.id === 'shrine' && shrineAt === null) continue;
+      const f = f0.id === 'shrine' && shrineAt ? { ...f0, x: shrineAt.x, y: shrineAt.y } : f0;
       parts.push(scene.add.image(f.x * s, f.y * s, FACILITY_TEX[f.id]).setOrigin(0.5, 1).setScale(icon * 0.7));
       if (big) parts.push(label(scene, f.x * s, f.y * s + 9, f.name, 10));
     }

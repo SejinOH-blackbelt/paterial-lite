@@ -289,14 +289,15 @@ export function reportableBody(m: MatchState, p: Pawn): Harvester | null {
 }
 
 /** 緊急の呼び出しをする場所：土の祠の鈴の前 */
-export function emergencySpot(): Point {
-  return facilityStand(facilityById('shrine'));
+export function emergencySpot(m: MatchState): Point {
+  const f = facilityById('shrine');
+  return facilityStand({ ...f, x: m.treasure.shrine.x, y: m.treasure.shrine.y } as typeof f);
 }
 
 /** p が緊急の呼び出しをできるか（土の祠の鈴の前・回数が残っている） */
 export function canEmergency(m: MatchState, p: Pawn): boolean {
   // 土の祠のそば（正面でなくてもよい）なら鳴らせる
-  return !p.h.frozen && m.phase === 'play' && p.emergencyLeft > 0 && facilityNear(p.h.walker.pos)?.id === 'shrine';
+  return !p.h.frozen && m.phase === 'play' && p.emergencyLeft > 0 && facilityNear(p.h.walker.pos, m.treasure.shrine)?.id === 'shrine';
 }
 
 /** 会議を始める。置物は全部、みんなに知られる */
