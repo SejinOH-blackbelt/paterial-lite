@@ -211,6 +211,10 @@ export function currentStrikeChance(m: MatchState): number {
  */
 export function rollStrike(m: MatchState, now: number, rng?: Rng): boolean {
   if (!rng || m.outcome) return false;
+  // 王様が旅に出た・動ける市民がスパイの数まで減った、ならそちらで決着（checkOutcome が決める）。判定はしない
+  if (m.pawns.some((p) => p.isKing && p.h.departed)) return false;
+  const active = m.pawns.filter((p) => !p.isSpy && !p.h.frozen).length;
+  if (active <= m.pawns.filter((p) => p.isSpy).length) return false;
   if (rng() >= currentStrikeChance(m)) return false;
   m.outcome = { winner: 'spy', reason: 'strike', time: now };
   m.phase = 'over';

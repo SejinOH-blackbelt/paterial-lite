@@ -854,7 +854,9 @@ export class FieldScene extends Phaser.Scene {
           this.onSpyEvent(ev, heard);
           this.shareSpyEvent(ev);
         }
+        if (this.overSent) return; // スパイBot が盗んで、ストライキなどで試合が決まった
       } else if (e.bot && this.botChases(e, heard, dt)) {
+        if (this.overSent) return; // Bot の呼び止めで試合が決まった
         // 盗まれたと気づいた市民 Bot：宝を持ったパテを追いかけて、呼び止める（採取やミッションはやめる）
       } else if (e.bot) {
         for (const ev of updateBot(e.bot, this.field, this.board, this.all, ahead, this.rng)) this.onBotTap(e, ev, heard);
@@ -1160,7 +1162,9 @@ export class FieldScene extends Phaser.Scene {
         if (host || fromSeat !== 0) return;
         this.match.outcome = { winner: msg.winner, reason: msg.reason as OutcomeReason, time: heard };
         this.match.phase = 'over';
-        this.endMatch();
+        if (typeof msg.sup === 'number') this.match.support = msg.sup;
+        if (msg.reason === 'strike') this.showStrike();
+        else this.endMatch();
         return;
       }
     }
@@ -1433,7 +1437,7 @@ export class FieldScene extends Phaser.Scene {
     if (this.overSent) return true;
     if (!this.isSim() || !checkOutcome(this.match, heard)) return false;
     this.overSent = true;
-    this.netSend('all', { k: 'over', winner: this.match.outcome!.winner, reason: this.match.outcome!.reason } satisfies OverWire);
+    this.netSend('all', { k: 'over', winner: this.match.outcome!.winner, reason: this.match.outcome!.reason, sup: this.match.support } satisfies OverWire);
     if (this.match.outcome!.reason === 'strike') this.showStrike();
     else this.endMatch();
     return true;
@@ -1940,9 +1944,9 @@ export class FieldScene extends Phaser.Scene {
       if (e.pawn.isSpy || e.h.frozen) continue;
       e.view.setStrike(true);
     }
-    this.drawHud(this.audio.heardTime()); // 支持度 0 を見せる
+    this.drawHud(this.audio.heardTime()); // 支持度を見せる
     this.hud(label(this, SCREEN.width / 2, 150, 'ストライキ！', 34, '#e03131').setDepth(9600));
-    this.hud(label(this, SCREEN.width / 2, 190, '王様の支持度が 0 に…', 16).setDepth(9600));
+    this.hud(label(this, SCREEN.width / 2, 190, `市民たちの不満が あふれた…（支持度 ${Math.max(0, this.match.support)}）`, 14).setDepth(9600));
     this.audio.zukoo();
     this.bgm.stop();
     this.time.delayedCall(SUPPORT.strikeShowSeconds * 1000, () => this.endMatch());

@@ -393,3 +393,21 @@ describe('Codex の点検から（アラート前の追いかけ・王様と人�
     expect(checkOutcome(m, 6)).toMatchObject({ reason: 'kingLeft' });
   });
 });
+
+describe('ストライキの判定とほかの決着（Codex の点検から）', () => {
+  it('王様を呼び止めて旅に出たら、ストライキの判定が当たる乱数でも「王様が旅に出た」で決まる', () => {
+    const { m, pawns } = setup();
+    pawns[2].isKing = true;
+    m.treasure.alarmAt = 0;
+    stopAndSearch(m, pawns[1], pawns[2], 5, () => 0);
+    expect(checkOutcome(m, 6)).toMatchObject({ reason: 'kingLeft' });
+  });
+
+  it('乱数を渡さない（友達のスマホ）ときは、ストライキの判定をしない', () => {
+    const { m, pawns } = setup();
+    m.treasure.alarmAt = 0;
+    m.support = 5;
+    stopAndSearch(m, pawns[1], pawns[3], 5);
+    expect(m.outcome).toBeNull();
+  });
+});

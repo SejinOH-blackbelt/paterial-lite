@@ -289,6 +289,8 @@ export interface OverWire {
   k: 'over';
   winner: 'citizens' | 'spy';
   reason: string;
+  /** 決着したときの王様の支持度（ストライキの場面に出すため） */
+  sup?: number;
 }
 
 /** 親機 → みんな：試合を始める（席・スパイ・乱数のたね） */

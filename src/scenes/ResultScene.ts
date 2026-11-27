@@ -24,7 +24,7 @@ const REASON: Record<OutcomeReason, string> = {
   escaped: 'スパイが 宝を盗んで 出口から逃げた…',
   scanned: 'スパイが 名物を全部スキャンした',
   frozen: '動ける市民が スパイと同じ数まで 減った…',
-  strike: '王様の支持度が 0 に… 市民が ストライキ！',
+  strike: '市民たちの不満が あふれて… ストライキ！',
   kingLeft: '王様が ぬれぎぬに怒って 旅に出てしまった…',
   timeout: '時間切れ… 国の仕事が 終わらなかった',
 };

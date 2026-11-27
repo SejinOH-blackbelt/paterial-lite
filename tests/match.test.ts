@@ -359,3 +359,29 @@ describe('失敗のたびのストライキ判定（使い手の決定 Nov 28）
     expect(m.outcome).toMatchObject({ reason: 'caught' });
   });
 });
+
+describe('置物の会議とストライキの判定（Codex の点検から）', () => {
+  it('置物が見つかった会議で全員スキップでも、失敗なので判定する', () => {
+    const { m, pawns } = setup();
+    pawns[3].h.frozen = true;
+    m.support = 50; // 支持度100だと確率は0%なので、下げておく
+    startMeeting(m, pawns[0], 'report', pawns[3].h, 5);
+    for (const p of pawns) castVote(m, p, null);
+    let calls = 0;
+    resolveMeeting(m, 10, () => {
+      calls++;
+      return 0;
+    });
+    expect(calls).toBe(1);
+    expect(m.outcome).toMatchObject({ reason: 'strike' });
+  });
+
+  it('置物の会議でスパイを当てたら、判定しない', () => {
+    const { m, pawns, spy } = setup();
+    pawns[3].h.frozen = true;
+    startMeeting(m, pawns[0], 'report', pawns[3].h, 5);
+    for (const p of pawns) castVote(m, p, spy);
+    resolveMeeting(m, 10, () => 0);
+    expect(m.outcome).toMatchObject({ reason: 'caught' });
+  });
+});
