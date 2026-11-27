@@ -982,6 +982,8 @@ export class FieldScene extends Phaser.Scene {
           // 子機のスパイのスキャンの結果を、親機のスパイのようすに写す（勝ち負けの判定に使う）
           if (fromSeat !== this.pates.indexOf(this.spyEntity) || msg.kind === 'prank') return;
           if (msg.kind === 'scan' && msg.lm && !this.spy.scanned.has(msg.lm)) {
+            // 次のスキャンまでの待ち（70秒）を親機でも確かめる（スマホごとの時計の差の分だけ、少しゆるめる）
+            if (heard < this.spy.lastScanAt + SPY.scanCooldown - NET.clockSlack) return;
             this.spy.scanned.add(msg.lm);
             this.spy.fragments++;
             this.spy.lastScanAt = heard;

@@ -160,6 +160,13 @@ export const HUD_BUTTONS = {
 
 /** 友達と遊ぶとき */
 export const NET = {
+  /** 親機が子機の知らせの時刻を確かめるとき、スマホごとの時計の差としてゆるめる秒数 */
+  clockSlack: 3,
+  /**
+   * ゲームのルールの版。友達と遊ぶとき、親機と子機でちがったら、読みこみ直してもらう
+   * （ルールや通信の中身を変えたら、1 つ上げる）
+   */
+  version: 2,
   /** ようすを送る間隔（秒）。短いほど動きがなめらかだが、通信が増える */
   sendInterval: 0.1,
   /** 親機が、みんながエレメントを選び終えるのを待つ最長の秒数（抜けた人がいても始められるように） */
@@ -278,7 +285,10 @@ export const AFFINITY = {
   heatNotes: { good: 2, plain: 3, weak: 4 },
   /** 網で魚すくい：1回すくったときに、魚群の数に足される数（得意だと多くすくえる） */
   netBonus: { good: 1, plain: 0, weak: 0 },
-  /** 土・風・雷：1回分（ひとまとまり）の操作の数。ずれてもよい秒数は heatWindow と同じ */
+  /** 風の道：道の太さ（ピクセル）と、なぞる回数 */
+  windWidth: { good: 62, plain: 48, weak: 38 },
+  windTraces: { good: 2, plain: 2, weak: 3 },
+  /** 土・雷：1回分（ひとまとまり）の操作の数。ずれてもよい秒数は heatWindow と同じ */
   phraseLength: { good: 3, plain: 4, weak: 5 },
   heatWindow: { good: 0.18, plain: 0.14, weak: 0.1 },
 } as const;
@@ -559,7 +569,12 @@ export const MISSION_GAME = {
    * startBeats：最初の魚群が網に来るまでの拍。travelBeats：画面の右はしから網まで泳ぐ拍。schoolSizes：魚群の大きさの出やすさ
    */
   net: { fishNeeded: 10, intervalBeats: 2, startBeats: 3, travelBeats: 2, schoolSizes: [1, 1, 1, 2, 2, 3] },
-  phrase: { phrases: { shape: 2, wind: 3, dark: 2 }, leadBeats: 2, gapBeats: 2, lateGrace: 0.15, darkLanes: 4 },
+  /**
+   * 風の道（風）：くねくねした風の通り道を、左はしから右はしのゴールまで、はみ出さずになぞる。
+   * box：道を置く範囲（画面のパネルの中）。bends：曲がり角の数。ahead：一度に先へ進める長さ（近道で飛ばせないように）
+   */
+  windPath: { box: { w: 280, h: 200 }, bends: 4, ahead: 70 },
+  phrase: { phrases: { shape: 2, dark: 2 }, leadBeats: 2, gapBeats: 2, lateGrace: 0.15, darkLanes: 4 },
 } as const;
 
 /** Botが施設でミッションをするときの時間と、まちがえる確率 */

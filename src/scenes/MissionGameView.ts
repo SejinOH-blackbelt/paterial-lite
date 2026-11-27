@@ -4,6 +4,11 @@
 import Phaser from 'phaser';
 import { COLORS, MISSION_GAME, SCREEN } from '../game/config';
 import {
+  beginWindTrace,
+  endWindTrace,
+  moveWindTrace,
+  type PathPoint,
+  type WindPathGame,
   scoopNet,
   visibleSchools,
   type NetGame,
@@ -67,7 +72,7 @@ const ART = 160;
 
 /** 水・土・風・雷のミニゲームか */
 function isPhrase(g: MissionGame): g is PhraseGame {
-  return g.kind === 'shape' || g.kind === 'wind' || g.kind === 'dark';
+  return g.kind === 'shape' || g.kind === 'dark';
 }
 
 export interface MissionViewDeps {
@@ -126,6 +131,7 @@ export class MissionGameView {
     else if (game.kind === 'jigsaw') this.buildJigsaw(game);
     else if (game.kind === 'heat') this.buildHeat(game);
     else if (game.kind === 'net') this.buildNet(game);
+    else if (game.kind === 'wind') this.buildWind(game);
     else if (isPhrase(game)) this.buildPhrase(game);
     else this.buildPrayer(game);
     pinToScreen(this.root);
@@ -140,6 +146,10 @@ export class MissionGameView {
   /** 指を離した（土のお祈りで、手を合わせるのをやめたとき） */
   pointerUp(p: Phaser.Input.Pointer): void {
     if (this.drag?.id === p.id) this.drag = null;
+    if (this.game.kind === 'wind' && p.id === this.windPointer) {
+      this.windPointer = null;
+      endWindTrace(this.game);
+    }
     if (p.id !== this.holdPointer) return;
     this.holdPointer = null;
     if (this.game.kind === 'prayer') this.step(releaseHands(this.game, this.deps.tapTime(p)));
@@ -529,9 +539,85 @@ export class MissionGameView {
     else if (g.kind === 'jigsaw') this.drawJigsaw(g);
     else if (g.kind === 'heat') this.drawHeat(g, now);
     else if (g.kind === 'net') this.drawNet(g, now);
+    else if (g.kind === 'wind') this.drawWind(g, now);
     else if (isPhrase(g)) this.drawPhrase(g, now);
     else this.drawPrayer(g, now);
     for (let i = this.ringIdx; i < this.rings.length; i++) this.rings[i].setVisible(false);
+  }
+
+  // ---------- 風の道（風） ----------
+
+  /** 道を置く範囲の左上（画面の位置） */
+  private readonly windBox = { x: CX - MISSION_GAME.windPath.box.w / 2, y: PANEL.y + 120 };
+  private windPointer: number | null = null;
+  private windRotor: Phaser.GameObjects.Image | null = null;
+  private windStart: Phaser.GameObjects.Text | null = null;
+  private windDoneAt = 0;
+
+  private toWind(p: Phaser.Input.Pointer): PathPoint {
+    return { x: p.x - this.windBox.x, y: p.y - this.windBox.y };
+  }
+
+  private buildWind(g: WindPathGame): void {
+    const bg = this.scene.add.image(PANEL.x, PANEL.y, MISSION_BG_TEX('wind')).setOrigin(0).setDisplaySize(PANEL.w, PANEL.h);
+    const band = this.scene.add.rectangle(PANEL.x + 6, PANEL.y + 6, PANEL.w - 12, 70, COLORS.scanPaper, 0.88).setOrigin(0);
+    this.root.addAt(bg, 1);
+    this.root.addAt(band, 2);
+    this.root.bringToTop(this.art);
+    // ゴールの風車（なぞり終えると回る）
+    this.windRotor = this.scene.add.image(0, 0, MISSION_PART_TEX.wind.rotor[0]).setScale(0.9);
+    this.windStart = this.scene.add.text(0, 0, 'ここ\nから', { fontFamily: FONT, fontSize: '11px', fontStyle: 'bold', color: INK, align: 'center' }).setOrigin(0.5);
+    this.root.add([this.windRotor, this.windStart]);
+    // 道の範囲を押したら、なぞり始める（「ここから」のそばだけ）
+    const { w, h } = MISSION_GAME.windPath.box;
+    const z = this.scene.add.rectangle(this.windBox.x + w / 2, this.windBox.y + h / 2, w + 40, h + 40, COLORS.ink, 0).setInteractive();
+    z.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (this.windPointer !== null) return;
+      if (beginWindTrace(g, this.toWind(p)) === 'ok') this.windPointer = p.id;
+    });
+    this.root.add(z);
+    this.hitAreas.push(z);
+  }
+
+  private moveWind(g: WindPathGame, p: Phaser.Input.Pointer): void {
+    if (p.id !== this.windPointer) return;
+    const s = moveWindTrace(g, this.toWind(p));
+    if (s === 'ignored') return;
+    this.windPointer = null;
+    if (s === 'ok' || s === 'done') {
+      this.deps.audio.piron();
+      this.windDoneAt = this.deps.now() + 0.8;
+    }
+    this.step(s);
+  }
+
+  private drawWind(g: WindPathGame, now: number): void {
+    this.title.setText(`「ここから」に指を置いて、風の道を はみ出さずに 風車まで なぞろう（${g.done}/${g.tracesNeeded}）`);
+    const a = this.art;
+    const { x: ox, y: oy } = this.windBox;
+    const pts = g.path.map((q) => ({ x: ox + q.x, y: oy + q.y }));
+    const strokePath = (width: number, color: number, alpha: number, upTo = Infinity) => {
+      a.lineStyle(width, color, alpha).beginPath();
+      a.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length && g.lengths[i - 1] <= upTo; i++) a.lineTo(pts[i].x, pts[i].y);
+      a.strokePath();
+    };
+    // 道（墨のふち・空色の帯）と、なぞった所（白く光る）
+    strokePath(g.width + 6, COLORS.ink, 0.55);
+    strokePath(g.width, 0xdff3f7, 0.85);
+    if (g.tracing) strokePath(g.width * 0.6, 0xffffff, 1, g.progress);
+    // 道の真ん中の目安（点線のかわりに細い線）
+    strokePath(2, COLORS.partFlag, 0.6);
+    // 「ここから」の丸
+    const s0 = pts[0];
+    a.fillStyle(COLORS.ink).fillCircle(s0.x, s0.y, g.width / 2 + 4);
+    a.fillStyle(g.tracing ? COLORS.uiMoss : COLORS.uiHoney).fillCircle(s0.x, s0.y, g.width / 2);
+    this.windStart?.setPosition(s0.x, s0.y).setVisible(!g.tracing);
+    if (this.windStart) this.root.bringToTop(this.windStart);
+    // ゴールの風車（なぞり終えた直後は速く回る）
+    const end = pts[pts.length - 1];
+    const fast = now < this.windDoneAt;
+    this.windRotor?.setPosition(end.x, end.y).setTexture(MISSION_PART_TEX.wind.rotor[Math.floor(now * (fast ? 16 : 3)) % 4]);
   }
 
   // ---------- 網で魚すくい（水） ----------
@@ -633,7 +719,6 @@ export class MissionGameView {
 
   private readonly malletAt = { x: CX - 92, y: PANEL.y + 282 };
   private readonly clayArea = { x: CX + 54, y: PANEL.y + 250, w: 150, h: 190 };
-  private readonly windLineX = CX;
   /** 雷の灯籠の位置 */
   private laneX(i: number): number {
     const n = MISSION_GAME.phrase.darkLanes;
@@ -644,13 +729,12 @@ export class MissionGameView {
   /** その操作をする場所（予告の輪を出す場所） */
   private cueAt(g: PhraseGame, action: PhraseAction, lane?: number): { x: number; y: number } {
     if (g.kind === 'dark') return { x: this.laneX(lane ?? 0), y: this.laneY - 18 };
-    if (g.kind === 'wind') return { x: this.windLineX, y: PANEL.y + 250 };
     return action === 'tap' ? this.malletAt : { x: this.clayArea.x, y: this.clayArea.y };
   }
 
   private buildPhrase(g: PhraseGame): void {
     makeMissionArt(this.scene);
-    const element = g.kind === 'shape' ? 'earth' : g.kind === 'wind' ? 'wind' : 'thunder';
+    const element = g.kind === 'shape' ? 'earth' : 'thunder';
     // 背景（Codex の浮世絵風）。上の説明の字が読めるように、上に和紙の帯をしく
     const bg = this.scene.add.image(PANEL.x, PANEL.y, MISSION_BG_TEX(element)).setOrigin(0).setDisplaySize(PANEL.w, PANEL.h);
     const band = this.scene.add.rectangle(PANEL.x + 6, PANEL.y + 6, PANEL.w - 12, 70, COLORS.scanPaper, 0.88).setOrigin(0);
@@ -660,7 +744,7 @@ export class MissionGameView {
       const s = actPhrase(g, t, action, lane);
       if (s === 'ok' || s === 'done') {
         this.phraseFlash = this.deps.now() + 0.15;
-        this.deps.audio.tone(g.kind === 'dark' ? 880 : g.kind === 'wind' ? 440 : 523.25);
+        this.deps.audio.tone(g.kind === 'dark' ? 880 : 523.25);
       }
       this.step(s);
     };
@@ -676,14 +760,6 @@ export class MissionGameView {
       this.phraseLabels.push(tapLabel, swipeLabel);
       // なぞる：粘土の上から下へ、真ん中の線を越える
       const z = this.scene.add.rectangle(this.clayArea.x, this.clayArea.y, this.clayArea.w, this.clayArea.h, COLORS.ink, 0).setInteractive();
-      z.on('pointerdown', (p: Phaser.Input.Pointer) => this.startDrag(p));
-      this.root.add(z);
-      this.hitAreas.push(z);
-    } else if (g.kind === 'wind') {
-      this.phraseParts.push(this.scene.add.image(CX + 92, PANEL.y + 250, MISSION_PART_TEX.wind.rotor[0]).setScale(1.7));
-      this.phraseParts.push(this.scene.add.image(CX - 60, PANEL.y + 250, MISSION_PART_TEX.wind.stream).setScale(1.4));
-      // スワイプ：左から右へ、真ん中の線を越える
-      const z = this.scene.add.rectangle(CX, PANEL.y + 250, PANEL.w - 20, 220, COLORS.ink, 0).setInteractive();
       z.on('pointerdown', (p: Phaser.Input.Pointer) => this.startDrag(p));
       this.root.add(z);
       this.hitAreas.push(z);
@@ -714,9 +790,13 @@ export class MissionGameView {
   pointerMove(p: Phaser.Input.Pointer): void {
     const d = this.drag;
     const g = this.game;
-    if (!d || d.id !== p.id || d.used || !this.phraseAct || (g.kind !== 'shape' && g.kind !== 'wind')) return;
+    if (g.kind === 'wind') {
+      this.moveWind(g, p);
+      return;
+    }
+    if (!d || d.id !== p.id || d.used || !this.phraseAct || g.kind !== 'shape') return;
     const t = this.deps.tapTime(p);
-    const [from, to, line] = g.kind === 'wind' ? [d.x, p.x, this.windLineX] : [d.y, p.y, this.clayArea.y];
+    const [from, to, line] = [d.y, p.y, this.clayArea.y];
     const crossed = from < line && to >= line;
     const prev = { t: d.t };
     d.x = p.x;
@@ -738,7 +818,6 @@ export class MissionGameView {
     const total = g.phrases.length;
     const hint: Record<PhraseGame['kind'], string> = {
       shape: '輪が重なったら、黄色は「叩く」をタップ、\n青は粘土を上から下へ なぞる',
-      wind: '輪が重なったら、線を越えるように 右へスワイプ',
       dark: '稲光の印が出た灯籠を、輪が重なった瞬間に タップ',
     };
     this.title.setText(`${hint[g.kind]}（${g.done}/${total}）`);
@@ -749,7 +828,6 @@ export class MissionGameView {
     if (g.kind === 'shape') {
       a.lineStyle(3, COLORS.ink, 0.5).lineBetween(this.clayArea.x - 60, this.clayArea.y, this.clayArea.x + 60, this.clayArea.y);
     }
-    if (g.kind === 'wind') a.lineStyle(4, COLORS.ink, 0.5).lineBetween(this.windLineX, PANEL.y + 160, this.windLineX, PANEL.y + 340);
     // これからの操作：外から輪が縮んでくる（雷は、その灯籠の上に稲光の印も出す）
     cues.forEach((c, i) => {
       if (i < g.pos) return;
@@ -762,7 +840,7 @@ export class MissionGameView {
       this.ring(at.x, at.y, r, c.action === 'swipe' ? 'release' : 'tap', false, fade);
       if (c.action === 'swipe') {
         // スワイプの向きの矢印
-        const [dx, dy] = g.kind === 'wind' ? [1, 0] : [0, 1];
+        const [dx, dy] = [0, 1];
         a.lineStyle(5, col, fade).lineBetween(at.x - dx * 22, at.y - dy * 22, at.x + dx * 22, at.y + dy * 22);
         a.fillStyle(col, fade).fillTriangle(at.x + dx * 30, at.y + dy * 30, at.x + dx * 16 - dy * 9, at.y + dy * 16 - dx * 9, at.x + dx * 16 + dy * 9, at.y + dy * 16 + dx * 9);
       }
@@ -772,11 +850,6 @@ export class MissionGameView {
       wheel.setRotation(now * 3);
       const k = Math.min(3, Math.floor(((g.done + g.pos / Math.max(1, cues.length)) / total) * 4));
       clay.setTexture(MISSION_PART_TEX.earth.clay[k]).setScale(1.6 * bounce);
-    } else if (g.kind === 'wind') {
-      const [rotor, stream] = this.phraseParts;
-      const speed = 2 + g.done * 3 + g.pos;
-      rotor.setTexture(MISSION_PART_TEX.wind.rotor[Math.floor(now * speed) % 4]).setScale(1.7 * bounce);
-      stream.setAlpha(0.4 + 0.6 * Math.min(1, (g.done + g.pos / cues.length) / total));
     } else {
       // 灯った灯籠（このまとまりで、もう押せたもの）
       const lit = new Set(cues.slice(0, g.pos).map((c) => c.lane));

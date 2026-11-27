@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { MISSION_GAME } from '../src/game/config';
 import {
+  beginWindTrace,
+  createWindPathGame,
+  endWindTrace,
+  moveWindTrace,
   schoolSize,
   createNetGame,
   schoolTime,
@@ -286,30 +290,30 @@ describe('土・風・雷（拍に合わせた操作のまとまり）', () => {
   };
 
   it('拍ごとに操作する。まとまりを決まった数できたら完了', () => {
-    const g = createPhraseGame('wind', 0, 0, createRng(1), 3, 0.14);
+    const g = createPhraseGame('shape', 0, 0, createRng(1), 3, 0.14);
     expect(currentCues(g).map((c) => c.beat)).toEqual([0, 1, 2]);
     expect(play(g, 0.05)).toBe('ok');
     expect(g.done).toBe(1);
-    expect(play(g)).toBe('ok');
     expect(play(g)).toBe('done');
     expect(g.result).toBe('success');
   });
 
   it('ずれたタップは miss。まとまりを最初からやり直す（できたまとまりは減らない）', () => {
-    const g = createPhraseGame('wind', 0, 0, createRng(1), 3, 0.14);
+    const g = createPhraseGame('shape', 0, 0, createRng(1), 3, 0.14);
     play(g);
-    actPhrase(g, cueTime(g, 0), 'swipe');
-    expect(actPhrase(g, cueTime(g, 1) + 0.3, 'swipe')).toBe('miss');
+    const act = (i: number) => currentCues(g)[i].action;
+    actPhrase(g, cueTime(g, 0), act(0));
+    expect(actPhrase(g, cueTime(g, 1) + 0.3, act(1))).toBe('miss');
     expect(g.pos).toBe(0);
     expect(g.done).toBe(1);
   });
 
   it('途中で止まると miss（遅れて届く操作を少し待ってから）。最初を押しそびれたときは、まちがいにしない', () => {
-    const g = createPhraseGame('wind', 0, 0, createRng(1), 3, 0.14);
+    const g = createPhraseGame('shape', 0, 0, createRng(1), 3, 0.14);
     const first = cueTime(g, 0);
     expect(updatePhrase(g, first + 0.3)).toBe('ignored');
     expect(cueTime(g, 0)).toBeGreaterThan(first);
-    expect(actPhrase(g, first + 0.02, 'swipe')).toBe('ok'); // 遅れて届いた、前の拍に合ったタップ
+    expect(actPhrase(g, first + 0.02, currentCues(g)[0].action)).toBe('ok'); // 遅れて届いた、前の拍に合ったタップ
     expect(updatePhrase(g, cueTime(g, 1) + 0.14 + 0.05)).toBe('ignored'); // まだ待つ
     expect(updatePhrase(g, cueTime(g, 1) + 0.14 + MISSION_GAME.phrase.lateGrace + 0.01)).toBe('miss');
   });
@@ -318,21 +322,12 @@ describe('土・風・雷（拍に合わせた操作のまとまり）', () => {
     for (let seed = 1; seed < 20; seed++) {
       const g = createPhraseGame('shape', 0, 0, createRng(seed), 4, 0.14);
       const acts = currentCues(g).map((c) => c.action);
-      expect(acts).toContain('swipe');
+      expect(acts).toContain('tap');
       expect(acts).toContain('swipe');
     }
     const g = createPhraseGame('shape', 0, 0, createRng(2), 4, 0.14);
     const c = currentCues(g)[0];
     expect(actPhrase(g, cueTime(g, 0), c.action === 'tap' ? 'swipe' : 'tap')).toBe('miss');
-  });
-
-  it('風：拍ごとにスワイプ。まとまりは3つ', () => {
-    const g = createPhraseGame('wind', 0, 0, createRng(1), 2, 0.14);
-    expect(g.phrases).toHaveLength(MISSION_GAME.phrase.phrases.wind);
-    expect(currentCues(g).every((c) => c.action === 'swipe')).toBe(true);
-    play(g);
-    play(g);
-    expect(play(g)).toBe('done');
   });
 
   it('雷：間のあいた拍で、予告された灯籠だけ。ちがう灯籠は miss。同じ灯籠は続かない', () => {
@@ -348,21 +343,22 @@ describe('土・風・雷（拍に合わせた操作のまとまり）', () => {
   });
 
   it('得意ほど操作が少なく、苦手ほど多い（ずれてもよい幅もせまい）', () => {
-    const good = createMissionGame('wind', 0, 0, createRng(1), 'good');
-    const weak = createMissionGame('wind', 0, 0, createRng(1), 'weak');
-    if (good.kind !== 'wind' || weak.kind !== 'wind') throw new Error('kind');
+    const good = createMissionGame('shape', 0, 0, createRng(1), 'good');
+    const weak = createMissionGame('shape', 0, 0, createRng(1), 'weak');
+    if (good.kind !== 'shape' || weak.kind !== 'shape') throw new Error('kind');
     expect(good.phrases[0].length).toBeLessThan(weak.phrases[0].length);
     expect(good.window).toBeGreaterThan(weak.window);
   });
 
   it('失敗が決まったあとに届いた前の試みの操作は、やり直しの拍を動かさない', () => {
-    const g = createPhraseGame('wind', 0, 0, createRng(1), 3, 0.14);
+    const g = createPhraseGame('shape', 0, 0, createRng(1), 3, 0.14);
     const t0 = cueTime(g, 0);
-    actPhrase(g, t0, 'swipe');
+    const a1 = currentCues(g)[1].action;
+    actPhrase(g, t0, currentCues(g)[0].action);
     const t1 = cueTime(g, 1);
     expect(updatePhrase(g, t1 + 0.14 + MISSION_GAME.phrase.lateGrace + 0.01)).toBe('miss');
     const restart = g.startBeat;
-    expect(actPhrase(g, t1, 'swipe')).toBe('ignored'); // 遅れて届いた、前の試みのタップ
+    expect(actPhrase(g, t1, a1)).toBe('ignored'); // 遅れて届いた、前の試みのタップ
     expect(g.startBeat).toBe(restart);
   });
 });
@@ -427,5 +423,80 @@ describe('網で魚すくい（水）', () => {
     const after = visibleSchools(g, schoolTime(g, 0) - 0.5);
     const s0 = (xs: typeof before) => xs.find((x) => x.k === 0)!;
     expect(s0(after).until).toBeLessThan(s0(before).until);
+  });
+});
+
+describe('風の道（風）', () => {
+  /** 道の点の並びを、少しずつたどる（道のまん中を通る） */
+  const trace = (g: ReturnType<typeof createWindPathGame>, off = 0) => {
+    let last = beginWindTrace(g, g.path[0]);
+    for (let i = 1; i < g.path.length && g.tracing; i++) last = moveWindTrace(g, { x: g.path[i].x, y: g.path[i].y + off });
+    return last;
+  };
+
+  it('「ここから」のそばでしか、なぞり始められない', () => {
+    const g = createWindPathGame(createRng(1), 48, 2);
+    expect(beginWindTrace(g, { x: g.path[0].x + 200, y: g.path[0].y })).toBe('ignored');
+    expect(beginWindTrace(g, g.path[0])).toBe('ok');
+  });
+
+  it('道のまん中をゴールまでなぞると1回できる。決まった回数で完了（次の回は新しい道）', () => {
+    const g = createWindPathGame(createRng(2), 48, 2);
+    const first = g.path;
+    expect(trace(g)).toBe('ok');
+    expect(g.done).toBe(1);
+    expect(g.path).not.toBe(first);
+    expect(trace(g)).toBe('done');
+    expect(g.result).toBe('success');
+  });
+
+  it('道からはみ出すと miss（その回は最初から）', () => {
+    const g = createWindPathGame(createRng(3), 40, 2);
+    beginWindTrace(g, g.path[0]);
+    moveWindTrace(g, g.path[3]);
+    expect(moveWindTrace(g, { x: g.path[4].x, y: g.path[4].y + 60 })).toBe('miss');
+    expect(g.tracing).toBe(false);
+    expect(g.done).toBe(0);
+  });
+
+  it('道の先へ、まっすぐ飛んで近道はできない', () => {
+    const g = createWindPathGame(createRng(4), 48, 2);
+    beginWindTrace(g, g.path[0]);
+    const goal = g.path[g.path.length - 1];
+    expect(moveWindTrace(g, goal)).toBe('miss');
+    expect(g.done).toBe(0);
+  });
+
+  it('指を離したら、まちがいにせず最初から', () => {
+    const g = createWindPathGame(createRng(5), 48, 2);
+    beginWindTrace(g, g.path[0]);
+    moveWindTrace(g, g.path[5]);
+    endWindTrace(g);
+    expect(g.tracing).toBe(false);
+    expect(g.progress).toBe(0);
+  });
+
+  it('道は左から右へ、くねくね曲がる。得意ほど道が太い', () => {
+    const g = createWindPathGame(createRng(6), 48, 2);
+    const ys = g.path.map((p) => p.y);
+    expect(g.path[g.path.length - 1].x).toBeGreaterThan(g.path[0].x + 150);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(60);
+    const good = createMissionGame('wind', 0, 0, createRng(1), 'good');
+    const weak = createMissionGame('wind', 0, 0, createRng(1), 'weak');
+    if (good.kind !== 'wind' || weak.kind !== 'wind') throw new Error('kind');
+    expect(good.width).toBeGreaterThan(weak.width);
+  });
+
+  it('指の動きのあいだで道の外を横切ったら miss（曲がり角を横切る近道はできない）', () => {
+    const g = createWindPathGame(createRng(7), 38, 2);
+    beginWindTrace(g, g.path[0]);
+    for (let i = 1; i <= 8; i++) moveWindTrace(g, g.path[i]);
+    // 道の上の2点（少し先）へ、まっすぐ飛ぶ。あいだが道から外れていれば miss
+    const a = g.path[8];
+    const target = g.path.slice(9, 40).find((q) => {
+      const mid = { x: (a.x + q.x) / 2, y: (a.y + q.y) / 2 };
+      return g.path.every((r) => Math.hypot(r.x - mid.x, r.y - mid.y) > 25);
+    });
+    if (target) expect(moveWindTrace(g, target)).toBe('miss');
   });
 });

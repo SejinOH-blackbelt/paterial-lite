@@ -240,6 +240,8 @@ export interface OverWire {
 /** 親機 → みんな：試合を始める（席・スパイ・乱数のたね） */
 export interface StartWire {
   k: 'match';
+  /** ゲームのルールの版（NET.version）。ちがう版のスマホどうしでは遊べない */
+  v: number;
   /** 席ごとの人（中継サーバーの番号。Bot の席は 0） */
   seats: number[];
   spy: number;

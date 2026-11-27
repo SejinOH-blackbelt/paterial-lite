@@ -513,18 +513,163 @@ export function visibleSchools(g: NetGame, now: number): { k: number; size: numb
   return out;
 }
 
-// ---------- 土・風・雷（拍に合わせた操作のまとまり） ----------
+// ---------- 風の道（風） ----------
+
+/** 点（風の道の中の位置。左上が 0,0。大きさは MISSION_GAME.windPath.box） */
+export interface PathPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * くねくねした風の通り道を、左はしの「ここから」から右はしのゴールまで、指ではみ出さずになぞる。
+ * はみ出したら 'miss'（その回は最初から）。指を離したら、まちがいにせず最初から。決まった回数なぞれたら完了。
+ * 一度に先へ進めるのは少しだけ（道の折れ曲がりを、まっすぐ横切って近道できないように）。
+ */
+export interface WindPathGame {
+  kind: 'wind';
+  /** いまの回の道（点の並び）と、はじめからの道のりの長さ */
+  path: PathPoint[];
+  lengths: number[];
+  /** 道の太さ */
+  width: number;
+  tracesNeeded: number;
+  done: number;
+  /** なぞっている最中か、どこまで進んだか（道のりの長さ） */
+  tracing: boolean;
+  progress: number;
+  /** 最後に確かめた指の位置（前の位置から今の位置までを、途中もふくめて確かめる） */
+  last: PathPoint | null;
+  rng: Rng;
+  result: 'playing' | 'success';
+}
+
+/** くねくねした道を作る：左はしから右はしへ、上下に曲がる点を通る、なめらかな線 */
+export function makeWindPath(rng: Rng, width: number): PathPoint[] {
+  const { box, bends } = MISSION_GAME.windPath;
+  const m = width / 2 + 6;
+  const ctrl: PathPoint[] = [{ x: m, y: m + rng() * (box.h - 2 * m) }];
+  for (let i = 1; i <= bends; i++) {
+    // 上と下を交互に通る（くねくね）
+    const up = i % 2 === 1;
+    const y = up ? m + rng() * (box.h * 0.35) : box.h - m - rng() * (box.h * 0.35);
+    ctrl.push({ x: m + ((box.w - 2 * m) * i) / (bends + 1), y });
+  }
+  ctrl.push({ x: box.w - m, y: m + rng() * (box.h - 2 * m) });
+  // なめらかにつなぐ（カトマル・ロムの曲線）
+  const out: PathPoint[] = [];
+  for (let i = 0; i < ctrl.length - 1; i++) {
+    const p0 = ctrl[Math.max(0, i - 1)];
+    const p1 = ctrl[i];
+    const p2 = ctrl[i + 1];
+    const p3 = ctrl[Math.min(ctrl.length - 1, i + 2)];
+    for (let k = 0; k < 12; k++) {
+      const t = k / 12;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const f = (a: number, b: number, c: number, d: number) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      out.push({ x: f(p0.x, p1.x, p2.x, p3.x), y: f(p0.y, p1.y, p2.y, p3.y) });
+    }
+  }
+  out.push(ctrl[ctrl.length - 1]);
+  return out;
+}
+
+function pathLengths(path: PathPoint[]): number[] {
+  const out = [0];
+  for (let i = 1; i < path.length; i++) out.push(out[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y));
+  return out;
+}
+
+export function createWindPathGame(rng: Rng, width: number = AFFINITY.windWidth.plain, traces: number = AFFINITY.windTraces.plain): WindPathGame {
+  const path = makeWindPath(rng, width);
+  return { kind: 'wind', path, lengths: pathLengths(path), width, tracesNeeded: traces, done: 0, tracing: false, progress: 0, last: null, rng, result: 'playing' };
+}
+
+/** 道の長さ */
+export function windPathLength(g: WindPathGame): number {
+  return g.lengths[g.lengths.length - 1];
+}
+
+/** 点 p から道までの近さを、道のりの [from, to] の範囲で調べる（いちばん近い所の距離と、その道のり） */
+function nearestOnPath(g: WindPathGame, p: PathPoint, from: number, to: number): { dist: number; at: number } {
+  let best = { dist: Infinity, at: from };
+  for (let i = 1; i < g.path.length; i++) {
+    if (g.lengths[i] < from || g.lengths[i - 1] > to) continue;
+    const a = g.path[i - 1];
+    const b = g.path[i];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+    const d = Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
+    if (d < best.dist) best = { dist: d, at: g.lengths[i - 1] + Math.sqrt(len2) * t };
+  }
+  return best;
+}
+
+/** 指を置いた：左はしの「ここから」のそばなら、なぞり始める */
+export function beginWindTrace(g: WindPathGame, p: PathPoint): Step {
+  if (g.result !== 'playing') return 'ignored';
+  // 画面の「ここから」の丸（半径は道の太さの半分＋4）の中だけ
+  if (Math.hypot(p.x - g.path[0].x, p.y - g.path[0].y) > g.width / 2 + 4) return 'ignored';
+  g.tracing = true;
+  g.progress = 0;
+  g.last = { ...p };
+  return 'ok';
+}
+
+/** 指を動かした：道からはみ出したら 'miss'。ゴールまで来たら1回できた（決まった回数で 'done'） */
+export function moveWindTrace(g: WindPathGame, p: PathPoint): Step {
+  if (g.result !== 'playing' || !g.tracing) return 'ignored';
+  // 前の位置から今の位置までを、細かく区切って途中も確かめる（指の動きが速くて、あいだで道の外を横切っても見のがさない）。
+  // それぞれ、いまの所から少し先までの範囲だけで道を探す（折れ曲がりを横切る近道はできない）
+  const from = g.last ?? p;
+  const steps = Math.max(1, Math.ceil(Math.hypot(p.x - from.x, p.y - from.y) / 3));
+  for (let i = 1; i <= steps; i++) {
+    const q = { x: from.x + ((p.x - from.x) * i) / steps, y: from.y + ((p.y - from.y) * i) / steps };
+    const near = nearestOnPath(g, q, Math.max(0, g.progress - 30), g.progress + MISSION_GAME.windPath.ahead);
+    if (near.dist > g.width / 2) {
+      g.tracing = false;
+      g.progress = 0;
+      g.last = null;
+      return 'miss';
+    }
+    g.progress = Math.max(g.progress, near.at);
+  }
+  g.last = { ...p };
+  if (g.progress < windPathLength(g) - g.width / 3) return 'ignored';
+  g.tracing = false;
+  g.progress = 0;
+  g.done++;
+  if (g.done >= g.tracesNeeded) {
+    g.result = 'success';
+    return 'done';
+  }
+  // 次の回は、新しい道
+  g.path = makeWindPath(g.rng, g.width);
+  g.lengths = pathLengths(g.path);
+  return 'ok';
+}
+
+/** 指を離した：まちがいにはせず、その回を最初から */
+export function endWindTrace(g: WindPathGame): void {
+  g.tracing = false;
+  g.progress = 0;
+  g.last = null;
+}
+
+// ---------- 土・雷（拍に合わせた操作のまとまり） ----------
 
 /**
  * 4つのミニゲームに共通のしくみ：予告された拍で、決まった操作（タップ・スワイプ）をする。
  * いくつかの操作で「ひとまとまり」。まとまりを決まった数できたら完了。
  *   土・成形（shape）：拍ごとに「叩く（タップ）」と「なぞる（下へスワイプ）」がまざる
- *   風・気流チャージ（wind）：拍ごとに、基準の線を越えるように右へスワイプ
  *   雷・暗闇を照らす（dark）：間のあいた、予告された拍だけ、予告された灯籠をタップ（位置も判定）
  * ずれる・ちがう操作・ちがう灯籠は 'miss'（そのまとまりを少し先の拍からやり直す。できたまとまりは減らない）。
  * まとまりの最初を押しそびれたときは、まちがいにせず決め直す（やさしく）。途中で止まったら 'miss'。
  */
-export type PhraseKind = 'shape' | 'wind' | 'dark';
+export type PhraseKind = 'shape' | 'dark';
 export type PhraseAction = 'tap' | 'swipe';
 
 export interface Cue {
@@ -554,7 +699,6 @@ export interface PhraseGame {
 
 function makeCues(kind: PhraseKind, length: number, rng: Rng): Cue[] {
   const cues: Cue[] = [];
-  if (kind === 'wind') for (let i = 0; i < length; i++) cues.push({ beat: i, action: 'swipe' });
   if (kind === 'shape') {
     // 叩くとなぞるを、どちらも1回以上まぜる
     const acts: PhraseAction[] = Array.from({ length }, () => (rng() < 0.5 ? 'tap' : 'swipe'));
@@ -646,7 +790,7 @@ export function updatePhrase(g: PhraseGame, now: number): Step {
   return 'ignored';
 }
 
-export type MissionGame = HeatGame | NetGame | PhraseGame | DrumGame | PegGame | JigsawGame | PrayerGame;
+export type MissionGame = HeatGame | NetGame | WindPathGame | PhraseGame | DrumGame | PegGame | JigsawGame | PrayerGame;
 export type MissionGameKind = MissionGame['kind'];
 
 /**
@@ -668,8 +812,9 @@ export function createMissionGame(kind: MissionGameKind, now: number, origin: nu
       return createHeatGame(now, origin, rng, AFFINITY.heatNotes[a], AFFINITY.heatWindow[a]);
     case 'net':
       return createNetGame(now, origin, rng, AFFINITY.netBonus[a], AFFINITY.heatWindow[a]);
-    case 'shape':
     case 'wind':
+      return createWindPathGame(rng, AFFINITY.windWidth[a], AFFINITY.windTraces[a]);
+    case 'shape':
     case 'dark':
       return createPhraseGame(kind, now, origin, rng, AFFINITY.phraseLength[a], AFFINITY.heatWindow[a]);
   }

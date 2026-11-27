@@ -1,7 +1,7 @@
 // 友達と遊ぶ：ルームを作る・合言葉で入る・QR で招待する。集まったら、ルームを作った人（親機）が「はじめる」
 import Phaser from 'phaser';
 import QRCode from 'qrcode';
-import { BOT_PROFILES, COLORS, PLAYER_PART, SCREEN } from '../game/config';
+import { BOT_PROFILES, COLORS, NET, PLAYER_PART, SCREEN } from '../game/config';
 import { inviteUrl, RelayClient, type JoinError } from '../net/relay';
 import type { NetGame } from '../net/netGame';
 import { assignSeats, type StartWire } from '../net/sync';
@@ -155,7 +155,15 @@ export class LobbyScene extends Phaser.Scene {
     relay.onStarted = () => this.onStarted();
     relay.listen((from, data) => {
       const m = data as StartWire;
-      if (m?.k === 'match' && from === relay.host && this.relay === relay) this.goRole(m);
+      if (m?.k === 'match' && from === relay.host && this.relay === relay) {
+        // ゲームの版がちがう（片方が古いページを開いたまま など）なら、遊べないので読みこみ直してもらう
+        if (m.v !== NET.version) {
+          relay.close();
+          this.showMenu('ゲームが新しくなっています。\nページを読みこみ直してから、もう一度入ってね');
+          return;
+        }
+        this.goRole(m);
+      }
     });
     try {
       await relay.open();
@@ -250,7 +258,7 @@ export class LobbyScene extends Phaser.Scene {
     const seats = assignSeats(relay.host, relay.members.map((m) => m.id), MAX_MEMBERS);
     const seed = Math.floor(Math.random() * 2 ** 31);
     const spy = chooseSpy(MAX_MEMBERS, createRng(seed ^ 0x5eed));
-    const msg: StartWire = { k: 'match', seats, spy, seed };
+    const msg: StartWire = { k: 'match', v: NET.version, seats, spy, seed };
     relay.send('all', msg);
     this.goRole(msg);
   }
