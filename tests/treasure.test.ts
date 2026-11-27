@@ -75,6 +75,14 @@ describe('王様 Bot の選び方', () => {
     }
   });
 
+  it('出口は2つとも、宝物庫から遠いものを選ぶ（いまの候補には、そういう組み合わせがある）', () => {
+    for (let seed = 0; seed < 200; seed++) {
+      const plan = botTreasurePlan(createRng(seed));
+      const far = (e: { x: number; y: number }) => Math.hypot(e.x - plan.vault.x, e.y - plan.vault.y) >= TREASURE.botExitMinDistance;
+      expect(far(plan.exits[0]) && far(plan.exits[1])).toBe(true);
+    }
+  });
+
   it('同じ乱数のたねなら、同じ場所を選ぶ（友達と遊ぶとき、みんなでそろう）', () => {
     expect(planToIds(botTreasurePlan(createRng(42)))).toEqual(planToIds(botTreasurePlan(createRng(42))));
   });

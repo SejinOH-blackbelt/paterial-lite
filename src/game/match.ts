@@ -106,6 +106,10 @@ export interface MatchState {
   treasure: TreasureState;
   /** 呼び止めて外したパテが、次に呼び止められるようになる時刻 */
   stopReady: Map<Pawn, number>;
+  /** 宝が盗まれたことに気づいている市民（アラートが鳴った・扉があいた宝物庫を見た） */
+  knowsStolen: Set<Pawn>;
+  /** 宝を持ったパテを追いかけている市民 Bot と、最後にその姿を見た時刻 */
+  chasers: Map<Pawn, number>;
 }
 
 /**
@@ -143,6 +147,8 @@ export function createMatch(pawns: Pawn[], now: number, rng: Rng, board: Board, 
     // 省いたときに試合の乱数（rng）を使わないのは、ほかの決まり（塗りムラの位置など）の並びを変えないため
     treasure: createTreasure(treasure ?? botTreasurePlan(createRng(1))),
     stopReady: new Map(),
+    knowsStolen: new Set(),
+    chasers: new Map(),
   };
 }
 

@@ -418,6 +418,11 @@ export const SPY_BOT = {
   scanChance: 0.45,
   /** 近くにパテがいて、目撃者がいないとき、1秒あたりにイタズラする確率 */
   prankChancePerSecond: 0.15,
+  /** 残り時間がこれより少なくなったら、スキャンの数にかかわらず宝を盗みに行く（秒） */
+  heistTimeLeft: 110,
+  /** 名物をこの数スキャンしたら、ひと休みのたびに heistChance の確率で盗みに行く（全部スキャンしたら必ず行く） */
+  heistAfterScans: 2,
+  heistChance: 0.35,
 } as const;
 
 /** 見える範囲（自分のパテのまわりだけ見える） */
@@ -747,9 +752,15 @@ export const TREASURE = {
    */
   alarmChance: [0.9, 0.6, 0.3, 0],
   /** 宝を持っているあいだの足の速さ（ふつうの何倍か。足がおそいのが手がかりになる） */
-  carrySpeed: 0.7,
+  carrySpeed: 0.55,
+  /** 王様 Bot は、宝物庫から出口2つがどちらもこれ以上離れた組み合わせを選ぶ（近すぎると、盗んですぐ逃げ切れてしまうため。なければどれでも） */
+  botExitMinDistance: 420,
   /** 「呼び止める」ができる、相手までの距離 */
   stopRadius: 48,
   /** 呼び止めて外れたら、次に呼び止められるまでの秒数（同じ人が何度も続けて呼び止められないように） */
   stopCooldown: 20,
+  /** 盗まれたと気づいた市民 Bot が、宝を持ったパテを見かけたとき、1秒あたりに追いかけ始める確率 */
+  botChaseChancePerSecond: 0.5,
+  /** 追いかけている Bot が、見失ってからあきらめるまでの秒数 */
+  botChaseMemory: 4,
 } as const;

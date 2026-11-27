@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { ZONES, BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { ZONES, PART_NAMES, BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   createHarvester,
@@ -50,7 +50,8 @@ import {
 } from '../game/missions';
 import { buildBoard, missionComplete, missionIdsOf, missionType, planBoard, spotsOn, type Board, type BoardPlan, type MissionInst } from '../game/board';
 import type { Step } from '../game/missionGames';
-import { createWalker, isWalking, steerWalker, stepWalker, type Walker } from '../game/movement';
+import { createWalker, isWalking, setTarget, steerWalker, stepWalker, type Walker } from '../game/movement';
+import { botChaseTarget, botGuardSpot, canSteal, carrierPawn, steal, stopAndSearch, stopTarget, stopWait, updateAwareness, walkSpeed } from '../game/heist';
 import { createRng, type Rng } from '../game/random';
 import {
   canScan,
@@ -84,6 +85,11 @@ import {
   fieldToWire,
   pawnToWire,
   spyToWire,
+  applyTreasureWire,
+  treasureToWire,
+  type HeistWire,
+  type StealRequest,
+  type StopRequest,
   type CallRequest,
   type MeetWire,
   type MissionWire,
@@ -536,7 +542,7 @@ export class FieldScene extends Phaser.Scene {
       // 土の精は、ふつうより少し速く動ける
       if (this.spirit && this.driving) steerWalker(this.spirit.walker, dx, dy, dt, PATE.speed * 1.3);
     } else {
-      driveHarvester(this.player, dx, dy, dt); // 押していないときも呼ぶ（動かしているかの印を消すため）
+      driveHarvester(this.player, dx, dy, dt, walkSpeed(this.match, this.playerPawn)); // 押していないときも呼ぶ（動かしているかの印を消すため）。宝を持つと足がおそい
       if (this.driving) this.closeSpyChoice();
     }
   }
@@ -560,8 +566,15 @@ export class FieldScene extends Phaser.Scene {
       return;
     }
     if (this.spyChoice) return;
+    // スパイ：宝物庫のそばなら、宝を盗む
+    if (canSteal(this.match, this.playerPawn)) {
+      this.playerSteals(now);
+      return;
+    }
     const r = missionChance(this.player, this.board, this.all, this.isPlayerSpy);
     if (!r) {
+      // そばにパテがいれば「呼び止める」（持ち物を調べる。宝を持っていれば市民の勝ち、ちがえばぬれぎぬ）
+      if (this.playerStops(now)) return;
       if (!this.player.task) this.popText('そばにスイッチがない', '#2b1d14', 14, 0);
       return;
     }
@@ -641,8 +654,12 @@ export class FieldScene extends Phaser.Scene {
     this.harvestButton.setLit(me.session !== null || (!this.driving && harvestChance(me, this.field, this.all)?.state === 'ready'));
     const m = missionChance(me, this.board, this.all, this.isPlayerSpy);
     const shrine = shrineChance(me, this.audio.heardTime());
-    this.actionButton.setLit(!this.driving && !this.spyChoice && (m?.state === 'ready' || !!m?.canFake || shrine?.state === 'ready'));
-    this.actionButton.setLabel(shrine ? '乗りうつる' : m ? 'スイッチ' : 'アクション');
+    const now = this.audio.heardTime();
+    const stealable = canSteal(this.match, this.playerPawn);
+    // 呼び止めは、スイッチも祠もないときだけ（そばのパテを調べる）
+    const stoppable = !shrine && !stealable && !m && stopTarget(this.match, this.playerPawn, now) !== null;
+    this.actionButton.setLit(!this.driving && !this.spyChoice && (m?.state === 'ready' || !!m?.canFake || shrine?.state === 'ready' || stealable || stoppable));
+    this.actionButton.setLabel(shrine ? '乗りうつる' : stealable ? '盗む' : m ? 'スイッチ' : stoppable ? '呼び止める' : 'アクション');
     const body = reportableBody(this.match, this.playerPawn);
     const emergency = canEmergency(this.match, this.playerPawn);
     this.callButton.setVisible(playing && !inGame);
@@ -779,7 +796,7 @@ export class FieldScene extends Phaser.Scene {
     for (const e of this.pates) {
       // 友達と遊ぶとき：ほかのスマホのパテ（親機から見た友達、子機から見た自分以外）は、届いたようすを写すだけ
       if (e.h !== this.player && (this.netMirrors(e))) continue;
-      stepWalker(e.h.walker, dt);
+      stepWalker(e.h.walker, dt, walkSpeed(this.match, e.pawn)); // 宝を持っているパテは足がおそい
       // 最初の判定は、まだ音の予約が間に合う周から選ぶ（scheduleTicks と同じ締め切り）
       const lost = updateHarvester(e.h, this.field, this.all, this.audio.now + SCHEDULE_AHEAD, this.origin);
       if (lost && e.h === this.player) this.popText(lost === 'taken' ? 'ほかのパテが先に採取を始めた' : 'からっぽになっていた', '#2b1d14', 14, 0);
@@ -796,12 +813,19 @@ export class FieldScene extends Phaser.Scene {
       }
       if (e.bot && e === this.spyEntity && this.spyMind) {
         // スパイBot：市民のふりをして採取しながら、すきを見てスキャンやイタズラをする
-        const r = updateSpyBot(e.bot, this.spyMind, this.spy, this.field, this.board, this.all, ahead, this.rng);
+        const r = updateSpyBot(e.bot, this.spyMind, this.spy, this.field, this.board, this.all, ahead, this.rng, {
+          treasure: this.match.treasure,
+          carrying: carrierPawn(this.match) === e.pawn,
+          timeLeft: timeLeft(this.match, heard),
+          steal: () => this.doSteal(e.pawn, heard),
+        });
         for (const ev of r.taps) this.onBotTap(e, ev, heard);
         for (const ev of r.spyEvents) {
           this.onSpyEvent(ev, heard);
           this.shareSpyEvent(ev);
         }
+      } else if (e.bot && this.botChases(e, heard, dt)) {
+        // 盗まれたと気づいた市民 Bot：宝を持ったパテを追いかけて、呼び止める（採取やミッションはやめる）
       } else if (e.bot) {
         for (const ev of updateBot(e.bot, this.field, this.board, this.all, ahead, this.rng)) this.onBotTap(e, ev, heard);
       }
@@ -819,6 +843,7 @@ export class FieldScene extends Phaser.Scene {
     this.updatePlayerMission(heard);
     this.syncYorishiro();
     if (this.isSim()) observePatch(this.match, heard, dt);
+    if (this.isSim()) updateAwareness(this.match, heard); // 盗まれたことに気づく市民（アラート・扉があいた宝物庫）
     this.updateSpirit(dt);
     this.scheduleTicks();
     this.drawMeter(heard);
@@ -832,11 +857,7 @@ export class FieldScene extends Phaser.Scene {
     // 勝ち負けを決めるのと Bot の呼び出しは、ひとりのときと親機だけ（子機は親機から知らせが来る）
     if (!this.isSim()) return;
     // 勝ち負けが決まったら、リザルトへ（Botの呼び出しより先に判定する）
-    if (checkOutcome(this.match, heard)) {
-      this.netSend('all', { k: 'over', winner: this.match.outcome!.winner, reason: this.match.outcome!.reason } satisfies OverWire);
-      this.endMatch();
-      return;
-    }
+    if (this.finishIfOver(heard)) return;
     // Botの呼び出し（イタズラを目撃した・置物を見つけた）
     const call = botWantsToReport(this.match, heard, VISION.radius);
     if (call) this.beginMeeting(call.caller, 'report', call.body);
@@ -914,6 +935,7 @@ export class FieldScene extends Phaser.Scene {
       spy: spyToWire(this.spy, patchSize(this.spy, heard), prankWait(this.spy, heard)),
       bd: boardToWire(this.board),
       gg: Math.round(gauge(this.match) * 1000) / 1000,
+      tr: treasureToWire(this.match.treasure, heard),
     };
     this.netSend('all', snap);
   }
@@ -947,6 +969,7 @@ export class FieldScene extends Phaser.Scene {
         applySpyWire(this.spy, msg.spy, heard, SPY.prankCooldown, this.isPlayerSpy);
         if (Array.isArray(msg.bd)) applyBoardWire(this.board, msg.bd);
         if (typeof msg.gg === 'number') this.netGauge = msg.gg;
+        if (msg.tr) applyTreasureWire(this.match.treasure, msg.tr, heard);
         return;
       }
       case 'me': {
@@ -1050,6 +1073,37 @@ export class FieldScene extends Phaser.Scene {
         if (ev) {
           this.onSpyEvent(ev, heard);
           this.shareSpyEvent(ev);
+        }
+        return;
+      }
+      case 'steal': {
+        // 子機のスパイ：盗むのは親機で行う（宝物庫のそばかを、親機の知っている場所で確かめる）
+        if (!host || fromSeat !== this.pates.indexOf(this.spyEntity)) return;
+        this.doSteal(this.pates[fromSeat].pawn, heard);
+        return;
+      }
+      case 'stop': {
+        // 子機の市民：呼び止めも親機で行う（そばにいるか・待ち時間を確かめる）
+        if (!host || fromSeat <= 0) return;
+        const by = this.pates[fromSeat]?.pawn;
+        const target = this.pates[msg.t]?.pawn;
+        if (!by || !target || stopTarget(this.match, by, heard) !== target) return;
+        this.doStop(by, target, heard);
+        return;
+      }
+      case 'heist': {
+        // 親機からの知らせ：盗まれた・呼び止めた（ようすそのものは、次のスナップショットで写す）
+        if (host || fromSeat !== 0) return;
+        if (msg.e === 'steal') {
+          const spySeat = this.pates.indexOf(this.spyEntity);
+          this.match.treasure.stolen = true;
+          this.match.treasure.carrier = spySeat;
+          if (msg.a === 1 && this.match.treasure.alarmAt === null) this.match.treasure.alarmAt = heard;
+          this.onStolen(spySeat === this.me, msg.a === 1);
+        } else {
+          const by = this.pates[msg.by ?? -1]?.pawn;
+          const target = this.pates[msg.t ?? -1]?.pawn;
+          if (by && target) this.onStopped(by, target, msg.caught === 1, msg.lost ?? 0);
         }
         return;
       }
@@ -1323,6 +1377,114 @@ export class FieldScene extends Phaser.Scene {
       this.add.image(e.x, e.y, EXIT_TEX).setOrigin(0.5, 1).setDepth(e.y);
       label(this, e.x, e.y - EXIT_SIZE.h - 6, '出口', 12).setDepth(8700);
     }
+  }
+
+  /** 勝ち負けが決まっていたら、みんなに知らせてリザルトへ（ひとりのときと親機だけ）。決まっていたら true */
+  private finishIfOver(heard: number): boolean {
+    if (!this.isSim() || !checkOutcome(this.match, heard)) return false;
+    this.netSend('all', { k: 'over', winner: this.match.outcome!.winner, reason: this.match.outcome!.reason } satisfies OverWire);
+    this.endMatch();
+    return true;
+  }
+
+  /**
+   * p が宝を盗む（ひとりのときと親機だけ）。盗めたら true。
+   * 盗んだことは、みんなの画面に出す（スパイ本人には「出口へ急げ」、アラートが鳴ったら全員に）
+   */
+  private doSteal(p: Pawn, heard: number): boolean {
+    if (!this.isSim()) return false;
+    const r = steal(this.match, p, heard, this.rng);
+    if (!r) return false;
+    this.netSend('all', { k: 'heist', e: 'steal', a: r.alarm ? 1 : 0 } satisfies HeistWire);
+    this.onStolen(p === this.playerPawn, r.alarm);
+    return true;
+  }
+
+  /** 盗まれたときの画面の知らせ（mine：自分が盗んだ、alarm：アラートが鳴った） */
+  private onStolen(mine: boolean, alarm: boolean): void {
+    if (mine) this.popText(alarm ? 'アラートが鳴った！\n出口へ急げ！' : '宝を盗んだ！ 出口へ急げ\n（宝が重くて 足がおそくなる）', alarm ? '#b3322a' : '#2b1d14', 15, 0);
+    else if (alarm) this.popText('アラート！\n宝物庫の宝が 盗まれた！', '#b3322a', 16, 0);
+  }
+
+  /** プレイヤー（スパイ）が「盗む」を押した */
+  private playerSteals(heard: number): void {
+    if (this.isSim()) {
+      this.doSteal(this.playerPawn, heard);
+      return;
+    }
+    // 子機：盗むのは親機が決める。押した瞬間の場所で確かめられるように、先に今のようすを送る
+    this.netSend('host', { k: 'me', p: pawnToWire(this.player, this.driving, heard) } satisfies SelfState);
+    this.netSend('host', { k: 'steal' } satisfies StealRequest);
+  }
+
+  /** プレイヤーが「呼び止める」を押した。そばに相手がいなければ false */
+  private playerStops(heard: number): boolean {
+    const wait = stopWait(this.match, this.playerPawn, heard);
+    if (wait > 0 && !this.playerPawn.isSpy) {
+      this.popText(`呼び止めは あと${Math.ceil(wait)}秒 できない`, '#2b1d14', 14, 0);
+      return true;
+    }
+    const target = stopTarget(this.match, this.playerPawn, heard);
+    if (!target) return false;
+    if (this.isSim()) {
+      this.doStop(this.playerPawn, target, heard);
+    } else {
+      this.netSend('host', { k: 'me', p: pawnToWire(this.player, this.driving, heard) } satisfies SelfState);
+      this.netSend('host', { k: 'stop', t: this.pates.findIndex((e) => e.pawn === target) } satisfies StopRequest);
+    }
+    return true;
+  }
+
+  /** by が target を呼び止めて調べる（ひとりのときと親機だけ） */
+  private doStop(by: Pawn, target: Pawn, heard: number): void {
+    const r = stopAndSearch(this.match, by, target, heard);
+    const seat = (p: Pawn) => this.pates.findIndex((e) => e.pawn === p);
+    this.netSend('all', { k: 'heist', e: 'stop', by: seat(by), t: seat(target), caught: r.caught ? 1 : 0, lost: r.supportLost } satisfies HeistWire);
+    this.onStopped(by, target, r.caught, r.supportLost);
+    this.finishIfOver(heard);
+  }
+
+  /** 呼び止めの結果を画面に出す */
+  private onStopped(by: Pawn, target: Pawn, caught: boolean, lost: number): void {
+    const name = (p: Pawn) => (p === this.playerPawn ? 'きみ' : `${PART_NAMES[p.part as keyof typeof PART_NAMES] ?? p.part}のパテ`);
+    if (caught) this.popText(`${name(by)}が ${name(target)}を 呼び止めた\n宝を持っていた！`, '#2b6b2f', 15, 0);
+    else this.popText(`${name(by)}が ${name(target)}を 呼び止めた\nぬれぎぬ！（支持度 -${lost}）`, '#b3322a', 14, 0);
+  }
+
+  /**
+   * 盗まれたと気づいた市民 Bot：宝を持ったパテを見かけたら追いかけ、そばまで来たら呼び止める（ひとりのときと親機だけ）。
+   * 追いかけているあいだは true（採取やミッションはしない）
+   */
+  private botChases(e: PateEntity, heard: number, dt: number): boolean {
+    if (!this.isSim()) return false;
+    const target = botChaseTarget(this.match, e.pawn, heard, dt, this.rng);
+    const h = e.h;
+    if (!target) {
+      // 追いかけていなければ、出口へ行って見張る（着いたら、宝物庫のほうを向いて待つ）
+      const guard = botGuardSpot(this.match, e.pawn);
+      if (!guard) return false;
+      h.session = null;
+      h.task = null;
+      h.claim = null;
+      h.waitingFor = null;
+      const far = Math.hypot(guard.x - h.walker.pos.x, guard.y - h.walker.pos.y) > 6;
+      if (far) setTarget(h.walker, guard);
+      else if (!h.walker.target) {
+        const v = this.match.treasure.vault;
+        h.walker.heading = Math.atan2(v.y - h.walker.pos.y, v.x - h.walker.pos.x);
+      }
+      return true;
+    }
+    h.session = null;
+    h.task = null;
+    h.claim = null;
+    h.waitingFor = null;
+    if (stopTarget(this.match, e.pawn, heard) === target) {
+      this.doStop(e.pawn, target, heard);
+      return true;
+    }
+    setTarget(h.walker, target.h.walker.pos);
+    return true;
   }
 
   /** 毎コマ：盗まれたら、宝物庫を扉があいた絵にする（音は鳴らさない。気をつけて見ていないと見落とすくらい） */

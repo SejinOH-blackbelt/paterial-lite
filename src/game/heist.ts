@@ -10,7 +10,8 @@
 import { PATE, SUPPORT, TREASURE } from './config';
 import type { MatchState, Pawn } from './match';
 import type { Rng } from './random';
-import { alarmChance, nearVault } from './treasure';
+import { alarmChance, nearExit, nearVault } from './treasure';
+import { canSee } from './vision';
 
 const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -88,4 +89,60 @@ export function stopAndSearch(m: MatchState, by: Pawn, target: Pawn, now: number
   m.support -= lost;
   m.stopReady.set(by, now + TREASURE.stopCooldown);
   return { caught: false, supportLost: lost };
+}
+
+// ---------- 市民 Bot：盗まれたことに気づく・追いかける ----------
+
+/**
+ * 盗まれたことに気づいた市民を増やす。毎コマ呼ぶ（ひとりのときと親機だけ）。
+ * アラートが鳴っていれば全員が気づく。鳴っていなければ、扉があいた宝物庫が視界に入った市民だけが気づく
+ */
+export function updateAwareness(m: MatchState, now: number): void {
+  const t = m.treasure;
+  if (!t.stolen) return;
+  for (const p of m.pawns) {
+    if (p.isSpy || p.h.frozen || m.knowsStolen.has(p)) continue;
+    if (t.alarmAt !== null || canSee(p.h, t.vault, now)) m.knowsStolen.add(p);
+  }
+}
+
+/**
+ * 市民 Bot p が、いま追いかける相手（宝を持ったパテ）。追いかけないなら null。
+ * 盗まれたと気づいていて、宝を持ったパテが視界に入ったら、ときどき追いかけ始める（足がおそいので怪しいと気づく）。
+ * 一度追いかけ始めたら、見失ってから TREASURE.botChaseMemory 秒たつまで追いかける
+ */
+export function botChaseTarget(m: MatchState, p: Pawn, now: number, dt: number, rng: Rng): Pawn | null {
+  const carrier = carrierPawn(m);
+  if (!carrier || p.isSpy || p.h.frozen || m.phase !== 'play' || !m.knowsStolen.has(p)) {
+    m.chasers.delete(p);
+    return null;
+  }
+  const sees = canSee(p.h, carrier.h.walker.pos, now);
+  const last = m.chasers.get(p);
+  if (last !== undefined) {
+    if (sees) m.chasers.set(p, now);
+    else if (now - last > TREASURE.botChaseMemory) {
+      m.chasers.delete(p);
+      return null;
+    }
+    return carrier;
+  }
+  // 出口で見張っている市民は、見えたらすぐ追いかける（来るのを待ちかまえているので）
+  const guarding = nearExit(m.treasure, p.h.walker.pos);
+  if (sees && (guarding || rng() < 1 - Math.pow(1 - TREASURE.botChaseChancePerSecond, dt))) {
+    m.chasers.set(p, now);
+    return carrier;
+  }
+  return null;
+}
+
+/**
+ * 盗まれたと気づいた市民 Bot が見張りに行く出口（追いかけていないとき）。見張らないなら null。
+ * 2つの出口に、席の番号で半分ずつ分かれる（足のおそいパテが来たら、そこで呼び止める）
+ */
+export function botGuardSpot(m: MatchState, p: Pawn): { x: number; y: number } | null {
+  if (p.isSpy || p.h.frozen || m.phase !== 'play' || !m.treasure.stolen || !m.knowsStolen.has(p)) return null;
+  if (m.treasure.carrier === null) return null;
+  const e = m.treasure.exits[m.pawns.indexOf(p) % 2];
+  return { x: e.x, y: e.y };
 }

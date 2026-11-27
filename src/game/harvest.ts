@@ -218,7 +218,7 @@ export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harve
  * スティックで動かす。毎コマ呼ぶ（倒していないときは dx・dy とも 0）。
  * 動かしたら採取・順番待ち・施設のミッションはやめる（置物は動けない）。dx・dy の意味は steerWalker と同じ。
  */
-export function driveHarvester(h: Harvester, dx: number, dy: number, dtSeconds: number): void {
+export function driveHarvester(h: Harvester, dx: number, dy: number, dtSeconds: number, speed?: number): void {
   h.driving = !h.frozen && (dx !== 0 || dy !== 0);
   if (!h.driving) return;
   h.session = null;
@@ -226,7 +226,7 @@ export function driveHarvester(h: Harvester, dx: number, dy: number, dtSeconds: 
   h.possess = null;
   h.claim = null;
   h.waitingFor = null;
-  steerWalker(h.walker, dx, dy, dtSeconds);
+  steerWalker(h.walker, dx, dy, dtSeconds, speed);
 }
 
 /**

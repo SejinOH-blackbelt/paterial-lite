@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { LANDMARKS, MATCH, PATE, SUPPORT, TREASURE } from '../src/game/config';
-import { dealBoard } from '../src/game/board';
-import { createHarvester } from '../src/game/harvest';
-import { canSteal, carrierPawn, steal, stopAndSearch, stopTarget, stopWait, walkSpeed } from '../src/game/heist';
+import { BOT_PROFILES, LANDMARKS, MATCH, PATE, SPY_BOT, SUPPORT, TREASURE } from '../src/game/config';
+import { createBot } from '../src/game/bot';
+import { createSpyState } from '../src/game/spy';
+import { createSpyBotMind, updateSpyBot } from '../src/game/spyBot';
+import { buildBoard, dealBoard } from '../src/game/board';
+import { createFieldState, createHarvester, updateHarvester } from '../src/game/harvest';
+import { botChaseTarget, canSteal, carrierPawn, steal, stopAndSearch, stopTarget, stopWait, updateAwareness, walkSpeed } from '../src/game/heist';
 import { checkOutcome, createMatch, type Pawn } from '../src/game/match';
-import { createWalker } from '../src/game/movement';
+import { createWalker, faceTo, stepWalker } from '../src/game/movement';
 import { createRng } from '../src/game/random';
-import { alarmChance } from '../src/game/treasure';
+import { alarmChance, botTreasurePlan, createTreasure, nearExit, nearVault } from '../src/game/treasure';
 
 /** 6体の試合（5番がスパイ）。宝物庫と出口は決まった並びで選ばれる */
 function setup() {
@@ -170,5 +173,111 @@ describe('呼び止める', () => {
     stopAndSearch(m, pawns[0], pawns[1], 5);
     expect(m.support).toBe(0);
     expect(checkOutcome(m, 6)).toMatchObject({ winner: 'spy', reason: 'strike' });
+  });
+});
+
+describe('スパイBot：盗んで逃げる', () => {
+  /** スパイBot をひとりで動かす（ミッションなし）。盗んだら足がおそくなり、出口に着いたかを見る */
+  function runHeist(seconds: number, seed: number, scanned: number, timeLeftAt: (t: number) => number) {
+    const f = createFieldState();
+    const rng = createRng(seed);
+    const spyBot = createBot(BOT_PROFILES[0], { x: 360, y: 700 });
+    const mind = createSpyBotMind();
+    const s = createSpyState(spyBot.h, 0, rng);
+    LANDMARKS.slice(0, scanned).forEach((l) => s.scanned.add(l.id));
+    const all = [spyBot.h];
+    const board = buildBoard({ types: [], pairs: [], sites: [] });
+    const t0 = createTreasure(botTreasurePlan(createRng(seed)));
+    let stoleAt = -1;
+    let escapedAt = -1;
+    for (let t = 0; t < seconds && escapedAt < 0; t += 1 / 30) {
+      const carrying = t0.carrier === 0;
+      stepWalker(spyBot.h.walker, 1 / 30, carrying ? PATE.speed * TREASURE.carrySpeed : PATE.speed);
+      updateHarvester(spyBot.h, f, all, t + 0.2, 0);
+      updateSpyBot(spyBot, mind, s, f, board, all, t, rng, {
+        treasure: t0,
+        carrying,
+        timeLeft: timeLeftAt(t),
+        steal: () => {
+          if (t0.stolen || !nearVault(t0, spyBot.h.walker.pos)) return false;
+          t0.stolen = true;
+          t0.carrier = 0;
+          stoleAt = t;
+          return true;
+        },
+      });
+      if (t0.carrier === 0 && nearExit(t0, spyBot.h.walker.pos)) escapedAt = t;
+    }
+    return { stoleAt, escapedAt };
+  }
+
+  it('名物を全部スキャンしていれば、宝物庫へ行って盗み、出口まで逃げる', () => {
+    const r = runHeist(120, 3, LANDMARKS.length, () => 250);
+    expect(r.stoleAt).toBeGreaterThan(0);
+    expect(r.escapedAt).toBeGreaterThan(r.stoleAt);
+  });
+
+  it('残り時間が少なくなったら、スキャンしていなくても盗みに行く', () => {
+    const r = runHeist(120, 4, 0, () => SPY_BOT.heistTimeLeft - 1);
+    expect(r.stoleAt).toBeGreaterThan(0);
+  });
+
+  it('スキャンが少なく、時間もたっぷりあるうちは、盗みに行かない', () => {
+    const r = runHeist(40, 5, 0, () => 280);
+    expect(r.stoleAt).toBe(-1);
+  });
+});
+
+describe('市民Bot：気づく・追いかける', () => {
+  it('アラートが鳴れば、市民はみんな盗まれたことに気づく', () => {
+    const { m, spy } = setup();
+    put(spy, m.treasure.vault.x, m.treasure.vault.y);
+    steal(m, spy, 10, ring);
+    updateAwareness(m, 10);
+    expect(m.knowsStolen.size).toBe(5);
+    expect(m.knowsStolen.has(spy)).toBe(false);
+  });
+
+  it('アラートが鳴らなければ、扉があいた宝物庫を見た市民だけが気づく', () => {
+    const { m, spy, pawns } = setup();
+    put(spy, m.treasure.vault.x, m.treasure.vault.y);
+    steal(m, spy, 10, quiet);
+    // 1番は宝物庫の手前で、宝物庫のほうを向いている（見える）。ほかは遠く
+    put(pawns[1], m.treasure.vault.x, m.treasure.vault.y + 60);
+    faceTo(pawns[1].h.walker, 'up');
+    for (const p of pawns.slice(2, 5)) put(p, 650, 1150);
+    put(pawns[0], 650, 1150);
+    updateAwareness(m, 11);
+    expect([...m.knowsStolen]).toEqual([pawns[1]]);
+  });
+
+  it('気づいた市民Botは、宝を持ったパテを見かけると追いかけ、見失ってしばらくするとあきらめる', () => {
+    const { m, spy, pawns } = setup();
+    put(spy, m.treasure.vault.x, m.treasure.vault.y);
+    steal(m, spy, 10, ring);
+    updateAwareness(m, 10);
+    const bot = pawns[1];
+    put(bot, spy.h.walker.pos.x, spy.h.walker.pos.y + 80);
+    faceTo(bot.h.walker, 'up');
+    let chasing: Pawn | null = null;
+    let t = 10;
+    for (let i = 0; i < 100 && !chasing; i++) {
+      t = 10 + i * 0.1;
+      chasing = botChaseTarget(m, bot, t, 0.1, createRng(i));
+    }
+    expect(chasing).toBe(spy);
+    // 見えない場所へ（遠く）。少しのあいだは追いかけ続け、見失ってしばらくするとあきらめる
+    put(spy, 650, 1150);
+    expect(botChaseTarget(m, bot, t + 1, 0.1, ring)).toBe(spy);
+    expect(botChaseTarget(m, bot, t + TREASURE.botChaseMemory + 1, 0.1, ring)).toBeNull();
+  });
+
+  it('気づいていない市民Botは、追いかけない', () => {
+    const { m, spy, pawns } = setup();
+    put(spy, m.treasure.vault.x, m.treasure.vault.y);
+    steal(m, spy, 10, quiet);
+    const bot = pawns[1];
+    put(bot, 650, 1150);
+    expect(botChaseTarget(m, bot, 11, 1, ring)).toBeNull();
   });
 });

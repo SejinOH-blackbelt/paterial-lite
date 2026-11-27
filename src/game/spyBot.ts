@@ -2,6 +2,7 @@
 // ・ふだんは住民Botと同じように採取して、市民のふりをする
 // ・ときどき名物へ向かい、まわりに誰もいなければスキャンする（誰か来たら中断して採取に戻る）
 // ・試合の途中から、目撃者がいないときだけイタズラ（置物にする）をする
+// ・M10：名物をいくつかスキャンしたら（または残り時間が少なくなったら）宝物庫へ行き、誰も見ていなければ宝を盗んで、近い出口へ逃げる
 
 import { LANDMARKS, SCAN_GAME, SPY, SPY_BOT } from './config';
 import { updateBot, type Bot, type BotTapEvent } from './bot';
@@ -10,6 +11,7 @@ import type { FieldState, Harvester } from './harvest';
 import { watchersOf } from './vision';
 import { setTarget } from './movement';
 import type { Rng } from './random';
+import type { TreasureState } from './treasure';
 import { isLocked, prank, prankTarget, startScan, updateScan, type SpyEvent, type SpyState } from './spy';
 
 export interface SpyBotMind {
@@ -19,16 +21,40 @@ export interface SpyBotMind {
   nextPrankRoll: number;
   /** どの休憩のあとに「スキャンに行くか」を決めたか（同じ休憩で何度も決めないため） */
   decidedAfterRest: number;
+  /** 宝物庫へ盗みに向かっているところか */
+  heist: boolean;
 }
 
 export function createSpyBotMind(): SpyBotMind {
-  return { goal: null, nextPrankRoll: 0, decidedAfterRest: -1 };
+  return { goal: null, nextPrankRoll: 0, decidedAfterRest: -1, heist: false };
 }
 
 /** 名物をスキャンするときに立つ場所（名物の少し下） */
 export function landmarkSpot(id: string) {
   const l = LANDMARKS.find((x) => x.id === id)!;
   return { x: l.x, y: l.y + 22 };
+}
+
+/** 宝を盗む・逃げるために、試合から教えてもらうこと（M10） */
+export interface HeistContext {
+  treasure: TreasureState;
+  /** いま自分が宝を持っているか */
+  carrying: boolean;
+  /** 試合の残り時間（秒） */
+  timeLeft: number;
+  /** 宝を盗む（盗めたら true）。アラートなどの後始末は呼んだ側がする */
+  steal: () => boolean;
+}
+
+/** 宝物庫で盗むときに立つ場所（宝物庫の少し下） */
+export function vaultSpot(t: TreasureState) {
+  return { x: t.vault.x, y: t.vault.y + 20 };
+}
+
+/** いちばん近い出口 */
+export function nearestExit(t: TreasureState, p: { x: number; y: number }) {
+  const d = (e: { x: number; y: number }) => Math.hypot(e.x - p.x, e.y - p.y);
+  return d(t.exits[0]) <= d(t.exits[1]) ? t.exits[0] : t.exits[1];
 }
 
 export interface SpyBotResult {
@@ -45,6 +71,7 @@ export function updateSpyBot(
   all: readonly Harvester[],
   now: number,
   rng: Rng,
+  heist?: HeistContext,
 ): SpyBotResult {
   const h = bot.h;
   const out: SpyBotResult = { taps: [], spyEvents: [] };
@@ -59,6 +86,49 @@ export function updateSpyBot(
     if (lonely && rng() < SPY_BOT.prankChancePerSecond) {
       const ev = prank(spy, all, now);
       if (ev) out.spyEvents.push(ev);
+    }
+  }
+
+  // 宝を持っている：いちばん近い出口へ急ぐ（採取もスキャンもしない。足がおそいので見つかりやすい）
+  if (heist?.carrying) {
+    spy.scan = null;
+    mind.goal = null;
+    mind.heist = false;
+    h.session = null;
+    h.task = null;
+    h.claim = null;
+    if (!h.walker.target) {
+      const e = nearestExit(heist.treasure, h.walker.pos);
+      setTarget(h.walker, { x: e.x, y: e.y });
+    }
+    return out;
+  }
+
+  // 残り時間が少ない：していることをやめて、すぐ宝物庫へ（乗りうつり中は終わるまで待つ）
+  if (heist && !heist.treasure.stolen && !mind.heist && !h.possess && heist.timeLeft < SPY_BOT.heistTimeLeft) {
+    spy.scan = null;
+    mind.goal = null;
+    mind.heist = true;
+    h.session = null;
+    h.task = null;
+    h.claim = null;
+    h.waitingFor = null;
+    setTarget(h.walker, vaultSpot(heist.treasure));
+    bot.mode = 'idle';
+    return out;
+  }
+
+  // 宝物庫へ向かっている途中：着いたら、誰も見ていなければ盗む（見られていたら、ひと休みしてから出直す）
+  if (heist && mind.heist) {
+    if (heist.treasure.stolen) {
+      mind.heist = false;
+    } else if (h.walker.target) {
+      return out;
+    } else if (watchers().length === 0 && heist.steal()) {
+      return out;
+    } else {
+      mind.heist = false;
+      bot.restUntil = now + 2;
     }
   }
 
@@ -96,6 +166,19 @@ export function updateSpyBot(
   const idle = !h.session && !h.task && !h.possess && !h.walker.target && !h.waitingFor && now >= bot.restUntil;
   if (idle && mind.decidedAfterRest !== bot.restUntil) {
     mind.decidedAfterRest = bot.restUntil;
+    // 宝を盗みに行くか：全部スキャンした・残り時間が少ない・いくつかスキャンしたあとの気まぐれ
+    if (heist && !heist.treasure.stolen) {
+      const n = spy.scanned.size;
+      const go = n >= LANDMARKS.length || heist.timeLeft < SPY_BOT.heistTimeLeft || (n >= SPY_BOT.heistAfterScans && rng() < SPY_BOT.heistChance);
+      if (go) {
+        mind.heist = true;
+        mind.goal = null;
+        h.claim = null;
+        setTarget(h.walker, vaultSpot(heist.treasure));
+        bot.mode = 'idle';
+        return out;
+      }
+    }
     const left = LANDMARKS.filter((l) => !spy.scanned.has(l.id) && !isLocked(spy, l.id, now));
     if (left.length > 0 && rng() < SPY_BOT.scanChance) {
       const l = left[Math.floor(rng() * left.length)];

@@ -90,17 +90,23 @@ export function exitChoices(first: ExitSite | null): ExitSite[] {
   return EXIT_SITES.filter((e) => first === null || exitsAllowed(first, e));
 }
 
-/** 王様 Bot の選び方：決まりに合う中から、でたらめに選ぶ */
+/** 王様 Bot の選び方：決まりに合う中から、でたらめに選ぶ（出口は、宝物庫から遠いものを選ぶ） */
 export function botTreasurePlan(rng: Rng): TreasurePlan {
   const pick = <T>(list: T[]): T => {
     // 候補がないのは config.ts の書きまちがい（テストで確かめている）。気づけるように止める
     if (list.length === 0) throw new Error('宝物庫か出口の候補が足りない（config.ts の TREASURE を確かめる）');
     return list[Math.floor(rng() * list.length) % list.length];
   };
-  const vault = pick(vaultChoices());
-  const first = pick(exitChoices(null));
-  const second = pick(exitChoices(first));
-  return { vault, exits: [first, second] };
+  // 守る王様らしく、宝物庫から出口2つがどちらも遠い組み合わせを選ぶ（盗んですぐ逃げ切れないように）。
+  // そういう組み合わせがなければ、決まりに合う中からどれでも
+  const all: TreasurePlan[] = [];
+  for (const vault of vaultChoices()) {
+    for (const a of EXIT_SITES) for (const b of exitChoices(a)) if (a.id < b.id) all.push({ vault, exits: [a, b] });
+  }
+  const far = all.filter((p) => p.exits.every((e) => Math.hypot(e.x - p.vault.x, e.y - p.vault.y) >= TREASURE.botExitMinDistance));
+  const plan = pick(far.length > 0 ? far : all);
+  // 出口の並び（どちらが1つめか）もでたらめにする
+  return rng() < 0.5 ? plan : { vault: plan.vault, exits: [plan.exits[1], plan.exits[0]] };
 }
 
 /** 試合の最初の宝のようす（まだ盗まれていない） */

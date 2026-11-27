@@ -10,6 +10,7 @@ import type { Board, BoardPlan } from '../game/board';
 import type { FieldState, Harvester } from '../game/harvest';
 import type { Facing } from '../game/movement';
 import type { SpyState } from '../game/spy';
+import type { TreasureState } from '../game/treasure';
 
 const FACINGS: Facing[] = ['up', 'down', 'left', 'right'];
 
@@ -59,6 +60,53 @@ export interface Snapshot {
   bd: number[];
   /** 国の仕事ゲージ（親機が計算した値。スパイが入れたスイッチの分は、子機では分からないため） */
   gg: number;
+  /** 宝（M10）：盗まれたか、持っている席（いなければ -1）、アラートが鳴ってから何秒たったか（鳴っていなければ -1） */
+  tr?: TreasureWire;
+}
+
+/** 宝のようす（送る形） */
+export interface TreasureWire {
+  s: number;
+  c: number;
+  al: number;
+}
+
+/** 宝のようすを送る形にする */
+export function treasureToWire(t: TreasureState, now: number): TreasureWire {
+  return { s: t.stolen ? 1 : 0, c: t.carrier ?? -1, al: t.alarmAt === null ? -1 : Math.round((now - t.alarmAt) * 10) / 10 };
+}
+
+/** 届いた宝のようすを写す（子機）。だれが持っているかも写す（足がおそいのを、どのスマホでも同じに見せるため） */
+export function applyTreasureWire(t: TreasureState, w: TreasureWire, now: number): void {
+  if (!w) return;
+  t.stolen = w.s === 1;
+  t.carrier = w.c >= 0 ? w.c : null;
+  if (w.al >= 0 && t.alarmAt === null) t.alarmAt = now - w.al;
+}
+
+/** スパイの席のスマホ → 親機：宝を盗みたい（親機が、宝物庫のそばかを確かめる） */
+export interface StealRequest {
+  k: 'steal';
+}
+
+/** 市民の席のスマホ → 親機：この席のパテを呼び止めたい */
+export interface StopRequest {
+  k: 'stop';
+  t: number;
+}
+
+/**
+ * 親機 → みんな：盗んだ・呼び止めたことの知らせ（みんなの画面に結果を出す）。
+ * steal：a はアラートが鳴ったか。stop：by が t を呼び止め、caught なら捕まえた（試合はこのあと over で終わる）、lost はぬれぎぬで下がった支持度
+ */
+export interface HeistWire {
+  k: 'heist';
+  e: 'steal' | 'stop';
+  a?: number;
+  by?: number;
+  t?: number;
+  caught?: number;
+  lost?: number;
 }
 
 /** パテのようすを送る形にする */
@@ -304,7 +352,7 @@ export interface ResultWire {
   lost: number;
 }
 
-export type NetMessage = ReadyWire | GoWire | CallRequest | MeetWire | SayWire | VoteWire | ResultWire | Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | OverWire | StartWire;
+export type NetMessage = ReadyWire | GoWire | CallRequest | MeetWire | SayWire | VoteWire | ResultWire | Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | StealRequest | StopRequest | HeistWire | OverWire | StartWire;
 
 /**
  * 親機が席を決める：親機は 0 番、ほかの人は入った順に 1 番から。残りは Bot。
