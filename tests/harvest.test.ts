@@ -36,9 +36,9 @@ describe('採取の流れ', () => {
     expect(h.walker.target).toEqual(standSpot(clay));
   });
 
-  it('竹の先のほう（足元より上）をタップしても、その素材を選べる', () => {
+  it('素材の上のほう（足元より上）をタップしても、その素材を選べる', () => {
     const bamboo = RESOURCE_POINTS[1];
-    expect(resourceAtTap({ x: bamboo.x, y: bamboo.y - 48 })?.id).toBe('wind');
+    expect(resourceAtTap({ x: bamboo.x, y: bamboo.y - 48 })?.id).toBe('fire');
     expect(resourceAtTap({ x: bamboo.x, y: bamboo.y - RESOURCE.tapCenterUp - RESOURCE.tapRadius - 5 })).toBeNull();
   });
 

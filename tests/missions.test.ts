@@ -46,7 +46,7 @@ describe('スイッチのミッション', () => {
     const a = atSpot(board, 0, 0, 0);
     const b = atSpot(board, 0, 1, 1);
     for (const h of [a, b]) {
-      h.held.earth = 10;
+      h.held.earth = 20;
       startMission(h, board, [a, b], 0, createRng(1), null);
       finishAsBot(h, board);
     }

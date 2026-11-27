@@ -64,11 +64,18 @@ describe('共同ミッションと国の仕事ゲージ', () => {
     expect(checkOutcome(m, 11)).toMatchObject({ winner: 'citizens', reason: 'gauge' });
   });
 
-  it('スパイが本当にやったスイッチばかりだと、ゲージは満たせない', () => {
+  it('スパイが本当にやったスイッチは、ゲージに10分の1しか入らない', () => {
+    const { m } = setup();
+    lightSpots(m, spotCount(m) - 1, MATCH.spyCredit);
+    expect(gauge(m)).toBeLessThan(0.2);
+    expect(checkOutcome(m, 10)).toBeNull();
+  });
+
+  it('スイッチが全部入ったら、スパイが入れたものがあってもゲージは満タン（行き止まりにしない）', () => {
     const { m } = setup();
     lightSpots(m, spotCount(m), MATCH.spyCredit);
-    expect(gauge(m)).toBeCloseTo(MATCH.spyCredit / MATCH.gaugeGoal, 6);
-    expect(checkOutcome(m, 10)).toBeNull();
+    expect(gauge(m)).toBe(1);
+    expect(checkOutcome(m, 10)).toMatchObject({ winner: 'citizens', reason: 'gauge' });
   });
 });
 

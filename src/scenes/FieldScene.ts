@@ -731,8 +731,8 @@ export class FieldScene extends Phaser.Scene {
 
   private updateMaterials(pop: boolean): void {
     // 受け持ちのミッション（まだ完了していない）に使う資源だけを出す
-    const kinds = [...new Set(myMissions(this.player, this.board).filter((m) => !missionComplete(m)).map((m) => missionType(m.type).element))];
-    this.materialsText.setText(kinds.map((k) => `${RESOURCE_NAMES[k]}${this.player.held[k]}`).join(' ') || '資源');
+    const kinds = [...new Set(myMissions(this.player, this.board).filter((m) => !missionComplete(m) && missionType(m.type).needPerSpot > 0).map((m) => missionType(m.type).element))];
+    this.materialsText.setText(kinds.map((k) => `${RESOURCE_NAMES[k]}${this.player.held[k]}`).join(' ') || '');
     if (pop) {
       this.tweens.killTweensOf(this.materialsText);
       this.materialsText.setScale(1.25);

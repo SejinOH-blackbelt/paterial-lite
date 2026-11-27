@@ -15,7 +15,7 @@ describe('友達と遊ぶときの、ようすの伝え方', () => {
   it('パテのようす（場所・向き・採取中・ミッション中・資源・受け持ち）を送って、そのまま写せる', () => {
     const a = createHarvester(createWalker({ x: 123.456, y: 789 }), 'fire', [2, 5, 7]);
     a.walker.facing = 'left';
-    a.session = makeSession('wind');
+    a.session = makeSession('fire');
     a.task = null;
     a.held.fire = 5;
     a.held.thunder = 2;
@@ -24,8 +24,8 @@ describe('友達と遊ぶときの、ようすの伝え方', () => {
     expect(applyWireToPawn(b, wire, makeSession, 10)).toBe(true);
     expect(b.walker.pos.x).toBeCloseTo(123.5, 5);
     expect(b.walker.facing).toBe('left');
-    expect(b.session?.pointId).toBe('wind');
-    expect(b.claim).toBe('wind');
+    expect(b.session?.pointId).toBe('fire');
+    expect(b.claim).toBe('fire');
     expect(b.held).toMatchObject({ fire: 5, thunder: 2, water: 0, earth: 0, wind: 0 });
     expect(b.element).toBe('fire');
     expect(b.missions).toEqual([2, 5, 7]);

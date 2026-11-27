@@ -191,16 +191,19 @@ export function missionComplete(m: MissionInst): boolean {
   return m.spots.every((s) => s.on);
 }
 
-/** スイッチ1つで国の仕事ゲージに入る量（使う資源の数 ＋ MISSION_WEIGHT.spot） */
-export function spotUnits(type: MissionId): number {
-  return missionType(type).needPerSpot + MISSION_WEIGHT.spot;
+/** スイッチ1つで国の仕事ゲージに入る量（どのミッションも同じ） */
+export function spotUnits(_type: MissionId): number {
+  return MISSION_WEIGHT.spot;
 }
 
 /**
  * 国の仕事ゲージ（0〜1）。全部のスイッチの量の MATCH.gaugeGoal 倍がたまれば 1。
  * スパイが本当にやったスイッチは、量の MATCH.spyCredit 倍しか入らない。
+ * ただし、スイッチが全部入ったら 1（行き止まりにしない）。
  */
 export function boardGauge(board: Board): number {
+  // スイッチが全部入ったら満タン（スパイが本当に入れたスイッチがあっても、行き止まりにしない）
+  if (board.missions.length > 0 && board.missions.every((m) => m.spots.every((s) => s.on))) return 1;
   let done = 0;
   let total = 0;
   for (const m of board.missions) {

@@ -60,7 +60,7 @@ describe('ミッションの相性', () => {
     const b = board();
     const good = at(b, 0, 'earth'); // 土のミッションに土は得意
     const weak = at(b, 0, 'thunder'); // 土は雷を逃がす：雷は苦手
-    good.held.earth = weak.held.earth = 5;
+    good.held.earth = weak.held.earth = 20;
     startMission(good, b, [good], 0, createRng(1), null);
     startMission(weak, b, [weak], 0, createRng(1), null);
     expect(good.task!.endsAt).toBeLessThan(weak.task!.endsAt);

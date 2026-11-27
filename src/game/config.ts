@@ -219,20 +219,17 @@ export const RESOURCE = {
 } as const;
 
 /**
- * 採取場に置く資源ポイント（M9②：エレメントのエリア）。kind はエレメント。
- * 土＝粘土の山、風＝竹、雷＝雷石、火＝炭の炉、水＝清水の泉。同じエレメントを2か所ずつ置く（遠くまで歩かずにすむように）
+ * 採取場に置く資源ポイント。kind はエレメント。
+ * 資源を使うのは火と土のミッションだけ（使い手の決定）。土＝粘土の山、火＝炭の炉を3か所ずつ置く
+ * （水・風・雷のミッションは資源がいらないので、清水・竹・雷石の採取場は置かない）
  */
 export const RESOURCE_POINTS = [
   { id: 'earth', kind: 'earth', x: 140, y: 330 },
-  { id: 'wind', kind: 'wind', x: 600, y: 520 },
-  { id: 'thunder', kind: 'thunder', x: 330, y: 1110 },
+  { id: 'fire', kind: 'fire', x: 600, y: 520 },
   { id: 'earth2', kind: 'earth', x: 580, y: 960 },
-  { id: 'wind2', kind: 'wind', x: 130, y: 760 },
-  { id: 'thunder2', kind: 'thunder', x: 260, y: 190 },
-  { id: 'fire', kind: 'fire', x: 500, y: 150 },
   { id: 'fire2', kind: 'fire', x: 220, y: 880 },
-  { id: 'water', kind: 'water', x: 620, y: 380 },
-  { id: 'water2', kind: 'water', x: 200, y: 1160 },
+  { id: 'earth3', kind: 'earth', x: 130, y: 760 },
+  { id: 'fire3', kind: 'fire', x: 500, y: 150 },
 ] as const;
 
 /** 素材をたたいたときの見た目 */
@@ -488,21 +485,22 @@ export const FACILITY = {
 /**
  * ミッションの種類（M9②：エレメントごとに1つ、全部で5つ）。id はエレメントと同じ。
  * 1つのミッションには、いくつかのスイッチ（spots か所）があり、どの順で回ってもよい。全部オンにすると完了。
- * スイッチを1つオンにするには、そのエレメントの資源を needPerSpot 個使い、ミニゲームをする。
+ * スイッチを1つオンにするには、ミニゲームをする。資源を使うのは火と土だけ（そのエレメントの資源を needPerSpot 個。ほかは 0）。
  * game：いまは仮のミニゲーム（drum まねっこ太鼓・jigsaw ジグソー・pegs 杭むすび・prayer 拍手）。③で1つずつ新しくする。
  * 回る数は、遊びが長いものは2か所、短いものは3か所。
  */
 export const MISSIONS = [
-  { id: 'fire', name: '温度キープ', element: 'fire', game: 'heat', spots: 2, needPerSpot: 8 },
-  { id: 'water', name: '網で魚すくい', element: 'water', game: 'net', spots: 3, needPerSpot: 5 },
-  { id: 'earth', name: '成形', element: 'earth', game: 'shape', spots: 3, needPerSpot: 5 },
-  { id: 'wind', name: '気流チャージ', element: 'wind', game: 'wind', spots: 2, needPerSpot: 8 },
-  { id: 'thunder', name: '暗闇を照らす', element: 'thunder', game: 'dark', spots: 3, needPerSpot: 5 },
+  { id: 'fire', name: '温度キープ', element: 'fire', game: 'heat', spots: 2, needPerSpot: 10 },
+  { id: 'water', name: '網で魚すくい', element: 'water', game: 'net', spots: 3, needPerSpot: 0 },
+  { id: 'earth', name: '成形', element: 'earth', game: 'shape', spots: 3, needPerSpot: 6 },
+  { id: 'wind', name: '風の道', element: 'wind', game: 'wind', spots: 2, needPerSpot: 0 },
+  { id: 'thunder', name: '暗闇を照らす', element: 'thunder', game: 'dark', spots: 3, needPerSpot: 0 },
 ] as const;
 
 /** 国の仕事ゲージ：スイッチを1つオンにすると、使った資源の数 ＋ spot がたまる */
 export const MISSION_WEIGHT = {
-  spot: 2,
+  /** 国の仕事ゲージ：スイッチ1つでたまる量（どのミッションも同じ。資源を使うかどうかでは変えない） */
+  spot: 1,
 } as const;
 
 /** スイッチ（ミッションで回る場所） */
@@ -567,7 +565,7 @@ export const MISSION_GAME = {
 /** Botが施設でミッションをするときの時間と、まちがえる確率 */
 export const MISSION_BOT = {
   /** ミニゲームにかかる秒数 */
-  workSeconds: { drum: 8, jigsaw: 9, pegs: 8, prayer: 8, heat: 9, net: 8, shape: 9, wind: 8, dark: 9 },
+  workSeconds: { drum: 8, jigsaw: 9, pegs: 8, prayer: 8, heat: 9, net: 11, shape: 9, wind: 11, dark: 11 },
   /** まちがえる確率（まちがえると音が鳴って、やり直す） */
   failChance: 0.2,
   /** まちがえたあと、やり直しにかかる秒数 */
@@ -607,7 +605,7 @@ export const MATCH = {
    * 国の仕事ゲージがいっぱいになる割合：全部のスイッチの量のうち、これだけたまれば市民の勝ち。
    * スパイが本当にやったスイッチは spyCredit 倍しかたまらないので、スパイが入れたスイッチが多いと届きにくくなる
    */
-  gaugeGoal: 0.8,
+  gaugeGoal: 0.9,
   /** スパイが本当にやったスイッチで、ゲージに入る割合（10分の1） */
   spyCredit: 0.1,
 } as const;

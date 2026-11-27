@@ -12,14 +12,14 @@ const [clay, wood] = RESOURCE_POINTS;
 
 /** 土のミッション1つ（スイッチ3つ）を、席0と席1で受け持つ盤 */
 const earthBoard = (): Board => buildBoard({ types: ['earth'], pairs: [[0, 1]], sites: [[0, 1, 2]] });
-/** 風のミッション1つ（スイッチ2つ）の盤 */
-const windBoard = (): Board => buildBoard({ types: ['wind'], pairs: [[0, 1]], sites: [[0, 1]] });
-/** 5種類のミッションを、どれも席 i が受け持つ盤（Bot を何体動かしても、みんな同じ仕事をする） */
+/** 火のミッション1つ（スイッチ2つ）の盤（炭を使う） */
+const fireBoard = (): Board => buildBoard({ types: ['fire'], pairs: [[0, 1]], sites: [[0, 1]] });
+/** 資源を使う2種類（火・土）のミッションを、席0が受け持つ盤（Bot を何体動かしても、みんな同じ仕事をする） */
 function allBoard(): Board {
   return buildBoard({
-    types: ['fire', 'water', 'earth', 'wind', 'thunder'],
-    pairs: [[0, 1], [0, 1], [0, 1], [0, 1], [0, 1]],
-    sites: [[0, 1], [2, 3, 4], [5, 6, 7], [8, 9], [10, 11, 12]],
+    types: ['fire', 'earth'],
+    pairs: [[0, 1], [0, 1]],
+    sites: [[0, 1], [2, 3, 4]],
   });
 }
 /** Bot たちに、盤のミッションを受け持たせる（seat を省くと、全員が席0の分） */
@@ -146,7 +146,7 @@ describe('住民Bot', () => {
     const me = createHarvester(createWalker({ x: 200, y: 400 }));
     const b = createBot(BOT_PROFILES[0], standSpot(wood));
     const all = [me, b.h];
-    const board = assign(windBoard(), [b]);
+    const board = assign(fireBoard(), [b]);
     b.h.claim = wood.id; // Bot は、はじめから目の前の竹を使う
     let got = -1;
     for (let t = 0; t < 30 && got < 0; t += 1 / 60) {
@@ -157,7 +157,7 @@ describe('住民Bot', () => {
         updateHarvester(h, f, all, t + 0.2, 0);
       }
       updateBot(b, f, board, all, t, rng);
-      if (me.session?.pointId === 'wind') got = t;
+      if (me.session?.pointId === 'fire') got = t;
     }
     // Bot が採りきって空にした場合は、元に戻るまで待ってから番が来る
     expect(got).toBeGreaterThan(0);
