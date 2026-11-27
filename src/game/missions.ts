@@ -4,8 +4,8 @@
 // ・スパイは「本当にやる」か「ふりをする」を選べる。ふりはスイッチが入らない（資源も使わない）
 // ・プレイヤーはミニゲームを遊ぶ。Botは決まった時間がたつと終わる（ときどきまちがえて、やり直す）
 
-import { AFFINITY, FACILITIES, FACILITY, MATCH, MISSION_BOT, SPOT, VISION } from './config';
-import { missionComplete, missionType, spotNear, type Board, type MissionInst } from './board';
+import { AFFINITY, FACILITIES, FACILITY, MATCH, MISSION_BOT, RITE, SPOT, VISION } from './config';
+import { isRite, missionComplete, missionType, spotNear, type Board, type MissionInst } from './board';
 import { affinity, type Affinity } from './elements';
 import type { Harvester } from './harvest';
 import { createMissionGame, type MissionGame } from './missionGames';
@@ -86,12 +86,15 @@ export function myMissions(h: Harvester, board: Board): MissionInst[] {
 
 /** いまの体のエレメントでの、そのミッションへの向き不向き */
 export function missionAffinity(h: Harvester, m: MissionInst): Affinity {
-  return affinity(h.element, missionType(m.type).element);
+  // 王様の儀式は、どの体でも同じ難しさ（大変なミッションなので RITE.affinity）
+  if (isRite(m)) return RITE.affinity;
+  return affinity(h.element, missionType(m.type).element!);
 }
 
 /** スイッチを1つオンにするのに足りない資源の数（足りていれば 0） */
 export function materialsShort(h: Harvester, m: MissionInst): number {
   const t = missionType(m.type);
+  if (t.needPerSpot === 0 || !t.element) return 0;
   return Math.max(0, t.needPerSpot - h.held[t.element]);
 }
 
@@ -143,7 +146,8 @@ export function missionChance(
           : materialsShort(h, m) > 0
             ? 'notReady'
             : 'ready';
-  return { mission: m, spot: near.index, state, affinity: aff, canFake: isSpy && !busy && !on };
+  // 王様の祭壇では「ふり」はできない（王様の儀式は、王様だけのもの）
+  return { mission: m, spot: near.index, state, affinity: aff, canFake: isSpy && !busy && !on && !isRite(m) };
 }
 
 /**
@@ -201,7 +205,7 @@ export function finishMission(h: Harvester, board: Board, now: number): MissionE
   const spot = m?.spots[task.spot];
   if (!spot || spot.on) return ev;
   const t = missionType(m.type);
-  h.held[t.element] = Math.max(0, h.held[t.element] - t.needPerSpot);
+  if (t.element) h.held[t.element] = Math.max(0, h.held[t.element] - t.needPerSpot);
   spot.on = true;
   spot.credit = task.credit;
   // 雷のミッションでスイッチを入れると、しばらく視界がまるくなる（暗闇が晴れる）

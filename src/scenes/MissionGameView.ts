@@ -452,7 +452,7 @@ export class MissionGameView {
       `③ 縮む輪が 重なった瞬間に 拍手（${g.claps}/${g.clapsNeeded}）`,
       '④ もう一度 鈴を鳴らそう',
     ];
-    this.title.setText(`すべての国で同じ「土のお祈り」\n${hints[g.stage]}`);
+    this.title.setText(`祭壇で お参り\n${hints[g.stage]}`);
     const a = this.art;
     // 作法の順番（いまの段を明るく）
     PRAYER_STEPS.forEach((_, i) => {

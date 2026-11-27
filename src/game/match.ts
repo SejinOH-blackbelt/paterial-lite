@@ -1,8 +1,8 @@
 // 1試合のルール（ミッション・国の仕事ゲージ・勝敗・呼び出し・会議・投票・罰金と賠償・Botの疑い度）。
 // 画面表示（Phaser）には依存しません。
 
-import { BOT, LANDMARKS, MATCH, MISS_SOUND, SUPPORT, SUSPICION } from './config';
-import { boardGauge, type Board } from './board';
+import { BOT, LANDMARKS, MATCH, MISS_SOUND, RITE, SUPPORT, SUSPICION } from './config';
+import { boardGauge, isRite, missionComplete, type Board } from './board';
 import { createFieldState, giveHeld, takeHeld, totalHeld, type FieldState, type Harvester } from './harvest';
 import { facilityById, facilityNear, facilityStand, type MissionEvent } from './missions';
 import { faceTo, type Point } from './movement';
@@ -105,6 +105,8 @@ export interface MatchState {
   sightings: Map<Pawn, Map<Pawn, { at: Point; amount: number }>>;
   /** 王様の支持度（0 になると市民がストライキを起こして、スパイの勝ち） */
   support: number;
+  /** 王様の儀式がすんで、支持度を戻したか（1試合に1回） */
+  riteRewarded: boolean;
   /** 宝物庫と出口（M10）。場所は試合の最初に王様が決める */
   treasure: TreasureState;
   /** 呼び止めて外したパテが、次に呼び止められるようになる時刻 */
@@ -113,6 +115,19 @@ export interface MatchState {
   knowsStolen: Set<Pawn>;
   /** 宝を持ったパテを追いかけている市民 Bot と、最後にその姿を見た時刻 */
   chasers: Map<Pawn, number>;
+}
+
+/**
+ * 王様の儀式（5つの祭壇）が全部すんでいたら、支持度を RITE.supportBonus 戻す（SUPPORT.start まで。1試合に1回）。
+ * 戻したら true（画面側で知らせる）。親機とひとりのときに、毎コマ呼ぶ
+ */
+export function grantRiteReward(m: MatchState, board: Board): boolean {
+  if (m.riteRewarded || m.phase === 'over') return false;
+  const rite = board.missions.find(isRite);
+  if (!rite || !missionComplete(rite)) return false;
+  m.riteRewarded = true;
+  m.support = Math.min(SUPPORT.start, m.support + RITE.supportBonus);
+  return true;
 }
 
 /**
@@ -156,6 +171,7 @@ export function createMatch(pawns: Pawn[], now: number, rng: Rng, board: Board, 
     spotted: new Map(),
     sightings: new Map(),
     support: SUPPORT.start,
+    riteRewarded: false,
     // 省いたときに試合の乱数（rng）を使わないのは、ほかの決まり（塗りムラの位置など）の並びを変えないため
     treasure: createTreasure(treasure ?? botTreasurePlan(createRng(1))),
     stopReady: new Map(),

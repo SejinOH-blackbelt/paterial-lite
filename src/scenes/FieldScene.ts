@@ -20,6 +20,8 @@ import {
   canEmergency,
   checkOutcome,
   chooseKing,
+  grantRiteReward,
+  kingSeat,
   regroup,
   toriiSpot,
   createMatch,
@@ -48,7 +50,7 @@ import {
   updateBotTask,
   type MissionEvent,
 } from '../game/missions';
-import { buildBoard, missionComplete, missionIdsOf, missionType, planBoard, spotsOn, type Board, type BoardPlan, type MissionInst } from '../game/board';
+import { buildBoard, isRite, missionComplete, missionIdsOf, missionType, planBoard, spotsOn, type Board, type BoardPlan, type MissionInst, type Spot } from '../game/board';
 import type { Step } from '../game/missionGames';
 import { createWalker, isWalking, setTarget, steerWalker, stepWalker, type Walker } from '../game/movement';
 import { botChaseTarget, botGuardSpot, canAlarm, raiseAlarm, canSteal, carrierPawn, steal, stopAndSearch, stopTarget, stopWait, updateAwareness, walkSpeed } from '../game/heist';
@@ -75,7 +77,7 @@ import { YorishiroView } from './YorishiroView';
 import { MeetingMap } from './MeetingMap';
 import { finishPossess, kickFromShrine, nearYorishiro, pressCommand, shrineChance, startPossess } from '../game/yorishiro';
 import type { NetGame } from '../net/netGame';
-import { randomElement, type ElementId } from '../game/elements';
+import { randomElement, type ElementId, type MissionId } from '../game/elements';
 import { isLit, seeAmount } from '../game/vision';
 import {
   applyBoardWire,
@@ -121,6 +123,7 @@ import { EXIT_SIZE, EXIT_TEX, VAULT_SIZE, VAULT_TEX, makeTreasureTextures } from
 import { botTreasurePlan, nearExit, planFromIds } from '../game/treasure';
 import { ELEMENT_RES_CHIP_COLOR, ELEMENT_RES_EMPTY_TEX, ELEMENT_RES_TEX, makeResourceTextures, RES_SIZE } from './resourceTextures';
 import { makeMissionArt, MISSION_SPOT_TEX as SPOT_TEX } from './missionArt';
+import { ALTAR_TEX, makeAltarTextures } from './altarTextures';
 import { ELEMENT_PICTURE, makeElementPictures } from './elementPictures';
 import { ELEMENT_COLOR } from './elementIcons';
 import { drawGround, drawPart, makeTextures, TEX } from './textures';
@@ -351,6 +354,7 @@ export class FieldScene extends Phaser.Scene {
     makeTextures(this);
     makeResourceTextures(this);
     makeMissionArt(this); // スイッチの絵（ミッションの中身が分かる道具の形。Codex 作）
+    makeAltarTextures(this); // 王様の儀式の祭壇（仮の絵）
     makePartTextures(this);
     makeSpyTextures(this);
     makeFacilityTextures(this);
@@ -637,11 +641,11 @@ export class FieldScene extends Phaser.Scene {
   /** スイッチでミッションを始められない理由 */
   private missionReason(state: string, m: MissionInst): string {
     const t = missionType(m.type);
-    if (state === 'notMine') return 'ここは きみのミッションではない';
+    if (state === 'notMine') return isRite(m) ? 'ここは 王様の祭壇' : 'ここは きみのミッションではない';
     if (state === 'never') return `${ELEMENT_NAMES[this.player.element]}の体では 不可… 依代の祠で乗りうつろう`;
     if (state === 'on') return 'このスイッチは もう入っている';
     if (state === 'busy') return 'ほかのパテが している';
-    return `${RESOURCE_NAMES[t.element]}が あと${materialsShort(this.player, m)}個 ひつよう`;
+    return `${t.element ? RESOURCE_NAMES[t.element] : '資源'}が あと${materialsShort(this.player, m)}個 ひつよう`;
   }
 
   /** そばのスイッチでミッションを始める（fake：スパイの「ふりをする」） */
@@ -825,7 +829,7 @@ export class FieldScene extends Phaser.Scene {
 
   private updateMaterials(pop: boolean): void {
     // 受け持ちのミッション（まだ完了していない）に使う資源だけを出す
-    const kinds = [...new Set(myMissions(this.player, this.board).filter((m) => !missionComplete(m) && missionType(m.type).needPerSpot > 0).map((m) => missionType(m.type).element))];
+    const kinds = [...new Set(myMissions(this.player, this.board).filter((m) => !missionComplete(m) && missionType(m.type).needPerSpot > 0).map((m) => missionType(m.type).element!))];
     this.materialsText.setText(kinds.map((k) => `${RESOURCE_NAMES[k]}${this.player.held[k]}`).join(' ') || '');
     if (pop) {
       this.tweens.killTweensOf(this.materialsText);
@@ -852,6 +856,9 @@ export class FieldScene extends Phaser.Scene {
       return;
     }
     if (this.match.phase !== 'play') return;
+    // 王様の儀式：全部すんだら支持度を戻す（親機とひとりのとき）。みんなの画面に知らせる
+    if (this.isSim()) grantRiteReward(this.match, this.board);
+    this.announceRite();
     updateFieldState(this.field, heard);
     this.drive(dt);
     for (const e of this.pates) {
@@ -1435,7 +1442,10 @@ export class FieldScene extends Phaser.Scene {
       this.planElements && this.planElements.length === this.pates.length
         ? [...this.planElements]
         : this.pates.map((_, seat) => (seat === this.me ? this.myElement : randomElement(this.rng)));
-    const plan = this.plan ?? planBoard(elements, this.rng);
+    // 王様（人が動かす市民の先頭）は共同ミッションを持たず、王様の儀式を受け持つ（試合で王冠をかぶるパテと同じ席）
+    const spy = Math.min(this.spyIndex, this.pates.length - 1);
+    const king = kingSeat(this.pates.map((_, seat) => seat === this.me), spy);
+    const plan = this.plan ?? planBoard(elements, this.rng, king);
     this.board = buildBoard(plan);
     this.pates.forEach((e, seat) => {
       const element = elements[seat];
@@ -1451,14 +1461,32 @@ export class FieldScene extends Phaser.Scene {
   /** 入ったスイッチの目印（足元の光と ✓ の札） */
   private spotOnMarks: { glow: Phaser.GameObjects.Ellipse; badge: Phaser.GameObjects.Container }[][] = [];
 
+  /** 王様の儀式がすんだことを、1回だけ知らせたか */
+  private riteAnnounced = false;
+
+  /** 王様の儀式が全部すんだら、みんなの画面に知らせる（子機は、親機から届いた盤のようすで気づく） */
+  private announceRite(): void {
+    if (this.riteAnnounced) return;
+    const rite = this.board.missions.find(isRite);
+    if (!rite || !missionComplete(rite)) return;
+    this.riteAnnounced = true;
+    this.audio.piron();
+    this.popText('王様の儀式が すんだ！ 支持度が 戻った', '#b8860b', 17, 7);
+  }
+
+  /** スイッチの絵の名前（王様の儀式の祭壇は、祭壇の絵） */
+  private spotTex(m: MissionInst, s: Spot): string {
+    return isRite(m) ? ALTAR_TEX(s.element, s.on) : SPOT_TEX(s.element, s.on);
+  }
+
   private makeSpotViews(): void {
     this.spotViews = this.board.missions.map((m) =>
-      m.spots.map((s) => this.add.image(s.x, s.y, SPOT_TEX(missionType(m.type).element, s.on)).setOrigin(0.5, 1).setDepth(s.y)),
+      m.spots.map((s) => this.add.image(s.x, s.y, this.spotTex(m, s)).setOrigin(0.5, 1).setDepth(s.y)),
     );
     // 入ったスイッチの目印：足元の光（エレメントの色）と、上の「✓」の札。入る前は絵をくすませる（オン・オフをひと目で分かるように）
     this.spotOnMarks = this.board.missions.map((m) =>
       m.spots.map((s) => {
-        const color = ELEMENT_COLOR[missionType(m.type).element];
+        const color = isRite(m) ? COLORS.uiHoney : ELEMENT_COLOR[s.element];
         const glow = this.add.ellipse(s.x, s.y - 2, 58, 22, color, 0.55).setDepth(s.y - 1).setVisible(false);
         const badge = this.add.container(s.x + 14, s.y - 60, [
           this.add.circle(0, 0, 10, COLORS.ink),
@@ -1662,7 +1690,7 @@ export class FieldScene extends Phaser.Scene {
     this.board.missions.forEach((m, i) =>
       m.spots.forEach((s, k) => {
         const img = this.spotViews[i]?.[k];
-        const key = SPOT_TEX(missionType(m.type).element, s.on);
+        const key = this.spotTex(m, s);
         if (img && (first || img.texture.key !== key)) {
           img.setTexture(key);
           // 入る前はくすんだ色、入ったら元の色（光・✓の札といっしょに）
@@ -1811,8 +1839,27 @@ export class FieldScene extends Phaser.Scene {
     };
     myMissions(me, this.board).forEach((m, i) => {
       const t = missionType(m.type);
-      const zone = ZONES.find((z) => z.element === t.element);
       const y = 168 + i * 92;
+      if (!t.element) {
+        // 王様の儀式：5つのゾーンの祭壇を回る（体のエレメントに関係なく、大変なミッション）
+        this.introAdd(this.add.rectangle(cx, y + 40, 312, 164, COLORS.uiHoney, 0.18).setStrokeStyle(2, COLORS.uiWood, 0.9));
+        this.introAdd(this.add.image(cx - 124, y + 30, ALTAR_TEX('earth', true)).setScale(1.1));
+        this.introAdd(this.add.text(cx - 86, y - 30, t.name, { fontFamily: 'sans-serif', fontSize: '18px', fontStyle: 'bold', color: INK }).setResolution(2));
+        this.introAdd(
+          this.add
+            .text(cx - 86, y - 2, `5つのゾーンの 祭壇を\nぜんぶ回って お参り\n（鈴 → 礼 → 拍手）。どの順でもよい\n\n全部回ると ゲージがたまり\n支持度も 戻る`, {
+              fontFamily: 'sans-serif',
+              fontSize: '11px',
+              color: INK,
+              lineSpacing: 2,
+            })
+            .setResolution(2),
+        );
+        this.introAdd(this.add.rectangle(cx + 120, y - 18, 46, 22, 0xb3322a).setStrokeStyle(1.5, COLORS.ink));
+        this.introAdd(this.add.text(cx + 120, y - 18, '大変', { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#fff8e8' }).setOrigin(0.5).setResolution(2));
+        return;
+      }
+      const zone = ZONES.find((z) => z.element === t.element);
       this.introAdd(this.add.rectangle(cx, y, 312, 84, ELEMENT_COLOR[t.element], 0.14).setStrokeStyle(2, ELEMENT_COLOR[t.element], 0.9));
       this.introAdd(this.add.image(cx - 124, y, ELEMENT_PICTURE(t.element)).setScale(0.72));
       this.introAdd(this.add.text(cx - 86, y - 30, t.name, { fontFamily: 'sans-serif', fontSize: '16px', fontStyle: 'bold', color: INK }).setResolution(2));
@@ -1826,10 +1873,13 @@ export class FieldScene extends Phaser.Scene {
       this.introAdd(this.add.rectangle(cx + 120, y - 18, 46, 22, a.color).setStrokeStyle(1.5, COLORS.ink));
       this.introAdd(this.add.text(cx + 120, y - 18, a.text, { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#fff8e8' }).setOrigin(0.5).setResolution(2));
     });
-    const notes = [
-      '相方は ないしょ。スイッチの進み具合は いっしょ',
-      this.isPlayerSpy ? 'スイッチは「ふり」もできる。宝を盗んで 出口へ！' : '「不可」なら 依代の祠で 乗りうつろう',
-    ];
+    const isKingNow = !this.isPlayerSpy && this.playerPawn.isKing;
+    const notes = isKingNow
+      ? ['王様だけの ミッション。地図じゅうを歩くので', 'みんなの目にも とまる。スパイに 気をつけて']
+      : [
+          '相方は ないしょ。スイッチの進み具合は いっしょ',
+          this.isPlayerSpy ? 'スイッチは「ふり」もできる。宝を盗んで 出口へ！' : '「不可」なら 依代の祠で 乗りうつろう',
+        ];
     this.introAdd(label(this, cx, 470, notes.join('\n'), 12, INK).setStroke(INK, 0));
     this.introAdd(label(this, cx, 560, this.net ? 'まもなく スタート' : 'タップで スタート', 13, INK).setStroke(INK, 0).setAlpha(0.7));
     this.introNext({ solo: 12, net: 8 }, () => this.showCountdown());
@@ -1881,6 +1931,7 @@ export class FieldScene extends Phaser.Scene {
 
   /** 試合を始める。スパイは役の発表で決まった番号のパテ */
   private setupMatch(): void {
+    this.riteAnnounced = false; // 同じ画面を次の試合でも使うので、試合ごとに戻す
     const index = Math.min(this.spyIndex, this.pates.length - 1);
     this.pates.forEach((e, i) => (e.pawn.isSpy = i === index));
     this.spyEntity = this.pates[index];
@@ -1975,6 +2026,15 @@ export class FieldScene extends Phaser.Scene {
       const t = missionType(m.type);
       const y = 178 + i * 38;
       const done = missionComplete(m);
+      if (!t.element) {
+        // 王様の儀式：まだの祭壇のゾーンを並べる
+        const left = m.spots.filter((s) => !s.on).map((s) => ELEMENT_NAMES[s.element]);
+        add(this.add.circle(36, y + 6, 9, COLORS.uiHoney).setStrokeStyle(2, COLORS.ink));
+        add(this.add.text(52, y - 4, `${t.name}（5つのゾーンの祭壇）`, { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: INK }));
+        const state = done ? '完了！ 支持度が戻った' : `祭壇 ${spotsOn(m)}/${m.spots.length}・まだ：${left.join('・')}`;
+        add(this.add.text(52, y + 13, state, { fontFamily: 'sans-serif', fontSize: '11px', color: done ? '#2b6b2f' : INK }));
+        return;
+      }
       add(this.add.circle(36, y + 6, 9, ELEMENT_COLOR[t.element]).setStrokeStyle(2, COLORS.ink));
       add(this.add.text(52, y - 4, `${t.name}（${ELEMENT_NAMES[t.element]}）`, { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: INK }));
       const short = done ? 0 : materialsShort(me, m);
@@ -1987,7 +2047,7 @@ export class FieldScene extends Phaser.Scene {
     add(map.container);
     for (const m of missions) {
       if (missionComplete(m)) continue;
-      for (const s of m.spots) if (!s.on) map.addMark(s, ELEMENT_COLOR[missionType(m.type).element], '');
+      for (const s of m.spots) if (!s.on) map.addMark(s, ELEMENT_COLOR[s.element], '');
     }
     map.addMark(me.walker.pos, COLORS.uiHoney, '');
     add(label(this, x, 296 + map.height + 10, '金のピン：きみ　色のピン：まだのスイッチ', 10, INK).setStroke(INK, 0));
@@ -2072,8 +2132,9 @@ export class FieldScene extends Phaser.Scene {
     // 受け持ちのミッション：エレメントと、入ったスイッチの数（相方と共有）。いまの体との相性の印（得・普・苦・×）
     const mark: Record<string, string> = { good: '得', plain: '普', weak: '苦', never: '×' };
     const lines = myMissions(me, this.board).map((m) => {
-      const el = ELEMENT_NAMES[missionType(m.type).element];
+      const el = isRite(m) ? '儀式' : ELEMENT_NAMES[missionType(m.type).element!];
       if (missionComplete(m)) return `${el}✔`;
+      if (isRite(m)) return `${el}${spotsOn(m)}/${m.spots.length}`;
       return `${el}${spotsOn(m)}/${m.spots.length}[${mark[missionAffinity(me, m)]}]`;
     });
     const text = `${ELEMENT_NAMES[me.element]}  ${lines.join('  ')}`;
@@ -2098,7 +2159,7 @@ export class FieldScene extends Phaser.Scene {
         const x = s.x + 16;
         const y = s.y - 62;
         g.fillStyle(COLORS.ink).fillCircle(x, y, 10);
-        g.fillStyle(ready ? COLORS.uiHoney : ELEMENT_COLOR[missionType(m.type).element]).fillCircle(x, y, 8);
+        g.fillStyle(ready ? COLORS.uiHoney : ELEMENT_COLOR[s.element]).fillCircle(x, y, 8);
         if (ready) g.fillStyle(COLORS.ink).fillRect(x - 1.5, y - 5, 3, 6).fillCircle(x, y + 4, 1.6);
       }
     }
@@ -2432,10 +2493,11 @@ export class FieldScene extends Phaser.Scene {
     if (this.yoriView) return;
     const me = this.player;
     const mine = myMissions(me, this.board);
-    const left = mine.filter((m) => !missionComplete(m)).map((m) => m.type);
+    const shared = mine.filter((m) => !isRite(m));
+    const left = shared.filter((m) => !missionComplete(m)).map((m) => m.type as MissionId);
     this.yoriView = new YorishiroView(this, {
       current: me.element,
-      missions: left.length > 0 ? left : mine.map((m) => m.type),
+      missions: left.length > 0 ? left : shared.map((m) => m.type as MissionId),
       onChoose: (e) => {
         const now = this.audio.heardTime();
         if (!startPossess(me, e, now, this.rng, true)) return;

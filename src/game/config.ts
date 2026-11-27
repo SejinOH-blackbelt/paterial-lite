@@ -172,7 +172,7 @@ export const NET = {
    * ゲームのルールの版。友達と遊ぶとき、親機と子機でちがったら、読みこみ直してもらう
    * （ルールや通信の中身を変えたら、1 つ上げる）
    */
-  version: 9,
+  version: 10,
   /** ようすを送る間隔（秒）。短いほど動きがなめらかだが、通信が増える */
   sendInterval: 0.1,
   /** 親機が、みんながエレメントを選び終えるのを待つ最長の秒数（抜けた人がいても始められるように） */
@@ -533,6 +533,36 @@ export const MISSIONS = [
   { id: 'wind', name: '風の道', element: 'wind', game: 'wind', spots: 2, needPerSpot: 0 },
   { id: 'thunder', name: '暗闇を照らす', element: 'thunder', game: 'dark', spots: 3, needPerSpot: 0 },
 ] as const;
+
+/**
+ * 王様の儀式（使い手の決定 Nov 27）：王様は共同ミッションを持たず、王様だけのこのミッションを1つ受け持つ。
+ * 5つのゾーンに1つずつある祭壇を全部回って、それぞれで「お参り」（鈴 → 礼 → 拍手）をする。どの順でもよい。
+ * 地図じゅうを歩くので大変で、みんなの目にもとまる（王様のなりすましの手がかりにもつながる）。
+ * 祭壇1つでゲージが altarUnits 分たまり、5つ全部で支持度が supportBonus 戻る（数値は仮）。
+ * 体のエレメントは関係なく、どの体でも affinity の難しさ（大変なミッションなので「苦手」と同じ）
+ */
+export const RITE = {
+  id: 'rite',
+  name: '王様の儀式',
+  game: 'prayer',
+  needPerSpot: 0,
+  affinity: 'weak',
+  /** 祭壇1つでたまるゲージの量（ふつうのスイッチは MISSION_WEIGHT.spot） */
+  altarUnits: 2,
+  /** 5つ全部回ったら戻る支持度（100 まで） */
+  supportBonus: 20,
+  /**
+   * 祭壇の場所（ゾーンごとに1つ）。スイッチ・採取場・名物・施設から 66 以上離れた所を計算で選んだ
+   * （スイッチの候補の場所は人数が多いと足りなくなるので、祭壇は別に置く）
+   */
+  altars: [
+    { x: 520, y: 325, zone: 'fire' },
+    { x: 510, y: 815, zone: 'water' },
+    { x: 225, y: 340, zone: 'earth' },
+    { x: 260, y: 970, zone: 'wind' },
+    { x: 200, y: 1170, zone: 'thunder' },
+  ],
+} as const;
 
 /** 国の仕事ゲージ：スイッチを1つオンにすると、使った資源の数 ＋ spot がたまる */
 export const MISSION_WEIGHT = {

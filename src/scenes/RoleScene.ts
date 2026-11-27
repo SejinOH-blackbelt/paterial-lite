@@ -1,6 +1,6 @@
 // 役の発表：「きみは 王様」「きみは 市民」（友達と遊ぶとき、王様でない人）か「きみは スパイ」。スパイをここで決めて、採取場に渡す
 import Phaser from 'phaser';
-import { COLORS, PLAYERS, ELEMENT_NAMES, ELEMENTS, KING_PART, MISSIONS, NET, PLAYER_ELEMENT, PLAYER_PART, SCREEN, SPOT } from '../game/config';
+import { COLORS, PLAYERS, ELEMENT_NAMES, ELEMENTS, KING_PART, MISSIONS, NET, PLAYER_ELEMENT, PLAYER_PART, RITE, SCREEN, SPOT } from '../game/config';
 import { planBoard, type BoardPlan } from '../game/board';
 import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
@@ -86,7 +86,7 @@ export class RoleScene extends Phaser.Scene {
       isSpy
         ? 'バイキングから来た スパイ。\n茶色に塗って 和の国にまぎれこんだ。\n宝を盗んで 出口から逃げよう。\n名物をスキャンすると 見つかりにくい。'
         : isKing
-          ? '和の国の 王様パテ。\nミッションで ゲージを満タンに。\nスパイを当てよう。でも ぬれぎぬは\n支持度が下がる。0 でストライキ！'
+          ? '和の国の 王様パテ。王様だけの儀式で\n5つのゾーンの 祭壇を回ろう。\nスパイを当てよう。でも ぬれぎぬは\n支持度が下がる。0 でストライキ！'
           : '和の国の 市民パテ。\nミッションで ゲージを満タンに。\n王様と力を合わせて スパイを当てよう。\nぬれぎぬを着せると 旅に出てしまう。',
       16,
     );
@@ -176,7 +176,8 @@ export class RoleScene extends Phaser.Scene {
       if (started) return;
       const rng = createRng(net.seed + 977);
       const elements = net.seats.map((_, seat) => (seat === 0 ? element : this.readySeats.get(seat) ?? randomElement(rng)));
-      const plan = planBoard(elements, rng);
+      // 王様（人が座る市民の先頭）は共同ミッションを持たず、王様の儀式を受け持つ
+      const plan = planBoard(elements, rng, kingSeat(net.seats.map((id) => id !== 0), net.spy));
       const names = net.seats.map((id, seat) => (seat === 0 ? loadPlayerName() : id !== 0 ? this.readyNames.get(seat) ?? '' : ''));
       net.relay.send('all', { k: 'go', els: elements.map((e) => ELEMENTS.indexOf(e)), plan, names } satisfies GoWire);
       start(elements, plan, names);
@@ -259,8 +260,16 @@ function validGo(msg: GoWire, seats: number): boolean {
     Array.isArray(p.sites) &&
     p.types.length === p.pairs.length &&
     p.types.length === p.sites.length &&
-    p.types.every((t) => MISSIONS.some((m) => m.id === t)) &&
+    p.types.every((t) => t === 'rite' || MISSIONS.some((m) => m.id === t)) &&
+    p.types.filter((t) => t === 'rite').length <= 1 &&
+    // 王様の儀式は、王様1人で、5つの祭壇を1つずつ（ほかのミッションは、ちがう2人）
+    p.types.every((t, i) =>
+      t === 'rite'
+        ? Array.isArray(p.pairs[i]) && p.pairs[i][0] === p.pairs[i][1] && Array.isArray(p.sites[i]) && p.sites[i].length === RITE.altars.length && new Set(p.sites[i]).size === RITE.altars.length
+        : Array.isArray(p.pairs[i]) && p.pairs[i][0] !== p.pairs[i][1],
+    ) &&
     p.pairs.every((x) => Array.isArray(x) && x.length === 2 && x.every((n) => Number.isInteger(n) && n >= 0 && n < seats)) &&
-    p.sites.every((x) => Array.isArray(x) && x.every((n) => Number.isInteger(n) && n >= 0 && n < SPOT.sites.length))
+    // 王様の儀式の「場所」は祭壇の番号（RITE.altars）、ほかはスイッチの候補の番号（SPOT.sites）
+    p.sites.every((x, i) => Array.isArray(x) && x.every((n) => Number.isInteger(n) && n >= 0 && n < (p.types[i] === 'rite' ? RITE.altars.length : SPOT.sites.length)))
   );
 }

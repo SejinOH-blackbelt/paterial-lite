@@ -7,12 +7,20 @@
 // ・配るのは全員がエレメントを選んだあと。どのパテにも「3つのうち1つは苦手か不可」になるようにする。
 // ・スパイが本当にやったスイッチは、国の仕事ゲージに 10分の1 しか入らない。
 
-import { MATCH, MISSION_DEAL, MISSION_WEIGHT, MISSIONS, SPOT } from './config';
-import { affinity, type ElementId, type MissionId } from './elements';
+import { ELEMENTS, MATCH, MISSION_DEAL, MISSION_WEIGHT, MISSIONS, RITE, SPOT } from './config';
+import { affinity, type ElementId, type MissionId, type MissionKind } from './elements';
 import type { Point } from './movement';
 import type { Rng } from './random';
 
-export type MissionType = (typeof MISSIONS)[number];
+/** ミッションの種類の情報。王様の儀式は、祭壇ごとにエレメント（ゾーン）がちがうので element が null */
+export interface MissionType {
+  id: MissionKind;
+  name: string;
+  element: ElementId | null;
+  game: (typeof MISSIONS)[number]['game'] | typeof RITE.game;
+  spots: number;
+  needPerSpot: number;
+}
 
 /** スイッチ1つ */
 export interface Spot extends Point {
@@ -20,13 +28,15 @@ export interface Spot extends Point {
   on: boolean;
   /** 国の仕事ゲージに入った割合（市民なら 1、スパイが本当にやったら MATCH.spyCredit。オフなら 0） */
   credit: number;
+  /** このスイッチのエレメント（ゾーン）。ふつうはミッションと同じ。王様の儀式の祭壇は、置かれたゾーンのエレメント */
+  element: ElementId;
 }
 
-/** 2人で受け持つミッション1つ */
+/** 2人で受け持つミッション1つ（王様の儀式は、王様1人で受け持つ。pair は同じ席が2つ） */
 export interface MissionInst {
   /** 盤の中の番号（0 から） */
   id: number;
-  type: MissionId;
+  type: MissionKind;
   /** 受け持つ2人の席 */
   pair: [number, number];
   spots: Spot[];
@@ -38,14 +48,21 @@ export interface Board {
 
 /** 盤の作り方（友達と遊ぶとき、親機が決めてみんなに送る） */
 export interface BoardPlan {
-  types: MissionId[];
+  types: MissionKind[];
   pairs: [number, number][];
   /** ミッションごとの、スイッチの場所（SPOT.sites の番号） */
   sites: number[][];
 }
 
-export function missionType(id: MissionId): MissionType {
-  return MISSIONS.find((m) => m.id === id)!;
+const RITE_TYPE: MissionType = { id: RITE.id, name: RITE.name, element: null, game: RITE.game, spots: ELEMENTS.length, needPerSpot: RITE.needPerSpot };
+
+export function missionType(id: MissionKind): MissionType {
+  return id === 'rite' ? RITE_TYPE : MISSIONS.find((m) => m.id === id)!;
+}
+
+/** 王様の儀式か */
+export function isRite(m: MissionInst): boolean {
+  return m.type === 'rite';
 }
 
 function shuffle<T>(a: T[], rng: Rng): T[] {
@@ -94,7 +111,7 @@ export function pairGraph(seatCount: number, perPawn: number, rng: Rng): [number
 }
 
 const isHard = (me: ElementId, type: MissionId) => {
-  const a = affinity(me, missionType(type).element);
+  const a = affinity(me, missionType(type).element!);
   return a === 'weak' || a === 'never';
 };
 
@@ -110,7 +127,7 @@ export function maxSameTypeFor(missionCount: number): number {
   return Math.max(MISSION_DEAL.maxSameType, Math.ceil(missionCount / MISSIONS.length));
 }
 
-function chooseTypes(pairs: [number, number][], elements: ElementId[], rng: Rng): MissionId[] {
+function chooseTypes(pairs: [number, number][], elements: (ElementId | null)[], rng: Rng): MissionId[] {
   const ids = MISSIONS.map((m) => m.id);
   const maxSame = maxSameTypeFor(pairs.length);
   let best: MissionId[] | null = null;
@@ -133,12 +150,13 @@ function chooseTypes(pairs: [number, number][], elements: ElementId[], rng: Rng)
       has[b].add(t);
     }
     if (!ok) continue;
-    const score = elements.filter((e, seat) => [...has[seat]].some((t) => isHard(e, t))).length;
+    // 王様（elements が null の席）は共同ミッションを持たないので、数えない
+    const score = elements.filter((e, seat) => e !== null && [...has[seat]].some((t) => isHard(e, t))).length;
     if (score > bestScore) {
       best = types;
       bestScore = score;
     }
-    if (score === elements.length) break;
+    if (score === elements.filter((e) => e !== null).length) break;
   }
   // どうしても条件を満たせないとき（ふつうは起きない）は、順にあてる
   return best ?? pairs.map((_, i) => ids[i % ids.length]);
@@ -161,13 +179,13 @@ function chooseSites(types: MissionId[], rng: Rng): number[][] {
   const sameCount = new Map<MissionId, number>();
   for (const t of types) sameCount.set(t, (sameCount.get(t) ?? 0) + 1);
   const spotsFor = (t: MissionId) => {
-    const zone = freeByZone.get(missionType(t).element)?.length ?? 0;
+    const zone = freeByZone.get(missionType(t).element!)?.length ?? 0;
     const share = Math.floor(zone / (sameCount.get(t) ?? 1));
     return Math.max(1, Math.min(missionType(t).spots, share));
   };
   const want = new Map<MissionId, number>(MISSIONS.map((m) => [m.id, spotsFor(m.id)]));
   return types.map((t) => {
-    const free = freeByZone.get(missionType(t).element) ?? [];
+    const free = freeByZone.get(missionType(t).element!) ?? [];
     const mine: number[] = [];
     for (let k = 0; k < want.get(t)! && free.length > 0; k++) {
       // 離れている場所があればそこ。なければ、いちばん離れている場所
@@ -188,11 +206,29 @@ function chooseSites(types: MissionId[], rng: Rng): number[][] {
   });
 }
 
-/** 盤の作り方を決める。elements：席ごとのエレメント（全員が選び終えたもの） */
-export function planBoard(elements: ElementId[], rng: Rng): BoardPlan {
-  const pairs = pairGraph(elements.length, MISSION_DEAL.perPawn, rng);
-  const types = chooseTypes(pairs, elements, rng);
-  return { types, pairs, sites: chooseSites(types, rng) };
+/**
+ * 盤の作り方を決める。elements：席ごとのエレメント（全員が選び終えたもの）。
+ * king：王様の席。王様は共同ミッションを持たず、王様の儀式（5つのゾーンの祭壇を回る）を1人で受け持つ。
+ * 省くと王様の儀式なし（全員が共同ミッション。テスト用）
+ */
+export function planBoard(elements: ElementId[], rng: Rng, king: number | null = null): BoardPlan {
+  const hasKing = king !== null && king >= 0 && king < elements.length;
+  // 共同ミッションを組むのは、王様以外の席
+  const seats = elements.map((_, i) => i).filter((i) => !hasKing || i !== king);
+  const pairs = pairGraph(seats.length, MISSION_DEAL.perPawn, rng).map(([a, b]) => [seats[a], seats[b]] as [number, number]);
+  const shared = chooseTypes(
+    pairs,
+    elements.map((e, i) => (hasKing && i === king ? null : e)),
+    rng,
+  );
+  const sites = chooseSites(shared, rng);
+  const types: MissionKind[] = [...shared];
+  if (hasKing) {
+    types.push('rite');
+    pairs.push([king, king]);
+    sites.push(RITE.altars.map((_, i) => i)); // 王様の儀式の「場所」は RITE.altars の番号
+  }
+  return { types, pairs, sites };
 }
 
 /** 作り方から盤を組み立てる（スイッチは全部オフ） */
@@ -202,13 +238,19 @@ export function buildBoard(plan: BoardPlan): Board {
       id,
       type,
       pair: [plan.pairs[id][0], plan.pairs[id][1]],
-      spots: plan.sites[id].map((s) => ({ x: SPOT.sites[s].x, y: SPOT.sites[s].y, on: false, credit: 0 })),
+      spots: plan.sites[id].map((s): Spot => {
+        if (type === 'rite') {
+          const a = RITE.altars[s];
+          return { x: a.x, y: a.y, element: a.zone, on: false, credit: 0 };
+        }
+        return { x: SPOT.sites[s].x, y: SPOT.sites[s].y, element: missionType(type).element!, on: false, credit: 0 };
+      }),
     })),
   };
 }
 
-export function dealBoard(elements: ElementId[], rng: Rng): Board {
-  return buildBoard(planBoard(elements, rng));
+export function dealBoard(elements: ElementId[], rng: Rng, king: number | null = null): Board {
+  return buildBoard(planBoard(elements, rng, king));
 }
 
 /** その席が受け持つミッションの番号 */
@@ -224,9 +266,9 @@ export function missionComplete(m: MissionInst): boolean {
   return m.spots.every((s) => s.on);
 }
 
-/** スイッチ1つで国の仕事ゲージに入る量（どのミッションも同じ） */
-export function spotUnits(_type: MissionId): number {
-  return MISSION_WEIGHT.spot;
+/** スイッチ1つで国の仕事ゲージに入る量（どのミッションも同じ。王様の儀式の祭壇は RITE.altarUnits） */
+export function spotUnits(type: MissionKind): number {
+  return type === 'rite' ? RITE.altarUnits : MISSION_WEIGHT.spot;
 }
 
 /**
@@ -235,8 +277,10 @@ export function spotUnits(_type: MissionId): number {
  * ただし、スイッチが全部入ったら 1（行き止まりにしない）。
  */
 export function boardGauge(board: Board): number {
-  // スイッチが全部入ったら満タン（スパイが本当に入れたスイッチがあっても、行き止まりにしない）
-  if (board.missions.length > 0 && board.missions.every((m) => m.spots.every((s) => s.on))) return 1;
+  // 共同ミッションのスイッチが全部入ったら満タン（スパイが本当に入れたスイッチがあっても、行き止まりにしない。
+  // 王様の儀式は数えない：王様が置物にされて儀式ができなくなっても、行き止まりにしない）
+  const shared = board.missions.filter((m) => !isRite(m));
+  if (shared.length > 0 && shared.every((m) => m.spots.every((s) => s.on))) return 1;
   let done = 0;
   let total = 0;
   for (const m of board.missions) {

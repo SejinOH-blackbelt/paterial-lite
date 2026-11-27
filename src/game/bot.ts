@@ -4,8 +4,8 @@
 // スパイBotは、スイッチで「本当にやる」か「ふりをする」かを選びます。
 
 import { BOT, FIELD, MISSION_BOT, RESOURCE, RESOURCE_POINTS, YORISHIRO } from './config';
-import { missionComplete, missionType, type Board } from './board';
-import { bestElementFor, type ElementId } from './elements';
+import { isRite, missionComplete, missionType, type Board } from './board';
+import { bestElementFor, type ElementId, type MissionId } from './elements';
 import { startPossess, updateBotPossess } from './yorishiro';
 import { createHarvester, harvestTap, moveHarvester, claimedByOther, type FieldState, type Harvester, type HarvestResult } from './harvest';
 import { materialsShort, missionAffinity, myMissions, spotBusy, startMission, type MissionTask } from './missions';
@@ -93,7 +93,7 @@ export function openSpots(h: Harvester, board: Board, all: readonly Harvester[])
 /** まだ足りない、ミッションに必要な資源の種類（入れられるスイッチが残っているのに、資源が足りない） */
 export function neededKinds(h: Harvester, board: Board, all: readonly Harvester[]): string[] {
   const kinds = new Set<string>();
-  for (const o of openSpots(h, board, all)) if (materialsShort(h, o.mission) > 0) kinds.add(missionType(o.mission.type).element);
+  for (const o of openSpots(h, board, all)) if (materialsShort(h, o.mission) > 0) kinds.add(missionType(o.mission.type).element!);
   return [...kinds];
 }
 
@@ -120,8 +120,8 @@ function chooseSpot(bot: Bot, board: Board, all: readonly Harvester[], now: numb
   const ready = stocked.filter((o) => missionAffinity(h, o.mission) !== 'never');
   if (ready.length === 0 && stocked.length > 0 && now >= h.shrineLockUntil) {
     const left = myMissions(h, board)
-      .filter((m) => !missionComplete(m))
-      .map((m) => m.type);
+      .filter((m) => !missionComplete(m) && !isRite(m))
+      .map((m) => m.type as MissionId);
     const to = bestElementFor(left, h.element);
     if (to !== h.element) {
       bot.changeTo = to;

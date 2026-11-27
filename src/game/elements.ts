@@ -12,6 +12,8 @@ export type ElementId = (typeof ELEMENTS)[number];
 export type Affinity = 'good' | 'plain' | 'weak' | 'never';
 /** ミッションの種類（エレメントと同じ名前） */
 export type MissionId = (typeof MISSIONS)[number]['id'];
+/** 盤にのるミッションの種類：エレメントのミッションか、王様の儀式（rite） */
+export type MissionKind = MissionId | 'rite';
 
 /** 自分（パテ）が、相手（ミッション）のエレメントに対して、どれくらい向いているか */
 export function affinity(me: ElementId, mission: ElementId): Affinity {

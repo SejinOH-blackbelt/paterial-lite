@@ -35,7 +35,7 @@ describe('共同ミッションの配り方', () => {
       elements.forEach((e, seat) => {
         const types = plan.pairs.flatMap((p, i) => (p.includes(seat) ? [plan.types[i]] : []));
         expect(new Set(types).size).toBe(3);
-        expect(types.some((t) => ['weak', 'never'].includes(affinity(e, missionType(t).element)))).toBe(true);
+        expect(types.some((t) => ['weak', 'never'].includes(affinity(e, missionType(t).element!)))).toBe(true);
       });
     }
   });
@@ -132,7 +132,7 @@ describe('人数 6〜10人のミッションの配り方', () => {
         const plan = planBoard(elements, createRng(seed * 7));
         elements.forEach((e, s) => {
           const mine = plan.pairs.flatMap((p, i) => (p.includes(s) ? [plan.types[i]] : []));
-          expect(mine.some((t) => ['weak', 'never'].includes(affinity(e, missionType(t).element)))).toBe(true);
+          expect(mine.some((t) => ['weak', 'never'].includes(affinity(e, missionType(t).element!)))).toBe(true);
         });
       }
     });
