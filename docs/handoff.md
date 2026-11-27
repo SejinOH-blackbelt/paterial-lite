@@ -10,6 +10,8 @@ Nov 27, 2026 時点。別の環境で作業を続けるためのメモです。
 
 ## 1. いまの状態（Nov 28 時点）
 
+- **パテの初期デザイン（採用）**：現行の5エレメントの体と穴の目・口を生かし、小物をひとりひとつ付ける。採用見本は [火](concept/accessories/fire.png)・[水](concept/accessories/water.png)・[土](concept/accessories/earth.png)・[風](concept/accessories/wind.png)・[雷](concept/accessories/thunder.png)。各シートは上段が星、スカーフ、麦わら帽子、金縁・黒レンズのバイザー、蝶ネクタイ。中段がヘッドセット、ポシェット、巻物、ミトン、鈴。下段がピクセル風サングラス、ネクタイ、頭のリボン。ゲーム画面への反映は今後の作業。
+
 - 公開中：https://sejinoh-blackbelt.github.io/paterial-lite/ （main に push すると GitHub Actions がテスト → ビルド → GitHub Pages に公開。テストが1つでも落ちたら公開されない）
 - 友達と遊ぶ用の中継サーバー：Render の無料 Web サービス「paterial-lite-relay」（https://paterial-lite-relay.onrender.com ）。中身はリポジトリの `server/`。しばらく使わないと眠り、起きるまで1分ほどかかる。
 - 開発ステップは **M9 まで完了**（M9 の③のあとに、使い手の要望で大きな見直しを何度か入れた。下の「2. 決定事項」）。**M10 を進行中**（①宝物庫と出口、②盗む・呼び止める、③アラート、④スコア表、⑤王様が宝物庫と出口を選ぶ画面 まで。くわしくは 3-1 の「M10 の進み具合」）。
