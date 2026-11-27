@@ -1,34 +1,29 @@
 // パテの声（使い手の案 Nov 27）。
 // ・試合のはじめの「ドン！」は、王様の声。みんなが本物の王様の声を一度聞く。
 // ・あいさつすると、あいさつした人が「ぺこっ」と言い、王様が同じ声で「うむ」と返す（本物の王様なら、いつも同じ声）。
-// ・あいさつの「ぺこっ」は、頭の飾りごとに高さがちがう。スパイは和の国の声と響きが少しちがう（語尾が上がり、少しゆれる。なまりのような）。
-//   覚えている人だけが「あれ？」と思える程度にする。
+// ・声は「王様」「市民」「スパイ」の3つだけ（使い手の決定：キャラごとの差は入れない）。
+//   市民はみんな同じ「ぺこっ」。スパイだけ少しちがう声（少し低く、語尾が上がって少しゆれる。なまりのような）。
+//   覚えている人は「あれ？」と気づける。
 // ・あとで王様のなりすまし（M11）を作るとき、偽の王様の「うむ」を少しちがう声にすると、はじめの声を覚えている人が気づける。
-import { HEAD_PARTS } from '../game/config';
 import type { GameAudio } from './audio';
 
-/** 頭の飾りごとの声の高さ（Hz） */
-const PITCH = [392, 440, 494, 523, 587, 659, 698, 784, 880, 349, 415];
+/** 市民の声の高さ（Hz） */
+const CITIZEN_PITCH = 523;
+/** スパイの声の高さ（Hz。市民より少し低い） */
+const SPY_PITCH = 466;
 
 /** 王様の声の高さ（Hz。だれよりも低く、ゆったり） */
 const KING_PITCH = 175;
 
-/**
- * あいさつの「ぺこっ」。だれの声も毎回少しゆらぐ（語尾の上げ下げ・ゆれ）。
- * isSpy なら、そのゆらぎが少しだけ「語尾が上がる・ゆれる」ほうへずれる（なまり）。幅は重なるので、1回では決めきれない
- */
-export function greetCall(audio: GameAudio, part: string, isSpy: boolean, volume: number): void {
-  const i = Math.max(0, HEAD_PARTS.indexOf(part as (typeof HEAD_PARTS)[number]));
-  const p = PITCH[i % PITCH.length];
-  const r = (a: number, b: number) => a + Math.random() * (b - a);
-  const end = isSpy ? r(0.98, 1.18) : r(0.86, 1.04);
-  const vibrato = isSpy ? p * r(0.006, 0.022) : Math.random() < 0.3 ? p * r(0, 0.012) : 0;
+/** あいさつの「ぺこっ」。市民はみんな同じ声。isSpy なら少しちがう声（少し低く、語尾が上がって少しゆれる） */
+export function greetCall(audio: GameAudio, isSpy: boolean, volume: number): void {
+  const p = isSpy ? SPY_PITCH : CITIZEN_PITCH;
   audio.voice(
     [
       { f: p, len: 0.09, vowel: 'e' },
       { f: p * 0.8, len: 0.17, vowel: 'o' },
     ],
-    { volume, end, vibrato },
+    isSpy ? { volume, end: 1.12, vibrato: p * 0.015 } : { volume, end: 0.92 },
   );
 }
 
