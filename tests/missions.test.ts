@@ -325,11 +325,11 @@ describe('土の祠と、ミッションのまちがいの音', () => {
     for (const p of pawns) for (const q of pawns) expect(suspicionOf(m, p, q)).toBe(0);
   });
 
-  it('スパイは名物を全部スキャンすれば、自分のミッションが残っていても勝ち（M9②から）', () => {
+  it('スパイは名物を全部スキャンしても、それだけでは勝ちにならない（M10から。宝を盗んで逃げると勝ち）', () => {
     const { m } = setup();
     m.spy.fragments = 3;
     for (const l of ['karakuri', 'torii', 'kama']) m.spy.scanned.add(l);
-    expect(checkOutcome(m, 2)?.reason).toBe('scanned');
+    expect(checkOutcome(m, 2)).toBeNull();
   });
 });
 

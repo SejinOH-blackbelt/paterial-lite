@@ -102,4 +102,10 @@ describe('友達と遊ぶときの送り方', () => {
     expect(planFromIds({ v: 'nowhere', e: [a.id, top.id] })).toBeNull();
     expect(planFromIds({ v: VAULT_SITES[0].id, e: [a.id, b.id] })).toBeNull();
   });
+
+  it('出口の数がちょうど2つでなければ受けつけない（形のくずれた知らせ）', () => {
+    const [a, b] = EXIT_SITES.filter((e) => e.side !== 'right');
+    expect(planFromIds({ v: VAULT_SITES[0].id } as never)).toBeNull();
+    expect(planFromIds({ v: VAULT_SITES[0].id, e: [a.id, b.id, EXIT_SITES[2].id] } as never)).toBeNull();
+  });
 });

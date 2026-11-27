@@ -80,10 +80,10 @@ describe('共同ミッションと国の仕事ゲージ', () => {
 });
 
 describe('スパイの勝ち', () => {
-  it('名物を全部スキャンしたら勝ち（M9②から、自分のミッションは関係ない）', () => {
+  it('名物を全部スキャンしても、もう勝ちにはならない（M10から。スキャンはアラートを鳴りにくくするだけ）', () => {
     const { m } = setup();
     m.spy.fragments = SPY.fragmentsToWin;
-    expect(checkOutcome(m, 11)).toMatchObject({ winner: 'spy', reason: 'scanned' });
+    expect(checkOutcome(m, 11)).toBeNull();
   });
 
   it('動ける市民の数がスパイの数（1体）まで減ると、スパイの勝ち', () => {

@@ -8,8 +8,9 @@ import { facilityById, facilityNear, facilityStand, type MissionEvent } from './
 import { faceTo, type Point } from './movement';
 import { createRng, type Rng } from './random';
 import { canSee } from './vision';
-import { allScanned, createSpyState, patchSize, type SpyEvent, type SpyState } from './spy';
-import { botTreasurePlan, createTreasure, type TreasurePlan, type TreasureState } from './treasure';
+import { createSpyState, patchSize, type SpyEvent, type SpyState } from './spy';
+import { botTreasurePlan, createTreasure, nearExit, type TreasurePlan, type TreasureState } from './treasure';
+import { carrierPawn } from './heist';
 
 /** 試合に出ているパテ1体 */
 export interface Pawn {
@@ -28,7 +29,11 @@ export interface Pawn {
 }
 
 export type Winner = 'citizens' | 'spy';
-export type OutcomeReason = 'gauge' | 'caught' | 'scanned' | 'frozen' | 'strike' | 'timeout';
+/**
+ * 勝敗の理由。escaped：宝を盗んで出口から逃げた（王様の一人負け）、stopped：宝を持ったスパイを呼び止めて捕まえた。
+ * scanned は M10 より前の「名物の全スキャンで勝ち」（いまは使わない。スキャンはアラートを鳴りにくくするだけ）
+ */
+export type OutcomeReason = 'gauge' | 'caught' | 'stopped' | 'escaped' | 'scanned' | 'frozen' | 'strike' | 'timeout';
 
 export interface Outcome {
   winner: Winner;
@@ -99,6 +104,8 @@ export interface MatchState {
   support: number;
   /** 宝物庫と出口（M10）。場所は試合の最初に王様が決める */
   treasure: TreasureState;
+  /** 呼び止めて外したパテが、次に呼び止められるようになる時刻 */
+  stopReady: Map<Pawn, number>;
 }
 
 /**
@@ -135,6 +142,7 @@ export function createMatch(pawns: Pawn[], now: number, rng: Rng, board: Board, 
     support: SUPPORT.start,
     // 省いたときに試合の乱数（rng）を使わないのは、ほかの決まり（塗りムラの位置など）の並びを変えないため
     treasure: createTreasure(treasure ?? botTreasurePlan(createRng(1))),
+    stopReady: new Map(),
   };
 }
 
@@ -162,8 +170,8 @@ export function checkOutcome(m: MatchState, now: number): Outcome | null {
   const active = citizens.filter((p) => !p.h.frozen).length;
   if (citizens.length > 0 && active <= spies) o = { winner: 'spy', reason: 'frozen', time: now };
   else if (m.support <= 0) o = { winner: 'spy', reason: 'strike', time: now };
-  // M9②：「自分のミッションを全部終える」は外した。M10 で宝を盗む勝ち方が入るまでは、名物の全スキャンで勝ち
-  else if (allScanned(m.spy)) o = { winner: 'spy', reason: 'scanned', time: now };
+  // M10：宝を持ったスパイが出口のそばまで行けば、スパイの勝ち（名物の全スキャンでは、もう勝ちにならない）
+  else if (carrierPawn(m) && nearExit(m.treasure, carrierPawn(m)!.h.walker.pos)) o = { winner: 'spy', reason: 'escaped', time: now };
   else if (gauge(m) >= 1) o = { winner: 'citizens', reason: 'gauge', time: now };
   else if (playedSeconds(m, now) >= MATCH.timeLimit) o = { winner: 'spy', reason: 'timeout', time: now };
   if (o) {

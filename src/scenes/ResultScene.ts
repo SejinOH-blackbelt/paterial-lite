@@ -17,7 +17,9 @@ export interface ResultData {
 const REASON: Record<OutcomeReason, string> = {
   gauge: '国の仕事ゲージが 満タンになった！',
   caught: '会議で スパイを当てた！',
-  scanned: 'スパイが 名物を全部スキャンして、\nミッションも終えた',
+  stopped: '宝を持ったスパイを 呼び止めて 捕まえた！',
+  escaped: 'スパイが 宝を盗んで 出口から逃げた…',
+  scanned: 'スパイが 名物を全部スキャンした',
   frozen: '動ける市民が スパイと同じ数まで 減った…',
   strike: '王様の支持度が 0 に… 市民が ストライキ！',
   timeout: '時間切れ… 国の仕事が 終わらなかった',

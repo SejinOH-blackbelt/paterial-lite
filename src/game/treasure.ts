@@ -35,6 +35,30 @@ export interface TreasurePlan {
 export interface TreasureState extends TreasurePlan {
   /** 宝物庫の宝が盗まれたか（盗まれたら、宝物庫は扉があいた絵になる。音は鳴らさない） */
   stolen: boolean;
+  /** 盗んだ時刻（盗まれていなければ null） */
+  stolenAt: number | null;
+  /** 宝を持っているパテの番号（MatchState.pawns の順。だれも持っていなければ null） */
+  carrier: number | null;
+  /** アラートが鳴った時刻（盗んだ瞬間に自動で鳴った、またはだれかが鳴らした。鳴っていなければ null） */
+  alarmAt: number | null;
+  /** 宝を持ったスパイを呼び止めて捕まえたパテの番号（捕まっていなければ null） */
+  caughtBy: number | null;
+}
+
+/** 宝物庫のそばか */
+export function nearVault(t: TreasurePlan, p: Point): boolean {
+  return Math.hypot(p.x - t.vault.x, p.y - t.vault.y) <= TREASURE.useRadius;
+}
+
+/** 出口のそばか（どちらかの出口） */
+export function nearExit(t: TreasurePlan, p: Point): boolean {
+  return t.exits.some((e) => Math.hypot(p.x - e.x, p.y - e.y) <= TREASURE.useRadius);
+}
+
+/** 盗んだ瞬間にアラートが自動で鳴る確率（スキャンした名物の数から） */
+export function alarmChance(scannedCount: number): number {
+  const table = TREASURE.alarmChance;
+  return table[Math.max(0, Math.min(table.length - 1, scannedCount))];
 }
 
 export const VAULT_SITES: readonly VaultSite[] = TREASURE.vaultSites;
@@ -68,7 +92,11 @@ export function exitChoices(first: ExitSite | null): ExitSite[] {
 
 /** 王様 Bot の選び方：決まりに合う中から、でたらめに選ぶ */
 export function botTreasurePlan(rng: Rng): TreasurePlan {
-  const pick = <T>(list: T[]): T => list[Math.floor(rng() * list.length) % list.length];
+  const pick = <T>(list: T[]): T => {
+    // 候補がないのは config.ts の書きまちがい（テストで確かめている）。気づけるように止める
+    if (list.length === 0) throw new Error('宝物庫か出口の候補が足りない（config.ts の TREASURE を確かめる）');
+    return list[Math.floor(rng() * list.length) % list.length];
+  };
   const vault = pick(vaultChoices());
   const first = pick(exitChoices(null));
   const second = pick(exitChoices(first));
@@ -77,7 +105,7 @@ export function botTreasurePlan(rng: Rng): TreasurePlan {
 
 /** 試合の最初の宝のようす（まだ盗まれていない） */
 export function createTreasure(plan: TreasurePlan): TreasureState {
-  return { vault: plan.vault, exits: plan.exits, stolen: false };
+  return { vault: plan.vault, exits: plan.exits, stolen: false, stolenAt: null, carrier: null, alarmAt: null, caughtBy: null };
 }
 
 /** 友達と遊ぶときに送る形（場所の id だけ） */
@@ -87,6 +115,8 @@ export function planToIds(plan: TreasurePlan): { v: string; e: [string, string] 
 
 /** 送られてきた id から、場所に戻す（知らない id や決まりに合わないときは null） */
 export function planFromIds(ids: { v: string; e: [string, string] }): TreasurePlan | null {
+  // 通信で届いた中身は形がくずれていることもあるので、出口がちょうど2つかを先に確かめる
+  if (!ids || !Array.isArray(ids.e) || ids.e.length !== 2) return null;
   const vault = VAULT_SITES.find((v) => v.id === ids.v);
   const a = EXIT_SITES.find((e) => e.id === ids.e[0]);
   const b = EXIT_SITES.find((e) => e.id === ids.e[1]);
