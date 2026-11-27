@@ -8,6 +8,8 @@ import type { GameAudio } from './audio';
 import type { Bgm } from './bgm';
 import { FONT, INK, cssColor, label, mmss, panel, textButton, fitCamera } from './ui';
 import { pawnName } from '../game/names';
+import type { NetGame } from '../net/netGame';
+import { listenRematch } from './rematch';
 
 export interface ResultData {
   match: MatchState;
@@ -16,6 +18,8 @@ export interface ResultData {
   audio?: GameAudio;
   /** 友達と遊んだ試合か（スコアのあとの「もう1試合」を出し分けるため） */
   online?: boolean;
+  /** 友達と遊んだ試合の接続（「もう1試合」のために、試合のあとも閉じずに持っていく） */
+  net?: NetGame;
 }
 
 const REASON: Record<OutcomeReason, string> = {
@@ -105,8 +109,13 @@ export class ResultScene extends Phaser.Scene {
     if (timeline.height > 207) timeline.setScale(1, 207 / timeline.height);
 
     // 毎試合のあとにスコアを出し、そこで「もう1試合」かを選ぶ
-    textButton(this, SCREEN.width / 2 - 80, 600, 140, 48, 'スコアへ', COLORS.uiHoney, () => this.scene.start('Score', { match, player, online: !!data.online } satisfies ScoreData), 20);
-    textButton(this, SCREEN.width / 2 + 80, 600, 140, 48, 'タイトルへ', COLORS.uiPaper, () => this.scene.start('Title'), 16);
+    textButton(this, SCREEN.width / 2 - 80, 600, 140, 48, 'スコアへ', COLORS.uiHoney, () => this.scene.start('Score', { match, player, online: !!data.online, net: data.net } satisfies ScoreData), 20);
+    textButton(this, SCREEN.width / 2 + 80, 600, 140, 48, 'タイトルへ', COLORS.uiPaper, () => {
+      data.net?.relay.close(); // 友達との接続を閉じる
+      this.scene.start('Title');
+    }, 16);
+    // 友達と遊んだとき：親機が「もう1試合」を押したら、この画面からでも次の試合へ
+    if (data.net) listenRematch(this, data.net, () => this.scene.start('Title'));
   }
 
   update(_time: number, deltaMs: number): void {

@@ -2392,8 +2392,10 @@ export class FieldScene extends Phaser.Scene {
   /** 試合終了：リザルトへ */
   private endMatch(): void {
     this.cleanupSounds();
-    this.leaveNet(); // 親機は「終わった」を送ったあとに閉じる
-    this.scene.start('Result', { match: this.match, player: this.playerPawn, audio: this.audio, online: !!this.net } satisfies ResultData);
+    // 友達と遊ぶとき：接続は閉じずに、リザルト・スコアへ持っていく（「もう1試合」のため）。試合の知らせを受けとるのはやめる
+    this.netUnlisten?.();
+    this.netUnlisten = null;
+    this.scene.start('Result', { match: this.match, player: this.playerPawn, audio: this.audio, online: !!this.net, net: this.net ?? undefined } satisfies ResultData);
   }
 
   /** 置物にされたプレイヤーは「土の精」になって、ふわふわ動き回れる（ほかのパテからは見えない） */
