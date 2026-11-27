@@ -338,7 +338,10 @@ export const YORISHIRO_COMMANDS = {
 export const MISSION_DEAL = {
   /** 1体が受け持つミッションの数（それぞれちがう相方と2人で） */
   perPawn: 3,
-  /** 同じ種類のミッションは、試合の中でこの数まで（スイッチの場所の数に合わせる） */
+  /**
+   * 同じ種類のミッションは、試合の中でこの数まで（スイッチの場所の数に合わせる）。
+   * 人数が多くてミッションが増えたときは、全部を配れるように自動で増やす（board.ts の maxSameTypeFor）
+   */
   maxSameType: 2,
 } as const;
 /** プレイヤーのパテのエレメント */
@@ -547,6 +550,7 @@ export const SPOT = {
    */
   sites: [
     { x: 560, y: 145, zone: 'fire' },
+    { x: 560, y: 262, zone: 'fire' },
     { x: 460, y: 270, zone: 'fire' },
     { x: 650, y: 290, zone: 'fire' },
     { x: 470, y: 380, zone: 'fire' },

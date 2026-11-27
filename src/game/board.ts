@@ -1,6 +1,7 @@
 // 共同ミッションの「盤」（M9②）。画面表示（Phaser）には依存しません。
 //
-// ・ミッションは2人で受け持つ。1体3つで、それぞれちがう相方（6体なら全部で9つ）。
+// ・ミッションは2人で受け持つ。1体3つで、それぞれちがう相方（6体なら全部で9つ、10体なら15）。
+//   人数が奇数のときは、全員3つにはできない（数の上で組めない）ので、1体だけ2つになる。
 // ・1つのミッションには、いくつかのスイッチがある。どの順で回ってもよく、全部オンにすると完了。
 //   進み具合（どのスイッチが入ったか）は2人で共有する。相方がだれかは画面に出さない。
 // ・配るのは全員がエレメントを選んだあと。どのパテにも「3つのうち1つは苦手か不可」になるようにする。
@@ -58,8 +59,18 @@ function shuffle<T>(a: T[], rng: Rng): T[] {
 /**
  * だれとだれが組むか：どの席も perPawn 人の相方とつながり、同じ2人の組は1つだけ。
  * 輪に並べて「となり」と「向かい」をつなぐ形（6人・3つなら、どの2人の組も重ならない）を、席をまぜて使う。
+ * 席の数が奇数で perPawn も奇数のときは、全員を perPawn にできないので、1席だけ perPawn - 1 になる
+ * （1つ少ない偶数の席で組んでから、組を1つほどいて、その2人と残りの1席をつなぐ）。
  */
 export function pairGraph(seatCount: number, perPawn: number, rng: Rng): [number, number][] {
+  if (seatCount % 2 === 1 && perPawn % 2 === 1 && seatCount > perPawn) {
+    const extra = Math.floor(rng() * seatCount); // 2つになる席（だれになるかは、でたらめ）
+    const others = Array.from({ length: seatCount }, (_, i) => i).filter((i) => i !== extra);
+    const base = pairGraph(seatCount - 1, perPawn, rng).map(([a, b]) => [others[a], others[b]] as [number, number]);
+    const [a, b] = base.shift()!;
+    const sorted = (x: number, y: number): [number, number] => (x < y ? [x, y] : [y, x]);
+    return shuffle([...base, sorted(extra, a), sorted(extra, b)], rng);
+  }
   const order = shuffle(
     Array.from({ length: seatCount }, (_, i) => i),
     rng,
@@ -94,8 +105,14 @@ const isHard = (me: ElementId, type: MissionId) => {
  * ・どのパテにも、いまのエレメントで苦手か不可のものが1つ以上
  * 何回か試して、条件をいちばん多く満たしたものを使う。
  */
+/** 同じ種類のミッションを、いくつまで配ってよいか（人数が多くてミッションが増えたら、全部を配れるように増やす） */
+export function maxSameTypeFor(missionCount: number): number {
+  return Math.max(MISSION_DEAL.maxSameType, Math.ceil(missionCount / MISSIONS.length));
+}
+
 function chooseTypes(pairs: [number, number][], elements: ElementId[], rng: Rng): MissionId[] {
   const ids = MISSIONS.map((m) => m.id);
+  const maxSame = maxSameTypeFor(pairs.length);
   let best: MissionId[] | null = null;
   let bestScore = -1;
   for (let attempt = 0; attempt < 400; attempt++) {
@@ -104,7 +121,7 @@ function chooseTypes(pairs: [number, number][], elements: ElementId[], rng: Rng)
     const types: MissionId[] = [];
     let ok = true;
     for (const [a, b] of pairs) {
-      const choices = shuffle([...ids], rng).filter((t) => (count.get(t) ?? 0) < MISSION_DEAL.maxSameType && !has[a].has(t) && !has[b].has(t));
+      const choices = shuffle([...ids], rng).filter((t) => (count.get(t) ?? 0) < maxSame && !has[a].has(t) && !has[b].has(t));
       if (choices.length === 0) {
         ok = false;
         break;
@@ -140,10 +157,19 @@ function chooseSites(types: MissionId[], rng: Rng): number[][] {
     freeByZone.set(z, [...(freeByZone.get(z) ?? []), i]);
   }
   const d = (i: number, j: number) => Math.hypot(SPOT.sites[i].x - SPOT.sites[j].x, SPOT.sites[i].y - SPOT.sites[j].y);
+  // 同じ種類のミッションが多くて場所が足りないときは、1つあたりのスイッチを減らす（場所を分け合う）
+  const sameCount = new Map<MissionId, number>();
+  for (const t of types) sameCount.set(t, (sameCount.get(t) ?? 0) + 1);
+  const spotsFor = (t: MissionId) => {
+    const zone = freeByZone.get(missionType(t).element)?.length ?? 0;
+    const share = Math.floor(zone / (sameCount.get(t) ?? 1));
+    return Math.max(1, Math.min(missionType(t).spots, share));
+  };
+  const want = new Map<MissionId, number>(MISSIONS.map((m) => [m.id, spotsFor(m.id)]));
   return types.map((t) => {
     const free = freeByZone.get(missionType(t).element) ?? [];
     const mine: number[] = [];
-    for (let k = 0; k < missionType(t).spots && free.length > 0; k++) {
+    for (let k = 0; k < want.get(t)! && free.length > 0; k++) {
       // 離れている場所があればそこ。なければ、いちばん離れている場所
       let pick = free.findIndex((s) => mine.every((o) => d(s, o) >= SPOT.spreadMin));
       if (pick < 0) {

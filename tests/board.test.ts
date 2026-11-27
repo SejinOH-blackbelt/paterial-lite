@@ -91,3 +91,39 @@ describe('盤', () => {
     expect(spotNear(board, { x: s.x + SPOT.useRadius + 5, y: s.y })).toBeNull();
   });
 });
+
+describe('人数 6〜10人のミッションの配り方', () => {
+  const elementsOf = (n: number, seed: number): ElementId[] => {
+    const rng = createRng(seed);
+    return Array.from({ length: n }, () => ELEMENTS[Math.floor(rng() * ELEMENTS.length)]);
+  };
+
+  for (const n of [6, 7, 8, 9, 10]) {
+    it(`${n}人：同じ2人の組はなく、${n % 2 === 0 ? '全員3つ' : '1人だけ2つ・ほかは3つ'}`, () => {
+      for (let seed = 1; seed <= 30; seed++) {
+        const pairs = pairGraph(n, MISSION_DEAL.perPawn, createRng(seed));
+        expect(pairs.every(([a, b]) => a !== b && a >= 0 && b < n && a < b)).toBe(true);
+        expect(new Set(pairs.map(([a, b]) => `${a}-${b}`)).size).toBe(pairs.length);
+        const degrees = Array.from({ length: n }, (_, s) => pairs.filter((p) => p.includes(s)).length).sort();
+        if (n % 2 === 0) expect(degrees.every((d) => d === 3)).toBe(true);
+        else expect(degrees).toEqual([2, ...Array(n - 1).fill(3)]);
+      }
+    });
+
+    it(`${n}人：1人のミッションはちがう種類で、どのミッションにもスイッチが2か所以上、スイッチの場所は重ならない`, () => {
+      for (let seed = 1; seed <= 30; seed++) {
+        const plan = planBoard(elementsOf(n, seed), createRng(seed * 7));
+        for (let s = 0; s < n; s++) {
+          const mine = plan.pairs.map((p, i) => (p.includes(s) ? plan.types[i] : null)).filter(Boolean);
+          expect(new Set(mine).size).toBe(mine.length);
+        }
+        for (let i = 0; i < plan.types.length; i++) {
+          expect(plan.sites[i].length).toBeGreaterThanOrEqual(2);
+          for (const site of plan.sites[i]) expect(SPOT.sites[site].zone).toBe(missionType(plan.types[i]).element);
+        }
+        const used = plan.sites.flat();
+        expect(new Set(used).size).toBe(used.length);
+      }
+    });
+  }
+});
