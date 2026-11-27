@@ -54,6 +54,7 @@ import { createWalker, isWalking, steerWalker, stepWalker, type Walker } from '.
 import { createRng, type Rng } from '../game/random';
 import {
   canScan,
+  scanWait,
   patchSize,
   prank,
   prankTarget,
@@ -411,7 +412,8 @@ export class FieldScene extends Phaser.Scene {
         if (this.spy.scan) return;
         if (this.driving) this.popText('スティックを離してから押してね', '#2b1d14', 14, 0);
         else if (!startScan(this.spy, this.audio.heardTime(), { ctx: { gauge: gauge(this.match) }, rng: this.rng })) {
-          this.popText('まだスキャンしていない名物のそばで押せる', '#2b1d14', 14, 0);
+          const wait = scanWait(this.spy, this.audio.heardTime());
+          this.popText(wait > 0 ? `次のスキャンは あと${Math.ceil(wait)}秒` : 'まだスキャンしていない名物のそばで押せる', '#2b1d14', 14, 0);
         }
         return;
       }
@@ -982,6 +984,7 @@ export class FieldScene extends Phaser.Scene {
           if (msg.kind === 'scan' && msg.lm && !this.spy.scanned.has(msg.lm)) {
             this.spy.scanned.add(msg.lm);
             this.spy.fragments++;
+            this.spy.lastScanAt = heard;
           }
           if (msg.kind === 'scanFail' && msg.lm) this.spy.failed.set(msg.lm, heard + SPY.scanFailLockSeconds);
           this.spy.log.push(ev);
@@ -1686,6 +1689,9 @@ export class FieldScene extends Phaser.Scene {
     if (!this.isPlayerSpy || !this.scanButton || !this.prankButton) return;
     const scanning = this.spy.scan !== null;
     this.scanButton.setLit((canScan(this.spy, heard) && !this.driving) || scanning);
+    // 次のスキャンまでの秒数をボタンに出す
+    const scanLeft = scanWait(this.spy, heard);
+    this.scanButton.setLabel(scanLeft > 0 && !scanning ? `スキャン\n${Math.ceil(scanLeft)}` : 'スキャン');
     const target = prankTarget(this.spy, this.all, heard);
     this.prankButton.setLit(!!target);
     // イタズラが使えるまでの秒数をボタンに出す

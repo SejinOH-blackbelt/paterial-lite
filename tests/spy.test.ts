@@ -14,6 +14,7 @@ import {
   prankTarget,
   allScanned,
   prankWait,
+  scanWait,
   startScan,
   updateScan,
 } from '../src/game/spy';
@@ -58,7 +59,7 @@ describe('スパイ', () => {
     expect(s.scan).toBeNull();
   });
 
-  it('スキャンの数に上限はない（名物を順に全部スキャンできる）', () => {
+  it('スキャンの数に上限はない（間をあければ、名物を順に全部スキャンできる）', () => {
     const spy = at(LANDMARKS[0].x, LANDMARKS[0].y + 20);
     const s = createSpyState(spy, 0, createRng(1));
     let t = 0;
@@ -67,6 +68,7 @@ describe('スパイ', () => {
       expect(startScan(s, t)).toBe(true);
       t += SPY.scanSeconds;
       updateScan(s, [spy], t);
+      t += SPY.scanCooldown; // 次のスキャンまで待つ
     }
     expect(allScanned(s)).toBe(true);
   });
@@ -182,5 +184,18 @@ describe('スパイBot', () => {
     victim.restUntil = 1e9;
     const { events } = run(SPY.prankStartDelay - 1, 2, [victim]);
     expect(events.some((e) => e.kind === 'prank')).toBe(false);
+  });
+});
+
+describe('スキャンの間かく', () => {
+  it('スキャンが成功したら、次のスキャンまで SPY.scanCooldown 秒待つ', () => {
+    const h = createHarvester(createWalker({ x: karakuri.x, y: karakuri.y + 10 }));
+    const s = createSpyState(h, 0, createRng(1));
+    expect(startScan(s, 0, null, false)).toBe(true);
+    expect(updateScan(s, [h], SPY.scanSeconds + 0.1)?.kind).toBe('scan');
+    h.walker.pos = { x: torii.x, y: torii.y + 10 };
+    expect(canScan(s, SPY.scanSeconds + 1)).toBe(false);
+    expect(scanWait(s, SPY.scanSeconds + 1)).toBeGreaterThan(0);
+    expect(canScan(s, SPY.scanSeconds + 0.1 + SPY.scanCooldown)).toBe(true);
   });
 });

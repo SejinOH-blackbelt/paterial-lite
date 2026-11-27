@@ -35,6 +35,8 @@ export interface SpyState {
   scanned: Set<string>;
   /** 最後にイタズラした時刻 */
   lastPrankAt: number;
+  /** 最後にスキャンが成功した時刻（次のスキャンまで SPY.scanCooldown 待つ） */
+  lastScanAt: number;
   /**
    * スキャン中なら、その名物と始めた時刻。
    * game：プレイヤーのスパイが遊ぶミニゲーム（Botのスパイは null で、時間がたつと終わる）
@@ -61,6 +63,7 @@ export function createSpyState(spy: Harvester, now: number, rng: Rng): SpyState 
     fragments: 0,
     scanned: new Set(),
     lastPrankAt: -Infinity,
+    lastScanAt: -Infinity,
     scan: null,
     failed: new Map(),
     patch: { u: 0.2 + rng() * 0.6, v: 0.25 + rng() * 0.55 },
@@ -88,9 +91,14 @@ export function scannableLandmark(s: SpyState, p: Point, now: number): Landmark 
 }
 
 /** スパイがスキャンを始められるか（名物のそば・立ち止まっている・置物でない） */
+/** 次のスキャンができるまでの秒数（できるなら 0） */
+export function scanWait(s: SpyState, now: number): number {
+  return Math.max(0, s.lastScanAt + SPY.scanCooldown - now);
+}
+
 export function canScan(s: SpyState, now: number): boolean {
   const h = s.spy;
-  return !h.frozen && !h.walker.target && !h.session && !h.task && !h.possess && s.scan === null && scannableLandmark(s, h.walker.pos, now) !== null;
+  return scanWait(s, now) === 0 && !h.frozen && !h.walker.target && !h.session && !h.task && !h.possess && s.scan === null && scannableLandmark(s, h.walker.pos, now) !== null;
 }
 
 /**
@@ -149,6 +157,7 @@ export function updateScan(s: SpyState, all: readonly Harvester[], now: number):
   }
   s.scanned.add(l.id);
   s.fragments++;
+  s.lastScanAt = now;
   const ev: SpyEvent = {
     kind: 'scan',
     time: now,
