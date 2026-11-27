@@ -820,19 +820,20 @@ export class MissionGameView {
     const cues = currentCues(g);
     const total = g.phrases.length;
     const hint: Record<PhraseGame['kind'], string> = {
-      shape: '輪が重なったら、黄色は「叩く」をタップ、\n青は粘土を上から下へ なぞる',
+      shape: '往復する印が 真ん中の帯に来た瞬間に、\n札のとおり「叩く」をタップ／粘土を上から下へ なぞる',
       dark: '稲光の印が出た灯籠を、輪が重なった瞬間に タップ',
     };
     this.title.setText(`${hint[g.kind]}（${g.done}/${total}）`);
     const a = this.art;
     const approach = MISSION_GAME.phrase.leadBeats * beatInterval();
     const bounce = now < this.phraseFlash ? 1.12 : 1;
-    // 操作の目印（輪のゴール）
+    // 土：横長のゲージ（印が拍に合わせて往復し、拍ちょうどに真ん中の帯を通る）と、なぞる線
     if (g.kind === 'shape') {
       a.lineStyle(3, COLORS.ink, 0.5).lineBetween(this.clayArea.x - 60, this.clayArea.y, this.clayArea.x + 60, this.clayArea.y);
+      this.drawShapeGauge(g, now);
     }
-    // これからの操作：外から輪が縮んでくる（雷は、その灯籠の上に稲光の印も出す）
-    cues.forEach((c, i) => {
+    // 雷：これからの操作は、外から輪が縮んでくる（その灯籠の上に稲光の印も出す）
+    if (g.kind === 'dark') cues.forEach((c, i) => {
       if (i < g.pos) return;
       const until = cueTime(g, i) - now;
       if (until > approach || until < -g.window) return;
@@ -876,6 +877,72 @@ export class MissionGameView {
     }
     this.schedulePhraseGuide(g, now);
   }
+
+  /**
+   * 土のゲージ：印は1拍で「真ん中 → 端 → 真ん中」と動き、拍ちょうどに真ん中の帯を通る（左右に往復）。
+   * 帯の幅は、拍からずれてもよい秒数（相性で変わる）に合わせる。上の札は、このまとまりで何をするかの順番
+   * （叩く＝黄・なぞる＝青。済んだ札はうすく、次の札は枠で囲む）。印の位置は音の時計で決めるので、音と判定はずれない
+   */
+  private drawShapeGauge(g: PhraseGame, now: number): void {
+    const a = this.art;
+    const b = beatInterval();
+    const left = PANEL.x + 34;
+    const right = PANEL.x + PANEL.w - 34;
+    const cx = (left + right) / 2;
+    const y = PANEL.y + 128;
+    const amp = (right - left) / 2 - 8;
+    const cues = currentCues(g);
+    const next = g.pos < cues.length ? cues[g.pos] : null;
+    const until = next ? cueTime(g, g.pos) - now : Infinity;
+    // 次の操作が近い（1拍以内）なら、帯をその操作の色に光らせる
+    const soon = until <= b && until > -g.window;
+    const tapColor = COLORS.meterNeedle;
+    const swipeColor = COLORS.partFlag;
+    const bandColor = !next ? COLORS.uiPaperEdge : next.action === 'swipe' ? swipeColor : tapColor;
+    // ゲージの台
+    a.fillStyle(COLORS.ink).fillRoundedRect(left - 4, y - 14, right - left + 8, 28, 10);
+    a.fillStyle(COLORS.uiPaper).fillRoundedRect(left, y - 10, right - left, 20, 8);
+    // 真ん中の帯（ずれてもよい幅）
+    const half = Math.max(8, amp * 2 * (g.window / b));
+    a.fillStyle(bandColor, soon ? 0.95 : 0.35).fillRect(cx - half, y - 10, half * 2, 20);
+    a.lineStyle(2, COLORS.ink, 0.8).lineBetween(cx, y - 13, cx, y + 13);
+    // 往復する印（三角の波：1拍で 真ん中→端→真ん中、向きは拍ごとに入れかわる）
+    const u = (now - g.origin) / b;
+    const s = ((u % 2) + 2) % 2;
+    const d = s < 0.5 ? 2 * s : s < 1.5 ? 2 - 2 * s : 2 * s - 4;
+    const mx = cx + amp * d;
+    a.fillStyle(COLORS.ink).fillTriangle(mx - 10, y - 22, mx + 10, y - 22, mx, y - 6);
+    a.fillStyle(COLORS.ink).fillCircle(mx, y, 9);
+    a.fillStyle(soon ? bandColor : COLORS.uiCream).fillCircle(mx, y, 6.5);
+    // 札の並び（このまとまりで何をするか）
+    const n = cues.length;
+    const gap = 40;
+    cues.forEach((c, i) => {
+      const x = cx + (i - (n - 1) / 2) * gap;
+      const yy = y - 44;
+      const col = c.action === 'swipe' ? swipeColor : tapColor;
+      const done = i < g.pos;
+      a.fillStyle(COLORS.ink, done ? 0.3 : 1).fillRoundedRect(x - 16, yy - 13, 32, 26, 6);
+      a.fillStyle(col, done ? 0.3 : 1).fillRoundedRect(x - 14, yy - 11, 28, 22, 5);
+      if (i === g.pos) a.lineStyle(3, COLORS.uiHoney, 1).strokeRoundedRect(x - 19, yy - 16, 38, 32, 8);
+      if (c.action === 'swipe') {
+        a.lineStyle(3, COLORS.ink, done ? 0.3 : 1).lineBetween(x, yy - 7, x, yy + 3);
+        a.fillStyle(COLORS.ink, done ? 0.3 : 1).fillTriangle(x - 5, yy + 2, x + 5, yy + 2, x, yy + 8);
+      } else {
+        a.fillStyle(COLORS.ink, done ? 0.3 : 1).fillRect(x - 7, yy - 6, 14, 6).fillRect(x - 1.5, yy, 3, 7);
+      }
+    });
+    // 帯の下に、次の操作の名前（近いときだけ）
+    this.shapeCall ??= (() => {
+      // 粘土の「なぞる ↓」の札と重ならないように、ゲージの左下に出す
+      const t = this.scene.add.text(left + 6, y + 20, '', { fontFamily: FONT, fontSize: '15px', fontStyle: 'bold', color: INK, backgroundColor: '#fff3dc', padding: { x: 4, y: 2 } }).setOrigin(0, 0);
+      this.root.add(t);
+      return t;
+    })();
+    this.shapeCall.setText(soon && next ? (next.action === 'swipe' ? 'なぞる！' : '叩く！') : '').setVisible(soon && !!next);
+  }
+
+  private shapeCall: Phaser.GameObjects.Text | null = null;
 
   /** 拍の音を少し先まで予約する（操作する拍は高い音）。まとまりが決め直されたら、予約し直す */
   private schedulePhraseGuide(g: PhraseGame, now: number): void {
