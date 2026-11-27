@@ -107,6 +107,8 @@ export interface MatchState {
   support: number;
   /** 王様の儀式がすんで、支持度を戻したか（1試合に1回） */
   riteRewarded: boolean;
+  /** この試合の制限時間（秒）。5分版か長い版 */
+  timeLimit: number;
   /** 王様にあいさつしたパテが、次にあいさつできるようになる時刻 */
   greetReady: Map<Pawn, number>;
   /** 宝物庫と出口（M10）。場所は試合の最初に王様が決める */
@@ -155,7 +157,7 @@ export function chooseKing(pawns: Pawn[]): Pawn {
 /**
  * 試合を作る。treasure は王様が決めた宝物庫と出口の場所（省くと、決まった並びで王様 Bot が選ぶ。テスト用）
  */
-export function createMatch(pawns: Pawn[], now: number, rng: Rng, board: Board, treasure?: TreasurePlan): MatchState {
+export function createMatch(pawns: Pawn[], now: number, rng: Rng, board: Board, treasure?: TreasurePlan, timeLimit: number = MATCH.timeLimit): MatchState {
   const spyPawn = pawns.find((p) => p.isSpy)!;
   return {
     pawns,
@@ -174,6 +176,7 @@ export function createMatch(pawns: Pawn[], now: number, rng: Rng, board: Board, 
     sightings: new Map(),
     support: SUPPORT.start,
     riteRewarded: false,
+    timeLimit,
     greetReady: new Map(),
     // 省いたときに試合の乱数（rng）を使わないのは、ほかの決まり（塗りムラの位置など）の並びを変えないため
     treasure: createTreasure(treasure ?? botTreasurePlan(createRng(1))),
@@ -211,7 +214,7 @@ export function checkOutcome(m: MatchState, now: number): Outcome | null {
   // M10：宝を持ったスパイが出口のそばまで行けば、スパイの勝ち（名物の全スキャンでは、もう勝ちにならない）
   else if (carrierPawn(m) && nearExit(m.treasure, carrierPawn(m)!.h.walker.pos)) o = { winner: 'spy', reason: 'escaped', time: now };
   else if (gauge(m) >= 1) o = { winner: 'citizens', reason: 'gauge', time: now };
-  else if (playedSeconds(m, now) >= MATCH.timeLimit) o = { winner: 'spy', reason: 'timeout', time: now };
+  else if (playedSeconds(m, now) >= m.timeLimit) o = { winner: 'spy', reason: 'timeout', time: now };
   if (o) {
     m.outcome = o;
     m.phase = 'over';
@@ -256,9 +259,20 @@ export function playedSeconds(m: MatchState, now: number): number {
   return now - m.startedAt - m.pausedSeconds;
 }
 
+/** 試合の長さ（秒）を、選べる長さのどれかにそろえる（こわれた値や省いたときは5分版） */
+export function matchSecondsFrom(v: unknown): number {
+  return typeof v === 'number' && (MATCH.lengths as readonly number[]).includes(v) ? v : MATCH.timeLimit;
+}
+
+/** 試合の長さを、次の選択肢へ（5分版 → 長い版 → 5分版…） */
+export function nextMatchSeconds(now: number): number {
+  const all = MATCH.lengths as readonly number[];
+  return all[(all.indexOf(matchSecondsFrom(now)) + 1) % all.length];
+}
+
 /** 残り時間（秒） */
 export function timeLeft(m: MatchState, now: number): number {
-  return Math.max(0, MATCH.timeLimit - playedSeconds(m, now));
+  return Math.max(0, m.timeLimit - playedSeconds(m, now));
 }
 
 // ---------- 呼び出し ----------

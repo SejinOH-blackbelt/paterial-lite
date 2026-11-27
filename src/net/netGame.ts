@@ -11,6 +11,8 @@ export interface NetGame {
   spy: number;
   /** みんなで同じ最初のようす（塗りムラの位置など）にするための乱数のたね */
   seed: number;
+  /** 試合の長さ（秒。親機が選ぶ） */
+  seconds: number;
 }
 
 /** 親機か */

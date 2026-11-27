@@ -1,7 +1,8 @@
 // 友達と遊ぶ：ルームを作る・合言葉で入る・QR で招待する。集まったら、ルームを作った人（親機）が「はじめる」
 import Phaser from 'phaser';
 import QRCode from 'qrcode';
-import { BOT_PROFILES, COLORS, NET, PLAYERS, PLAYER_PART, SCREEN } from '../game/config';
+import { BOT_PROFILES, COLORS, MATCH, NET, PLAYERS, PLAYER_PART, SCREEN } from '../game/config';
+import { matchSecondsFrom, nextMatchSeconds } from '../game/match';
 import { inviteUrl, RelayClient, type JoinError } from '../net/relay';
 import type { NetGame } from '../net/netGame';
 import { assignSeats, type StartWire } from '../net/sync';
@@ -43,6 +44,8 @@ export class LobbyScene extends Phaser.Scene {
   private startButton: Phaser.GameObjects.Container | null = null;
   /** 親機が選んだ人数（6〜10）と、その表示 */
   private chosenCount: number = PLAYERS.default;
+  /** 試合の長さ（秒。親機が選ぶ） */
+  private seconds: number = MATCH.timeLimit;
   private countText: Phaser.GameObjects.Text | null = null;
   private code = '';
 
@@ -52,6 +55,7 @@ export class LobbyScene extends Phaser.Scene {
 
   create(data: LobbyData): void {
     this.chosenCount = (this.registry.get('pawnCount') as number | undefined) ?? PLAYERS.default;
+    this.seconds = matchSecondsFrom(this.registry.get('matchSeconds'));
     this.countText = null;
     fitCamera(this); // 内部の細かさに合わせてカメラを拡大する（座標は 360×640 のまま）
     makeTextures(this);
@@ -209,6 +213,8 @@ export class LobbyScene extends Phaser.Scene {
     if (relay.isHost) {
       this.add2(textButton(this, 116, 381, 36, 26, '−', COLORS.uiPaperEdge, () => this.changeCount(-1), 16));
       this.add2(textButton(this, 244, 381, 36, 26, '＋', COLORS.uiPaperEdge, () => this.changeCount(1), 16));
+      // 試合の長さ（5分版・長い版）を切りかえる
+      this.add2(textButton(this, 310, 381, 58, 26, '長さ', COLORS.uiPaperEdge, () => this.changeLength(), 12));
     }
     this.countText = this.add2(label(this, SCREEN.width / 2, 381, '', 14, INK).setStroke(INK, 0));
     // 10の席（2段に5つずつ。集まった人はパテ、空いた席は Bot、使わない席はうすく）
@@ -242,7 +248,7 @@ export class LobbyScene extends Phaser.Scene {
     // 親機を先頭に、入った順に並べる
     const members = [...relay.members].sort((a, b) => Number(b.host) - Number(a.host) || a.id - b.id);
     const count = this.matchCount();
-    this.countText?.setText(relay.isHost ? `${count}人で 遊ぶ` : '人数は 親機が決めます');
+    this.countText?.setText(relay.isHost ? `${count}人・${this.seconds / 60}分` : '人数と長さは 親機が決めます');
     this.seats.forEach((seat, i) => {
       const m = members[i];
       // 子機は親機が選んだ人数を知らないので、Bot の席は出さない（集まった人だけ）
@@ -270,6 +276,13 @@ export class LobbyScene extends Phaser.Scene {
     this.drawSeats();
   }
 
+  /** 親機：試合の長さを切りかえる（5分版 ⇔ 長い版） */
+  private changeLength(): void {
+    this.seconds = nextMatchSeconds(this.seconds);
+    this.registry.set('matchSeconds', this.seconds);
+    this.drawSeats();
+  }
+
   /** 親機：はじめる。人数はサーバーが確かめ、通ったらみんなに started が届く */
   private start(): void {
     const relay = this.relay;
@@ -290,7 +303,7 @@ export class LobbyScene extends Phaser.Scene {
     const seats = assignSeats(relay.host, relay.members.map((m) => m.id), count);
     const seed = Math.floor(Math.random() * 2 ** 31);
     const spy = chooseSpy(count, createRng(seed ^ 0x5eed));
-    const msg: StartWire = { k: 'match', v: NET.version, seats, spy, seed };
+    const msg: StartWire = { k: 'match', v: NET.version, seats, spy, seed, len: this.seconds };
     relay.send('all', msg);
     this.goRole(msg);
   }
@@ -298,7 +311,7 @@ export class LobbyScene extends Phaser.Scene {
   /** 席などが決まったので、役の発表へ（中継の接続は試合へ持っていく） */
   private goRole(m: StartWire): void {
     const relay = this.relay!;
-    const net: NetGame = { relay, seats: m.seats, mySeat: m.seats.indexOf(relay.you), spy: m.spy, seed: m.seed };
+    const net: NetGame = { relay, seats: m.seats, mySeat: m.seats.indexOf(relay.you), spy: m.spy, seed: m.seed, seconds: matchSecondsFrom(m.len) };
     this.relay = null; // この画面を閉じても、接続は切らない
     this.scene.start('Role', { spyIndex: m.spy, net } satisfies RoleData);
   }

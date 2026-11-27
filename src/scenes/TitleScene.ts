@@ -1,7 +1,8 @@
 // タイトル画面：ロゴ、跳ねるパテ、「あそぶ」「あそびかた」
 import Phaser from 'phaser';
 import logoUrl from '../assets/logo.jpg';
-import { COLORS, PLAYERS, PLAYER_ELEMENT, PLAYER_PART, SCREEN } from '../game/config';
+import { COLORS, MATCH, PLAYERS, PLAYER_ELEMENT, PLAYER_PART, SCREEN } from '../game/config';
+import { matchSecondsFrom } from '../game/match';
 import { roomFromUrl } from '../net/relay';
 import type { LobbyData } from './LobbyScene';
 import { makePartTextures } from './partTextures';
@@ -97,7 +98,7 @@ export class TitleScene extends Phaser.Scene {
       return o;
     };
     add(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.6).setOrigin(0).setInteractive());
-    add(panel(this, x, 320, 290, 230, COLORS.uiPaper));
+    add(panel(this, x, 336, 290, 280, COLORS.uiPaper));
     add(label(this, x, 238, '何人で あそぶ？', 20, INK).setStroke(INK, 0));
     add(label(this, x, 266, 'きみ以外は Bot', 12, INK).setStroke(INK, 0));
     const num = add(label(this, x, 316, '', 34, INK).setStroke('#fff8e8', 4));
@@ -110,11 +111,22 @@ export class TitleScene extends Phaser.Scene {
       count = Math.min(PLAYERS.max, count + 1);
       show();
     }, 24));
-    add(textButton(this, x + 64, 390, 120, 44, 'はじめる', COLORS.uiHoney, () => {
+    // 試合の長さ（5分版・長い版）
+    let seconds = matchSecondsFrom(this.registry.get('matchSeconds'));
+    const lengthButtons = (MATCH.lengths as readonly number[]).map((s, i) =>
+      add(textButton(this, x - 56 + i * 112, 376, 104, 38, s === MATCH.timeLimit ? `${s / 60}分` : `${s / 60}分（長い版）`, COLORS.uiPaperEdge, () => {
+        seconds = s;
+        showLength();
+      }, 13)),
+    );
+    const showLength = () => lengthButtons.forEach((b, i) => b.setAlpha((MATCH.lengths as readonly number[])[i] === seconds ? 1 : 0.45));
+    showLength();
+    add(textButton(this, x + 64, 436, 120, 44, 'はじめる', COLORS.uiHoney, () => {
       this.registry.set('pawnCount', count); // 次も同じ人数から
+      this.registry.set('matchSeconds', seconds); // 次も同じ長さから（「もう1試合」も）
       this.scene.start('Role', { pawnCount: count });
     }, 17));
-    add(textButton(this, x - 70, 390, 100, 40, 'もどる', COLORS.uiPaper, () => {
+    add(textButton(this, x - 70, 436, 100, 40, 'もどる', COLORS.uiPaper, () => {
       for (const o of parts) o.destroy();
     }, 14));
     show();

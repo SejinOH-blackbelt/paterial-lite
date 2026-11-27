@@ -21,6 +21,7 @@ import {
   checkOutcome,
   chooseKing,
   grantRiteReward,
+  matchSecondsFrom,
   kingSeat,
   regroup,
   toriiSpot,
@@ -1475,7 +1476,8 @@ export class FieldScene extends Phaser.Scene {
         : this.pates.map((_, seat) => (seat === this.me ? this.myElement : randomElement(this.rng)));
     // 王様（人が動かす市民の先頭）は共同ミッションを持たず、王様の儀式を受け持つ（試合で王冠をかぶるパテと同じ席）
     const spy = Math.min(this.spyIndex, this.pates.length - 1);
-    const king = kingSeat(this.pates.map((_, seat) => seat === this.me), spy);
+    // 人が座っている席：友達と遊ぶときは席の一覧から（役の発表の王様と同じ）、ひとりのときは自分だけ
+    const king = kingSeat(this.pates.map((_, seat) => (this.net ? this.net.seats[seat] !== 0 : seat === this.me)), spy);
     const plan = this.plan ?? planBoard(elements, this.rng, king);
     this.board = buildBoard(plan);
     this.pates.forEach((e, seat) => {
@@ -2053,6 +2055,8 @@ export class FieldScene extends Phaser.Scene {
       this.rng,
       this.board,
       plan,
+      // 試合の長さ：友達と遊ぶときは親機が選んだ長さ、ひとりのときはタイトルで選んだ長さ
+      this.net ? this.net.seconds : matchSecondsFrom(this.registry.get('matchSeconds')),
     );
     this.field = this.match.field;
     this.spy = this.match.spy;

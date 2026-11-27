@@ -313,6 +313,8 @@ export interface StartWire {
   seats: number[];
   spy: number;
   seed: number;
+  /** 試合の長さ（秒。5分版か長い版） */
+  len?: number;
 }
 
 /** 子機 → 親機：最初のエレメントを選び終えた（選んだエレメント：ELEMENTS の番号） */
