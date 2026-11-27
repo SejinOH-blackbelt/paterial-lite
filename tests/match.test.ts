@@ -273,9 +273,14 @@ describe('王様パテと支持度', () => {
 
   it('支持度が0になると、市民がストライキを起こしてスパイの勝ち', () => {
     const { m, pawns } = setup();
-    wrongMeeting(m, pawns, pawns[1], 5);
-    expect(m.outcome).toBeNull();
-    wrongMeeting(m, pawns, pawns[2], 20);
+    // 支持度が尽きるまでに必要なぬれぎぬの回数（-30 なら4回）
+    const times = Math.ceil(SUPPORT.start / SUPPORT.wrongAccusation);
+    const citizens = pawns.filter((p) => !p.isSpy);
+    for (let i = 0; i < times - 1; i++) {
+      wrongMeeting(m, pawns, citizens[i % citizens.length], 5 + i * 20);
+      expect(m.outcome).toBeNull();
+    }
+    wrongMeeting(m, pawns, citizens[(times - 1) % citizens.length], 5 + times * 20);
     expect(m.support).toBe(0);
     expect(m.phase).toBe('over');
     expect(m.outcome).toMatchObject({ winner: 'spy', reason: 'strike' });
