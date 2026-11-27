@@ -127,6 +127,7 @@ import { botTreasurePlan, nearExit, planFromIds } from '../game/treasure';
 import { ELEMENT_RES_CHIP_COLOR, ELEMENT_RES_EMPTY_TEX, ELEMENT_RES_TEX, makeResourceTextures, RES_SIZE } from './resourceTextures';
 import { makeMissionArt, MISSION_SPOT_TEX as SPOT_TEX } from './missionArt';
 import { ALTAR_TEX, makeAltarTextures } from './altarTextures';
+import { greetCall, kingVoice } from './voices';
 import { ELEMENT_PICTURE, makeElementPictures } from './elementPictures';
 import { ELEMENT_COLOR } from './elementIcons';
 import { drawGround, drawPart, makeTextures, TEX } from './textures';
@@ -1676,14 +1677,31 @@ export class FieldScene extends Phaser.Scene {
    * あいさつの見せ方：おじぎ（くせがある。スパイは少しずれる）と、王様のうなずき。
    * 印や文字では区別しない（よく見ている人だけが「何となく違うかな…」と思える）
    */
+  /** 王様が最後に返事をした時刻（画面の時計、ミリ秒） */
+  private lastKingReply = -Infinity;
+
   private onGreeted(by: Pawn): void {
     const e = this.pates.find((x) => x.pawn === by);
     const king = this.pates.find((x) => x.pawn.isKing);
     if (!e || !king) return;
     e.view.playBow(bowOf(by.part), by.isSpy);
-    this.time.delayedCall(650, () => king.view.playBow('nod'));
-    // 近くにいれば、小さく「ぺこり」（スパイでも同じ）
+    // 声：あいさつした人の「ぺこっ」（スパイは響きが少しちがう）と、王様の「うむ」（はじめの「ドン！」と同じ声）。近いほど大きい
     const me = this.listenerPos();
+    const near = (p: { x: number; y: number }) => Math.max(0, 1 - Math.hypot(p.x - me.x, p.y - me.y) / GREET.hearRadius) ** 2;
+    const v1 = near(e.h.walker.pos);
+    if (v1 > 0.03) greetCall(this.audio, by.part, by.isSpy, v1);
+    this.time.delayedCall(650, () => {
+      // 同時にあいさつされても、王様の返事は1回（声が重なって割れないように）
+      const now = this.time.now;
+      if (now - this.lastKingReply < 800) return;
+      this.lastKingReply = now;
+      king.view.playBow('nod');
+      // 返事の音量は、返事のときの自分の場所で
+      const at = this.listenerPos();
+      const v2 = Math.max(0, 1 - Math.hypot(king.h.walker.pos.x - at.x, king.h.walker.pos.y - at.y) / GREET.hearRadius) ** 2;
+      if (v2 > 0.03) kingVoice(this.audio, 'reply', v2);
+    });
+    // 近くにいれば、小さく「ぺこり」（スパイでも同じ）
     if (Math.hypot(e.h.walker.pos.x - me.x, e.h.walker.pos.y - me.y) < 260) {
       this.popText('ぺこり', '#6b4f2a', 12, 2, { x: e.h.walker.pos.x, y: e.h.walker.pos.y - 70 });
     }
@@ -1966,7 +1984,9 @@ export class FieldScene extends Phaser.Scene {
       if (!this.introParts) return;
       word.setText('ドン！').setScale(0.6);
       this.tweens.add({ targets: word, scale: 1.2, duration: 220, ease: 'Back.Out' });
-      this.audio.piron();
+      // 「ドン！」は王様の声（みんなが本物の王様の声を一度聞く。あいさつの返事も同じ声）
+      kingVoice(this.audio, 'start');
+      this.audio.piron(0.4);
       // 子機は、親機から最初の「ようす」が届くまで「ドン！」のまま待つ（親機より先に動き出さない。届いたら onNet で始まる）
       this.introAfter(550, () => {
         if (this.net && !this.isSim()) return;

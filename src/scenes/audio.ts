@@ -9,6 +9,22 @@
 import { RHYTHM } from '../game/config';
 import { Bgm } from './bgm';
 
+/** 声の1音節：高さ（Hz）・長さ（秒）・母音 */
+export interface VoiceSyllable {
+  f: number;
+  len: number;
+  vowel: 'a' | 'i' | 'u' | 'e' | 'o';
+}
+
+/** 母音ごとの、声の通り道の響きの2つの山（Hz。パテ向けに少し高め） */
+const FORMANTS: Record<VoiceSyllable['vowel'], [number, number]> = {
+  a: [850, 1250],
+  i: [330, 2400],
+  u: [380, 900],
+  e: [520, 1950],
+  o: [540, 950],
+};
+
 export class GameAudio {
   readonly ctx: AudioContext;
   private readonly master: GainNode;
@@ -407,6 +423,58 @@ export class GameAudio {
     o.stop(t + 0.17);
     // 砂をかぶったような「すっ」
     this.noise(t, 0.06, 'lowpass', 700, 0.7, 0.25, out);
+  }
+
+  /**
+   * パテの声（あいさつの「ぺこっ」・王様の「うむ」など）。音節ごとに高さと母音を変える。
+   * 母音は、声の通り道の響き（2つの山）をまねたフィルターで作る。
+   * vibrato：声のゆれ（Hz の幅）。end：最後の音節の終わりで、高さをこの倍率まで動かす（なまり・抑揚）
+   */
+  voice(syllables: VoiceSyllable[], opts: { volume?: number; wave?: OscillatorType; vibrato?: number; end?: number; when?: number } = {}): void {
+    if (syllables.length === 0) return;
+    const t0 = Math.max(this.ctx.currentTime, opts.when ?? 0);
+    const out = this.ctx.createGain();
+    out.gain.value = opts.volume ?? 1;
+    out.connect(this.master);
+    const o = this.ctx.createOscillator();
+    o.type = opts.wave ?? 'triangle';
+    // 声のゆれ
+    if (opts.vibrato) {
+      const lfo = this.ctx.createOscillator();
+      const lg = this.ctx.createGain();
+      lfo.frequency.value = 6;
+      lg.gain.value = opts.vibrato;
+      lfo.connect(lg).connect(o.frequency);
+      lfo.start(t0);
+      lfo.stop(t0 + syllables.reduce((s, x) => s + x.len, 0) + 0.1);
+    }
+    const env = this.ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t0);
+    const f1 = this.ctx.createBiquadFilter();
+    const f2 = this.ctx.createBiquadFilter();
+    f1.type = f2.type = 'bandpass';
+    f1.Q.value = 5;
+    f2.Q.value = 7;
+    const g2 = this.ctx.createGain();
+    g2.gain.value = 0.6;
+    o.connect(env);
+    env.connect(f1).connect(out);
+    env.connect(f2).connect(g2).connect(out);
+    let t = t0;
+    syllables.forEach((s, i) => {
+      const [a, b] = FORMANTS[s.vowel];
+      o.frequency.setValueAtTime(s.f, t);
+      if (i === syllables.length - 1 && opts.end) o.frequency.exponentialRampToValueAtTime(s.f * opts.end, t + s.len);
+      f1.frequency.setValueAtTime(a, t);
+      f2.frequency.setValueAtTime(b, t);
+      env.gain.setValueAtTime(0.0001, t);
+      env.gain.exponentialRampToValueAtTime(0.9, t + 0.015);
+      env.gain.setValueAtTime(0.9, t + s.len * 0.55);
+      env.gain.exponentialRampToValueAtTime(0.0001, t + s.len);
+      t += s.len;
+    });
+    o.start(t0);
+    o.stop(t + 0.05);
   }
 
   /** キラッとした短いチャイム（澄んだ音に少しだけ倍音を足す） */

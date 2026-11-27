@@ -577,6 +577,8 @@ export const GREET = {
   cooldown: 10,
   /** 子機：親機の返事を待つあいだ、続けて押せない秒数 */
   pendingSeconds: 1.5,
+  /** あいさつの声が聞こえる距離（近いほど大きい） */
+  hearRadius: 320,
   /** おじぎのくせ（頭の飾りの順にくり返して割りあてる）：deep 深く1回・double ぺこぺこ2回・quick さっと軽く・slow ゆっくり */
   bows: ['deep', 'double', 'quick', 'slow'],
   /** スパイのおじぎを見た Bot が怪しむ量（採取の「コツッ」と同じくらい弱い） */
