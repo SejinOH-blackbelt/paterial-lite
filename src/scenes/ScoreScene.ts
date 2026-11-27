@@ -24,6 +24,20 @@ export const SCORE_TOTALS_KEY = 'scoreTotals';
 /** もう点を足した試合（同じ試合を2回足さないように） */
 const counted = new WeakSet<MatchState>();
 
+/**
+ * その試合の点を、続けて遊んだ合計に足す（同じ試合は1回だけ）。足したあとの合計を返す。
+ * リザルトの画面でも呼ぶ（友達と遊ぶとき、スコアの画面を見ないまま次の試合に移っても、点が抜けないように）
+ */
+export function countMatch(registry: Phaser.Data.DataManager, match: MatchState): number[] {
+  let totals = (registry.get(SCORE_TOTALS_KEY) as number[] | undefined) ?? [];
+  if (!counted.has(match)) {
+    counted.add(match);
+    totals = addPoints(totals, matchPoints(match));
+    registry.set(SCORE_TOTALS_KEY, totals);
+  }
+  return totals;
+}
+
 const fmt = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
 export class ScoreScene extends Phaser.Scene {
@@ -37,12 +51,7 @@ export class ScoreScene extends Phaser.Scene {
     fitCamera(this);
     const { match, player } = data;
     const points = matchPoints(match);
-    let totals = (this.registry.get(SCORE_TOTALS_KEY) as number[] | undefined) ?? [];
-    if (!counted.has(match)) {
-      counted.add(match);
-      totals = addPoints(totals, points);
-      this.registry.set(SCORE_TOTALS_KEY, totals);
-    }
+    const totals = countMatch(this.registry, match);
     const x = SCREEN.width / 2;
     this.cameras.main.setBackgroundColor(COLORS.background);
     panel(this, x, 52, 326, 70, COLORS.uiWood);

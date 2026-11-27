@@ -10,12 +10,42 @@ import { matchSecondsFrom } from '../game/match';
 import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
 import type { NetGame } from '../net/netGame';
+import type { RelayClient } from '../net/relay';
 import type { NetMessage, StartWire } from '../net/sync';
 import type { RoleData } from './RoleScene';
 
 /** 席の一覧から、抜けた人の席を Bot（0）にする。親機（0 番の席）はそのまま */
 export function seatsAfterLeave(seats: number[], present: Set<number>): number[] {
   return seats.map((id, i) => (i === 0 || id === 0 || present.has(id) ? id : 0));
+}
+
+/**
+ * 親機から届いた「もう1試合」の知らせが、こわれていないか：席の数と並びが前の試合と同じ（抜けた人の席が Bot になるのはよい）、
+ * 親機の席は同じ、スパイの席が席の中にある、自分の席がある
+ */
+export function validRematch(prev: number[], m: StartWire, you: number): boolean {
+  if (!Array.isArray(m.seats) || m.seats.length !== prev.length) return false;
+  if (!m.seats.every((id, i) => Number.isInteger(id) && (id === prev[i] || (id === 0 && i !== 0)))) return false;
+  if (!Number.isInteger(m.spy) || m.spy < 0 || m.spy >= m.seats.length || !Number.isInteger(m.seed)) return false;
+  return m.seats.indexOf(you) >= 0;
+}
+
+/** 試合のあいだに届いた「もう1試合」の知らせ（画面の切りかえのすきまで、受けとり損ねないように取っておく） */
+const pending = new WeakMap<RelayClient, StartWire>();
+const watching = new WeakSet<RelayClient>();
+
+/**
+ * 試合が始まったら呼ぶ：この接続に届く「もう1試合」の知らせを、いつでも取っておく（前の試合の残りは捨てる）。
+ * 試合の終わりの演出中に届いても、リザルトの画面で受けとれる
+ */
+export function keepRematch(net: NetGame): void {
+  pending.delete(net.relay);
+  if (watching.has(net.relay)) return;
+  watching.add(net.relay);
+  net.relay.listen((from, data) => {
+    const m = data as NetMessage;
+    if (m?.k === 'match' && from === net.relay.host) pending.set(net.relay, m);
+  });
 }
 
 /** 「match」の知らせから、次の試合の NetGame を作る */
@@ -28,13 +58,21 @@ function netFrom(net: NetGame, m: StartWire): NetGame {
  * 通信が切れたら onClosed（親機が抜けた など）。画面を閉じるときに、待つのをやめる
  */
 export function listenRematch(scene: Phaser.Scene, net: NetGame, onClosed: () => void): void {
+  let gone = false;
+  const go = (m: StartWire) => {
+    if (gone || m.v !== NET.version || !validRematch(net.seats, m, net.relay.you)) return;
+    gone = true;
+    off();
+    pending.delete(net.relay);
+    scene.scene.start('Role', { spyIndex: m.spy, net: netFrom(net, m) } satisfies RoleData);
+  };
   const off = net.relay.listen((from, data) => {
     const m = data as NetMessage;
-    if (m?.k !== 'match' || from !== net.relay.host) return;
-    if (m.v !== NET.version || m.seats.indexOf(net.relay.you) < 0) return;
-    off();
-    scene.scene.start('Role', { spyIndex: m.spy, net: netFrom(net, m) } satisfies RoleData);
+    if (m?.k === 'match' && from === net.relay.host) go(m);
   });
+  // 試合の終わりの演出中に、もう届いていた知らせ
+  const early = pending.get(net.relay);
+  if (early) scene.time.delayedCall(0, () => go(early));
   net.relay.onClosed = () => {
     if (scene.scene.isActive()) onClosed();
   };

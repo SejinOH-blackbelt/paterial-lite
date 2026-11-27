@@ -128,6 +128,7 @@ import { botTreasurePlan, nearExit, planFromIds } from '../game/treasure';
 import { ELEMENT_RES_CHIP_COLOR, ELEMENT_RES_EMPTY_TEX, ELEMENT_RES_TEX, makeResourceTextures, RES_SIZE } from './resourceTextures';
 import { makeMissionArt, MISSION_SPOT_TEX as SPOT_TEX } from './missionArt';
 import { ALTAR_TEX, makeAltarTextures } from './altarTextures';
+import { keepRematch } from './rematch';
 import { greetCall, kingVoice } from './voices';
 import { ELEMENT_PICTURE, makeElementPictures } from './elementPictures';
 import { ELEMENT_COLOR } from './elementIcons';
@@ -986,6 +987,7 @@ export class FieldScene extends Phaser.Scene {
     const net = this.net;
     if (!net) return;
     this.netUnlisten = net.relay.listen((from, data) => this.onNet(from, data as NetMessage));
+    keepRematch(net); // 試合の終わりの演出中に「もう1試合」が届いても、リザルトで受けとれるように
     net.relay.onClosed = () => {
       if (!this.scene.isActive() && !this.scene.isPaused()) return;
       // 勝ち負けが決まったあと（親機が終わって接続を閉じた）なら、通信切れではない。発表とリザルトをそのまま続ける

@@ -3,7 +3,7 @@ import Phaser from 'phaser';
 import { COLORS, LANDMARKS, SCREEN } from '../game/config';
 import type { MatchState, OutcomeReason, Pawn } from '../game/match';
 import { PateView } from './PateView';
-import type { ScoreData } from './ScoreScene';
+import { countMatch, type ScoreData } from './ScoreScene';
 import type { GameAudio } from './audio';
 import type { Bgm } from './bgm';
 import { FONT, INK, cssColor, label, mmss, panel, textButton, fitCamera } from './ui';
@@ -114,6 +114,8 @@ export class ResultScene extends Phaser.Scene {
       data.net?.relay.close(); // 友達との接続を閉じる
       this.scene.start('Title');
     }, 16);
+    // この試合の点を合計に足しておく（スコアの画面を見ないまま次の試合に移っても、点が抜けないように）
+    countMatch(this.registry, match);
     // 友達と遊んだとき：親機が「もう1試合」を押したら、この画面からでも次の試合へ
     if (data.net) listenRematch(this, data.net, () => this.scene.start('Title'));
   }
