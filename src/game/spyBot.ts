@@ -105,7 +105,7 @@ export function updateSpyBot(
   }
 
   // 残り時間が少ない：していることをやめて、すぐ宝物庫へ（乗りうつり中は終わるまで待つ）
-  if (heist && !heist.treasure.stolen && !mind.heist && !h.possess && heist.timeLeft < SPY_BOT.heistTimeLeft) {
+  if (heist && !heist.treasure.stolen && !mind.heist && !h.possess && now >= bot.restUntil && heist.timeLeft < SPY_BOT.heistTimeLeft) {
     spy.scan = null;
     mind.goal = null;
     mind.heist = true;

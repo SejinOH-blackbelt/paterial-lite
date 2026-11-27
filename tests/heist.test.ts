@@ -5,7 +5,7 @@ import { createSpyState } from '../src/game/spy';
 import { createSpyBotMind, updateSpyBot } from '../src/game/spyBot';
 import { buildBoard, dealBoard } from '../src/game/board';
 import { createFieldState, createHarvester, updateHarvester } from '../src/game/harvest';
-import { botChaseTarget, canSteal, carrierPawn, steal, stopAndSearch, stopTarget, stopWait, updateAwareness, walkSpeed } from '../src/game/heist';
+import { botChaseTarget, botGuardSpot, canAlarm, canSteal, carrierPawn, raiseAlarm, steal, stopAndSearch, stopTarget, stopWait, updateAwareness, walkSpeed } from '../src/game/heist';
 import { checkOutcome, createMatch, type Pawn } from '../src/game/match';
 import { createWalker, faceTo, stepWalker } from '../src/game/movement';
 import { createRng } from '../src/game/random';
@@ -279,5 +279,50 @@ describe('市民Bot：気づく・追いかける', () => {
     const bot = pawns[1];
     put(bot, 650, 1150);
     expect(botChaseTarget(m, bot, 11, 1, ring)).toBeNull();
+  });
+});
+
+describe('アラート', () => {
+  it('盗まれる前は鳴らせない（うその騒ぎは起こせない）', () => {
+    const { m, pawns } = setup();
+    put(pawns[1], m.treasure.vault.x, m.treasure.vault.y);
+    expect(canAlarm(m, pawns[1])).toBe(false);
+    expect(raiseAlarm(m, pawns[1], 5)).toBe(false);
+  });
+
+  it('盗まれた宝物庫のそばでだけ鳴らせて、鳴らすのは1回だけ', () => {
+    const { m, pawns, spy } = setup();
+    put(spy, m.treasure.vault.x, m.treasure.vault.y);
+    steal(m, spy, 10, quiet);
+    put(spy, 600, 1100);
+    put(pawns[1], 650, 1150);
+    expect(canAlarm(m, pawns[1])).toBe(false);
+    put(pawns[1], m.treasure.vault.x, m.treasure.vault.y + 20);
+    expect(raiseAlarm(m, pawns[1], 12)).toBe(true);
+    expect(m.treasure.alarmAt).toBe(12);
+    expect(canAlarm(m, pawns[1])).toBe(false);
+  });
+
+  it('アラートが鳴ると、市民はほんの少し、王様は少し速くなる（宝を持ったスパイは変わらない）', () => {
+    const { m, pawns, spy } = setup();
+    pawns[0].isKing = true;
+    put(spy, m.treasure.vault.x, m.treasure.vault.y);
+    steal(m, spy, 10, ring);
+    expect(walkSpeed(m, pawns[1])).toBeCloseTo(PATE.speed * TREASURE.alarmCitizenSpeed);
+    expect(walkSpeed(m, pawns[0])).toBeCloseTo(PATE.speed * TREASURE.alarmKingSpeed);
+    expect(TREASURE.alarmKingSpeed).toBeGreaterThan(TREASURE.alarmCitizenSpeed);
+    expect(walkSpeed(m, spy)).toBeCloseTo(PATE.speed * TREASURE.carrySpeed);
+  });
+
+  it('気づいた市民Botは、アラートが鳴っていなければ宝物庫へ鳴らしに行き、鳴ったあとは出口を見張る', () => {
+    const { m, pawns, spy } = setup();
+    put(spy, m.treasure.vault.x, m.treasure.vault.y);
+    steal(m, spy, 10, quiet);
+    m.knowsStolen.add(pawns[1]);
+    const spot = botGuardSpot(m, pawns[1])!;
+    expect(Math.hypot(spot.x - m.treasure.vault.x, spot.y - m.treasure.vault.y)).toBeLessThanOrEqual(TREASURE.useRadius);
+    m.treasure.alarmAt = 11;
+    const guard = botGuardSpot(m, pawns[1])!;
+    expect(m.treasure.exits.some((e) => e.x === guard.x && e.y === guard.y)).toBe(true);
   });
 });

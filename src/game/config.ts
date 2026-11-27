@@ -759,6 +759,12 @@ export const TREASURE = {
   stopRadius: 48,
   /** 呼び止めて外れたら、次に呼び止められるまでの秒数（同じ人が何度も続けて呼び止められないように） */
   stopCooldown: 20,
+  /** アラートが鳴ったあとの足の速さ（ふつうの何倍か）。市民はほんの少し、王様は少し速くなる（宝を持ったスパイは変わらない） */
+  alarmCitizenSpeed: 1.08,
+  alarmKingSpeed: 1.18,
+  /** アラートの画面の赤い点滅の回数と、サイレンの長さ（秒） */
+  alarmFlashes: 4,
+  alarmSirenSeconds: 2.4,
   /** 盗まれたと気づいた市民 Bot が、宝を持ったパテを見かけたとき、1秒あたりに追いかけ始める確率 */
   botChaseChancePerSecond: 0.5,
   /** 追いかけている Bot が、見失ってからあきらめるまでの秒数 */

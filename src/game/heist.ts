@@ -41,9 +41,27 @@ export function steal(m: MatchState, p: Pawn, now: number, rng: Rng): { alarm: b
   return { alarm };
 }
 
-/** パテの歩く速さ（宝を持っているあいだは、おそい） */
+/**
+ * パテの歩く速さ。宝を持っているあいだは、おそい。
+ * アラートが鳴ったあとは、市民がほんの少し、王様が少し速くなる（スパイは変わらない）
+ */
 export function walkSpeed(m: MatchState, p: Pawn): number {
-  return carrierPawn(m) === p ? PATE.speed * TREASURE.carrySpeed : PATE.speed;
+  if (carrierPawn(m) === p) return PATE.speed * TREASURE.carrySpeed;
+  if (m.treasure.alarmAt !== null && !p.isSpy) return PATE.speed * (p.isKing ? TREASURE.alarmKingSpeed : TREASURE.alarmCitizenSpeed);
+  return PATE.speed;
+}
+
+/** p がアラートを鳴らせるか（盗まれた宝物庫のそば・まだ鳴っていない。盗まれる前は鳴らせない＝うその騒ぎは起こせない） */
+export function canAlarm(m: MatchState, p: Pawn): boolean {
+  const t = m.treasure;
+  return !p.h.frozen && m.phase === 'play' && t.stolen && t.alarmAt === null && nearVault(t, p.h.walker.pos);
+}
+
+/** アラートを鳴らす。鳴らせなければ false */
+export function raiseAlarm(m: MatchState, p: Pawn, now: number): boolean {
+  if (!canAlarm(m, p)) return false;
+  m.treasure.alarmAt = now;
+  return true;
 }
 
 /** by が次に呼び止められるまでの秒数（0 なら、いま呼び止められる） */
@@ -137,12 +155,14 @@ export function botChaseTarget(m: MatchState, p: Pawn, now: number, dt: number, 
 }
 
 /**
- * 盗まれたと気づいた市民 Bot が見張りに行く出口（追いかけていないとき）。見張らないなら null。
- * 2つの出口に、席の番号で半分ずつ分かれる（足のおそいパテが来たら、そこで呼び止める）
+ * 盗まれたと気づいた市民 Bot が向かう場所（追いかけていないとき）。なにもしないなら null。
+ * アラートがまだ鳴っていなければ、宝物庫へ行って鳴らす。鳴ったあとは出口を見張る
+ * （2つの出口に、席の番号で半分ずつ分かれる。足のおそいパテが来たら、そこで呼び止める）
  */
 export function botGuardSpot(m: MatchState, p: Pawn): { x: number; y: number } | null {
   if (p.isSpy || p.h.frozen || m.phase !== 'play' || !m.treasure.stolen || !m.knowsStolen.has(p)) return null;
   if (m.treasure.carrier === null) return null;
+  if (m.treasure.alarmAt === null) return { x: m.treasure.vault.x, y: m.treasure.vault.y + 20 };
   const e = m.treasure.exits[m.pawns.indexOf(p) % 2];
   return { x: e.x, y: e.y };
 }

@@ -289,6 +289,33 @@ export class GameAudio {
     }
   }
 
+  /**
+   * アラートのサイレン「ウーウー」（宝が盗まれた。高い音と低い音を行ったり来たり）。
+   * 怖くなりすぎないよう、やわらかい三角波で、少しポップに
+   */
+  siren(seconds = 2.4, volume = 1): void {
+    const t = this.ctx.currentTime;
+    const out = this.ctx.createGain();
+    out.gain.value = volume;
+    out.connect(this.master);
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = 'triangle';
+    const cycle = 0.6;
+    for (let k = 0; k * cycle < seconds; k++) {
+      o.frequency.setValueAtTime(620, t + k * cycle);
+      o.frequency.linearRampToValueAtTime(900, t + k * cycle + cycle / 2);
+      o.frequency.linearRampToValueAtTime(620, t + (k + 1) * cycle);
+    }
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.16, t + 0.05);
+    g.gain.setValueAtTime(0.16, t + seconds - 0.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + seconds);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + seconds + 0.05);
+  }
+
   /** ミッションをまちがえたスパイの「ゴリッ」（石がこすれる低い音。小さめ） */
   gori(volume = 1): void {
     const t = this.ctx.currentTime;

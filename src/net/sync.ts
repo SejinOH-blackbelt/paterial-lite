@@ -89,6 +89,11 @@ export interface StealRequest {
   k: 'steal';
 }
 
+/** 友達のスマホ → 親機：アラートを鳴らしたい（盗まれた宝物庫のそばで押した） */
+export interface AlarmRequest {
+  k: 'alarm';
+}
+
 /** 市民の席のスマホ → 親機：この席のパテを呼び止めたい */
 export interface StopRequest {
   k: 'stop';
@@ -101,7 +106,7 @@ export interface StopRequest {
  */
 export interface HeistWire {
   k: 'heist';
-  e: 'steal' | 'stop';
+  e: 'steal' | 'stop' | 'alarm';
   a?: number;
   by?: number;
   t?: number;
@@ -352,7 +357,7 @@ export interface ResultWire {
   lost: number;
 }
 
-export type NetMessage = ReadyWire | GoWire | CallRequest | MeetWire | SayWire | VoteWire | ResultWire | Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | StealRequest | StopRequest | HeistWire | OverWire | StartWire;
+export type NetMessage = ReadyWire | GoWire | CallRequest | MeetWire | SayWire | VoteWire | ResultWire | Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | StealRequest | StopRequest | AlarmRequest | HeistWire | OverWire | StartWire;
 
 /**
  * 親機が席を決める：親機は 0 番、ほかの人は入った順に 1 番から。残りは Bot。
