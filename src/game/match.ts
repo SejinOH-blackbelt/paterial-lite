@@ -189,6 +189,34 @@ export function checkOutcome(m: MatchState, now: number): Outcome | null {
   return o;
 }
 
+/**
+ * 失敗が起きたときに、ストライキが起きる確率（0〜1）。
+ * 支持度が低いほど、国民のハッピー度（国の仕事ゲージ）が低いほど高い。支持度 0 なら 1
+ */
+export function strikeChance(support: number, happiness: number): number {
+  if (support <= 0) return 1;
+  const unrest = Math.pow(1 - Math.min(SUPPORT.start, support) / SUPPORT.start, SUPPORT.strikeCurve);
+  const calm = 1 - SUPPORT.happinessWeight * Math.max(0, Math.min(1, happiness));
+  return Math.max(0, Math.min(1, unrest * calm));
+}
+
+/** いまストライキが起きる確率（画面に「危険度」として出すのにも使う） */
+export function currentStrikeChance(m: MatchState): number {
+  return strikeChance(m.support, gauge(m));
+}
+
+/**
+ * 失敗が起きた：ストライキが起きるかを判定する（ひとりのときと親機だけ。rng がなければ判定しない）。
+ * 起きたら試合はスパイの勝ち（strike）。起きたら true
+ */
+export function rollStrike(m: MatchState, now: number, rng?: Rng): boolean {
+  if (!rng || m.outcome) return false;
+  if (rng() >= currentStrikeChance(m)) return false;
+  m.outcome = { winner: 'spy', reason: 'strike', time: now };
+  m.phase = 'over';
+  return true;
+}
+
 /** 試合が始まってから、会議の時間を除いて何秒たったか */
 export function playedSeconds(m: MatchState, now: number): number {
   return now - m.startedAt - m.pausedSeconds;
@@ -330,7 +358,7 @@ export function botVote(m: MatchState, bot: Pawn, rng: Rng): Pawn | null {
 }
 
 /** 会議の結果を出し、罰金や賠償をして、採取場に戻る（勝敗が決まれば試合終了） */
-export function resolveMeeting(m: MatchState, now: number): MeetingResult {
+export function resolveMeeting(m: MatchState, now: number, rng?: Rng): MeetingResult {
   const meeting = m.meeting!;
   const tally = new Map<Pawn | null, number>();
   for (const t of meeting.votes.values()) tally.set(t, (tally.get(t) ?? 0) + 1);
@@ -375,6 +403,8 @@ export function resolveMeeting(m: MatchState, now: number): MeetingResult {
       m.phase = 'over';
     }
   }
+  // 失敗（ぬれぎぬ・置物が見つかった）があれば、ストライキの判定（スパイを当てたら判定しない）
+  if (!m.outcome && ((target && !target.isSpy) || meeting.reason === 'report')) rollStrike(m, now, rng);
   m.history.push({ meeting, result });
   m.meeting = null;
   if (m.phase !== 'over') {

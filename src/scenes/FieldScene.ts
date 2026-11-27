@@ -1434,7 +1434,8 @@ export class FieldScene extends Phaser.Scene {
     if (!this.isSim() || !checkOutcome(this.match, heard)) return false;
     this.overSent = true;
     this.netSend('all', { k: 'over', winner: this.match.outcome!.winner, reason: this.match.outcome!.reason } satisfies OverWire);
-    this.endMatch();
+    if (this.match.outcome!.reason === 'strike') this.showStrike();
+    else this.endMatch();
     return true;
   }
 
@@ -1444,10 +1445,11 @@ export class FieldScene extends Phaser.Scene {
    */
   private doSteal(p: Pawn, heard: number): boolean {
     if (!this.isSim()) return false;
-    const r = steal(this.match, p, heard, this.rng);
+    const r = steal(this.match, p, heard, this.rng, this.rng);
     if (!r) return false;
     this.netSend('all', { k: 'heist', e: 'steal', a: r.alarm ? 1 : 0 } satisfies HeistWire);
     this.onStolen(p === this.playerPawn, r.alarm);
+    this.finishIfOver(heard);
     return true;
   }
 
@@ -1458,8 +1460,9 @@ export class FieldScene extends Phaser.Scene {
 
   /** p がアラートを鳴らす（ひとりのときと親機だけ） */
   private doAlarm(p: Pawn, heard: number): void {
-    if (!this.isSim() || !raiseAlarm(this.match, p, heard)) return;
+    if (!this.isSim() || !raiseAlarm(this.match, p, heard, this.rng)) return;
     this.netSend('all', { k: 'heist', e: 'alarm' } satisfies HeistWire);
+    this.finishIfOver(heard);
   }
 
   /** プレイヤーが「アラート」を押した */
@@ -1538,7 +1541,7 @@ export class FieldScene extends Phaser.Scene {
 
   /** by が target を呼び止めて調べる（ひとりのときと親機だけ） */
   private doStop(by: Pawn, target: Pawn, heard: number): void {
-    const r = stopAndSearch(this.match, by, target, heard);
+    const r = stopAndSearch(this.match, by, target, heard, this.rng);
     const seat = (p: Pawn) => this.pates.findIndex((e) => e.pawn === p);
     this.netSend('all', { k: 'heist', e: 'stop', by: seat(by), t: seat(target), caught: r.caught ? 1 : 0, lost: r.supportLost } satisfies HeistWire);
     this.onStopped(by, target, r.caught, r.supportLost);

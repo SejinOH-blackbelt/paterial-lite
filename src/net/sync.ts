@@ -356,6 +356,8 @@ export interface ResultWire {
   fine: number;
   comp: number;
   lost: number;
+  /** 親機の判定で、この会議のあとにストライキが起きたか（1） */
+  st?: number;
 }
 
 export type NetMessage = ReadyWire | GoWire | CallRequest | MeetWire | SayWire | VoteWire | ResultWire | Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | StealRequest | StopRequest | AlarmRequest | HeistWire | OverWire | StartWire;

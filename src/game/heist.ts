@@ -11,6 +11,7 @@ import { PATE, SUPPORT, TREASURE } from './config';
 import type { MatchState, Pawn } from './match';
 import type { Rng } from './random';
 import { alarmChance, nearExit, nearVault } from './treasure';
+import { rollStrike } from './match';
 import { canSee } from './vision';
 
 const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -48,14 +49,17 @@ export function canSteal(m: MatchState, p: Pawn): boolean {
  * 盗む。盗めなければ null。
  * 盗んだ瞬間に、スキャンした名物の数で決まる確率でアラートが鳴る（alarm: true）
  */
-export function steal(m: MatchState, p: Pawn, now: number, rng: Rng): { alarm: boolean } | null {
+export function steal(m: MatchState, p: Pawn, now: number, rng: Rng, strikeRng?: Rng): { alarm: boolean } | null {
   if (!canSteal(m, p)) return null;
   const t = m.treasure;
   t.stolen = true;
   t.stolenAt = now;
   t.carrier = m.pawns.indexOf(p);
   const alarm = rng() < alarmChance(m.spy.scanned.size);
-  if (alarm) t.alarmAt = now;
+  if (alarm) {
+    t.alarmAt = now;
+    rollStrike(m, now, strikeRng); // 盗まれたと分かった（失敗）
+  }
   return { alarm };
 }
 
@@ -76,9 +80,10 @@ export function canAlarm(m: MatchState, p: Pawn): boolean {
 }
 
 /** アラートを鳴らす。鳴らせなければ false */
-export function raiseAlarm(m: MatchState, p: Pawn, now: number): boolean {
+export function raiseAlarm(m: MatchState, p: Pawn, now: number, rng?: Rng): boolean {
   if (!canAlarm(m, p)) return false;
   m.treasure.alarmAt = now;
+  rollStrike(m, now, rng); // 盗まれたと分かった（失敗）
   return true;
 }
 
@@ -119,7 +124,7 @@ export interface StopResult {
  * by が target を呼び止めて、持ち物を調べる。
  * 宝を持っていれば市民の勝ち。ちがえば、ぬれぎぬで支持度が下がる（0 になったらストライキ。checkOutcome が決める）
  */
-export function stopAndSearch(m: MatchState, by: Pawn, target: Pawn, now: number): StopResult {
+export function stopAndSearch(m: MatchState, by: Pawn, target: Pawn, now: number, rng?: Rng): StopResult {
   if (carrierPawn(m) === target) {
     m.treasure.caughtBy = m.pawns.indexOf(by);
     m.outcome = { winner: 'citizens', reason: 'stopped', time: now };
@@ -131,6 +136,7 @@ export function stopAndSearch(m: MatchState, by: Pawn, target: Pawn, now: number
   m.stopReady.set(by, now + TREASURE.stopCooldown);
   // 旅に出るのは市民だけ（盗む前のスパイを呼び止めたときの扱いは、使い手と相談中。いまはスパイは残る）
   if (!target.isSpy) depart(m, target);
+  rollStrike(m, now, rng);
   return { caught: false, supportLost: lost };
 }
 

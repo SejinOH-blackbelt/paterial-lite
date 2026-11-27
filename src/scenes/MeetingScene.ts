@@ -3,7 +3,7 @@
 import Phaser from 'phaser';
 import { COLORS, ELEMENTS, PART_NAMES, SCREEN, SUPPORT, SUSPICION } from '../game/config';
 import { missionsDone } from '../game/missions';
-import { addNote, botVote, castVote, everyoneVoted, hearStamp, meetingTimeLeft, resolveMeeting, sightingOf, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
+import { addNote, botVote, castVote, currentStrikeChance, everyoneVoted, hearStamp, meetingTimeLeft, resolveMeeting, sightingOf, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
 import type { Rng } from '../game/random';
 import type { GameAudio } from './audio';
 import type { Bgm } from './bgm';
@@ -132,7 +132,7 @@ export class MeetingScene extends Phaser.Scene {
     label(this, SCREEN.width / 2, 40, '会議', 30, cssColor(COLORS.uiHoney));
     this.whyText = label(this, SCREEN.width / 2, 78, why, 16);
     // 王様の支持度（いまの値。次のぬれぎぬで 0 になるかが分かるように）
-    this.supportText = label(this, SCREEN.width - 64, 40, '', 12).setDepth(20);
+    this.supportText = label(this, SCREEN.width - 74, 40, '', 12).setDepth(20);
     this.showSupport();
     this.add.graphics().fillStyle(COLORS.ink).fillRoundedRect(36, 91, SCREEN.width - 72, 14, 6);
     this.timerBar = this.add.graphics();
@@ -523,7 +523,8 @@ export class MeetingScene extends Phaser.Scene {
 
   private showSupport(): void {
     const s = Math.max(0, this.ctx.match.support);
-    this.supportText.setText(`支持度 ${s}`).setColor(cssColor(s <= SUPPORT.wrongAccusation ? COLORS.uiRose : COLORS.uiCream));
+    const risk = Math.round(currentStrikeChance(this.ctx.match) * 100);
+    this.supportText.setText(`支持度 ${s}\nストライキ危険 ${risk}%`).setColor(cssColor(s <= SUPPORT.wrongAccusation || risk >= 30 ? COLORS.uiRose : COLORS.uiCream));
   }
 
   /**
@@ -545,7 +546,7 @@ export class MeetingScene extends Phaser.Scene {
     }
     const votes = [...match.meeting!.votes.entries()];
     const before = match.pawns.map((p) => ELEMENTS.map((e) => p.h.held[e]));
-    const result = resolveMeeting(match, this.now());
+    const result = resolveMeeting(match, this.now(), fromHost ? undefined : this.ctx.rng);
     if (this.ctx.net && !fromHost) {
       // 親機：みんなに結果を送る（票・支持度・素材の増減）
       this.ctx.net.relay.send('all', {
@@ -556,6 +557,7 @@ export class MeetingScene extends Phaser.Scene {
         fine: result.fine,
         comp: result.compensation,
         lost: result.supportLost,
+        st: match.outcome?.reason === 'strike' ? 1 : 0,
       } satisfies ResultWire);
     }
     if (fromHost) {
@@ -564,6 +566,11 @@ export class MeetingScene extends Phaser.Scene {
       result.fine = fromHost.fine;
       result.compensation = fromHost.comp;
       result.supportLost = fromHost.lost;
+      // 親機の判定でストライキが起きていたら、子機もそうする
+      if (fromHost.st === 1 && !match.outcome) {
+        match.outcome = { winner: 'spy', reason: 'strike', time: this.now() };
+        match.phase = 'over';
+      }
       const me = this.ctx.player;
       const seat = this.seatOf(me);
       ELEMENTS.forEach((e, k) => (me.h.held[e] = Math.max(0, before[seat][k] + (fromHost.mat[seat]?.[k] ?? 0))));

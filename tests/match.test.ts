@@ -8,6 +8,7 @@ import {
   canEmergency,
   castVote,
   checkOutcome,
+  strikeChance,
   chooseKing,
   emergencySpot,
   createMatch,
@@ -324,5 +325,37 @@ describe('王様のぬれぎぬ', () => {
     resolveMeeting(m, 10);
     expect(pawns[1].h.departed).toBe(true);
     expect(m.outcome).toMatchObject({ winner: 'spy', reason: 'kingLeft' });
+  });
+});
+
+describe('失敗のたびのストライキ判定（使い手の決定 Nov 28）', () => {
+  it('支持度が低いほど、ハッピー度（仕事ゲージ）が低いほど、起きやすい。支持度0なら必ず', () => {
+    expect(strikeChance(0, 0.9)).toBe(1);
+    expect(strikeChance(100, 0)).toBe(0);
+    expect(strikeChance(20, 0.3)).toBeGreaterThan(strikeChance(60, 0.3));
+    expect(strikeChance(20, 0.8)).toBeLessThan(strikeChance(20, 0.3));
+    expect(strikeChance(10, 0)).toBeGreaterThan(0.5); // 0 でなくても起きることがある
+  });
+
+  it('ぬれぎぬの会議のあと、乱数しだいでストライキが起きる（乱数がなければ判定しない）', () => {
+    const lucky = setup();
+    startMeeting(lucky.m, lucky.pawns[0], 'emergency', null, 5);
+    for (const p of lucky.pawns) castVote(lucky.m, p, lucky.pawns[1]);
+    resolveMeeting(lucky.m, 10, () => 0.999);
+    expect(lucky.m.outcome).toBeNull();
+
+    const unlucky = setup();
+    startMeeting(unlucky.m, unlucky.pawns[0], 'emergency', null, 5);
+    for (const p of unlucky.pawns) castVote(unlucky.m, p, unlucky.pawns[1]);
+    resolveMeeting(unlucky.m, 10, () => 0);
+    expect(unlucky.m.outcome).toMatchObject({ winner: 'spy', reason: 'strike' });
+  });
+
+  it('スパイを当てた会議では判定しない', () => {
+    const { m, pawns, spy } = setup();
+    startMeeting(m, pawns[0], 'emergency', null, 5);
+    for (const p of pawns) castVote(m, p, spy);
+    resolveMeeting(m, 10, () => 0);
+    expect(m.outcome).toMatchObject({ reason: 'caught' });
   });
 });
