@@ -48,23 +48,26 @@ export class ScoreScene extends Phaser.Scene {
     label(this, 214, 118, 'この試合', 12, INK).setStroke(INK, 0);
     label(this, 296, 118, '合計', 12, INK).setStroke(INK, 0);
     this.views = [];
+    // 人数が多いときは、1行を低くして全員を収める（6人まで 64、10人なら 40）
+    const rowH = Math.min(64, 400 / match.pawns.length);
+    const k = rowH / 64;
     match.pawns.forEach((p, i) => {
-      const y = 160 + i * 64;
+      const y = 160 + i * rowH - (64 - rowH) / 2;
       const me = p === player;
-      if (me) this.add.rectangle(x, y + 4, 316, 58, COLORS.uiHoney, 0.35);
-      const view = new PateView(this, 56, y + 18);
+      if (me) this.add.rectangle(x, y + 4, 316, rowH - 6, COLORS.uiHoney, 0.35);
+      const view = new PateView(this, 56, y + 18 * k);
       view.setHeadPart(p.part as never);
       view.setElement((p.element ?? null) as never);
-      view.setScale(0.8);
+      view.setScale(0.8 * k);
       this.views.push(view);
       const name = me ? 'きみ' : `${PART_NAMES[p.part as keyof typeof PART_NAMES] ?? p.part}のパテ`;
       const role = p.isSpy ? 'スパイ' : p.isKing ? '王様' : '市民';
       const roleColor = p.isSpy ? cssColor(COLORS.landmarkVermilion) : p.isKing ? cssColor(COLORS.uiWood) : INK;
-      this.add.text(92, y - 8, name, { fontFamily: 'sans-serif', fontSize: '15px', fontStyle: 'bold', color: INK });
-      this.add.text(92, y + 12, role, { fontFamily: 'sans-serif', fontSize: '12px', fontStyle: 'bold', color: roleColor });
+      this.add.text(92, y - 8 * k - (1 - k) * 4, name, { fontFamily: 'sans-serif', fontSize: `${Math.round(15 * Math.max(0.85, k))}px`, fontStyle: 'bold', color: INK });
+      this.add.text(92, y + 12 * k, role, { fontFamily: 'sans-serif', fontSize: `${Math.round(12 * Math.max(0.85, k))}px`, fontStyle: 'bold', color: roleColor });
       const pt = points[i];
-      label(this, 214, y + 4, fmt(pt), 20, pt > 0 ? '#2b6b2f' : pt < 0 ? '#b3322a' : INK).setStroke('#fff8e8', 3);
-      label(this, 296, y + 4, `${totals[i] ?? 0}`, 20, INK).setStroke('#fff8e8', 3);
+      label(this, 214, y + 4, fmt(pt), rowH < 50 ? 16 : 20, pt > 0 ? '#2b6b2f' : pt < 0 ? '#b3322a' : INK).setStroke('#fff8e8', 3);
+      label(this, 296, y + 4, `${totals[i] ?? 0}`, rowH < 50 ? 16 : 20, INK).setStroke('#fff8e8', 3);
     });
 
     if (data.online) {
@@ -73,7 +76,7 @@ export class ScoreScene extends Phaser.Scene {
       textButton(this, x, 594, 180, 48, 'タイトルへ', COLORS.uiHoney, () => this.scene.start('Title'), 17);
     } else {
       // 前の試合の通信の情報を引き継がないように、空のデータで始める
-      textButton(this, x - 80, 590, 140, 48, 'もう1試合', COLORS.uiHoney, () => this.scene.start('Role', {}), 19);
+      textButton(this, x - 80, 590, 140, 48, 'もう1試合', COLORS.uiHoney, () => this.scene.start('Role', { pawnCount: match.pawns.length }), 19);
       textButton(this, x + 80, 590, 140, 48, 'タイトルへ', COLORS.uiPaper, () => this.scene.start('Title'), 16);
     }
   }

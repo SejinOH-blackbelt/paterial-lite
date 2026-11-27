@@ -421,9 +421,10 @@ export function resolveMeeting(m: MatchState, now: number, rng?: Rng): MeetingRe
 /** 会議のあと、置物でないパテを鳥居のまわりに並べる */
 export function regroup(m: MatchState): void {
   const alive = m.pawns.filter((p) => !p.h.frozen);
+  const r = MATCH.regroupRadius * Math.max(1, alive.length / 6);
   alive.forEach((p, i) => {
     const a = (i / alive.length) * Math.PI * 2 + Math.PI / 2;
-    p.h.walker.pos = { x: torii.x + Math.cos(a) * MATCH.regroupRadius, y: torii.y + 30 + Math.sin(a) * MATCH.regroupRadius * 0.6 };
+    p.h.walker.pos = { x: torii.x + Math.cos(a) * r, y: torii.y + 30 + Math.sin(a) * r * 0.6 };
     p.h.walker.target = null;
     faceTo(p.h.walker, 'down');
   });

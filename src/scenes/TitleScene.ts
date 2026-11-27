@@ -1,7 +1,7 @@
 // タイトル画面：ロゴ、跳ねるパテ、「あそぶ」「あそびかた」
 import Phaser from 'phaser';
 import logoUrl from '../assets/logo.jpg';
-import { COLORS, PLAYER_ELEMENT, PLAYER_PART, SCREEN } from '../game/config';
+import { COLORS, PLAYERS, PLAYER_ELEMENT, PLAYER_PART, SCREEN } from '../game/config';
 import { roomFromUrl } from '../net/relay';
 import type { LobbyData } from './LobbyScene';
 import { makePartTextures } from './partTextures';
@@ -67,10 +67,43 @@ export class TitleScene extends Phaser.Scene {
       return;
     }
     {
-      textButton(this, SCREEN.width / 2, 500, 210, 48, 'ひとりで あそぶ', COLORS.uiHoney, () => this.scene.start('Role'), 19);
+      textButton(this, SCREEN.width / 2, 500, 210, 48, 'ひとりで あそぶ', COLORS.uiHoney, () => this.choosePawnCount(), 19);
       textButton(this, SCREEN.width / 2, 556, 210, 46, '友達と あそぶ', COLORS.uiMoss, () => this.scene.start('Lobby', {} satisfies LobbyData), 18);
       textButton(this, SCREEN.width / 2, 610, 160, 38, 'あそびかた', COLORS.uiPaper, () => this.showHowTo(), 15);
     }
+  }
+
+  /** ひとりで遊ぶ：何人で遊ぶか（6〜10人。きみ以外は Bot）を選んでから始める */
+  private choosePawnCount(): void {
+    let count = (this.registry.get('pawnCount') as number | undefined) ?? PLAYERS.default;
+    const x = SCREEN.width / 2;
+    const parts: Phaser.GameObjects.GameObject[] = [];
+    const add = <T extends Phaser.GameObjects.GameObject>(o: T): T => {
+      parts.push(o);
+      return o;
+    };
+    add(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.6).setOrigin(0).setInteractive());
+    add(panel(this, x, 320, 290, 230, COLORS.uiPaper));
+    add(label(this, x, 238, '何人で あそぶ？', 20, INK).setStroke(INK, 0));
+    add(label(this, x, 266, 'きみ以外は Bot。スパイは 1人', 12, INK).setStroke(INK, 0));
+    const num = add(label(this, x, 316, '', 34, INK).setStroke('#fff8e8', 4));
+    const show = () => num.setText(`${count}人`);
+    add(textButton(this, x - 92, 316, 52, 48, '−', COLORS.uiPaperEdge, () => {
+      count = Math.max(PLAYERS.min, count - 1);
+      show();
+    }, 24));
+    add(textButton(this, x + 92, 316, 52, 48, '＋', COLORS.uiPaperEdge, () => {
+      count = Math.min(PLAYERS.max, count + 1);
+      show();
+    }, 24));
+    add(textButton(this, x + 64, 390, 120, 44, 'はじめる', COLORS.uiHoney, () => {
+      this.registry.set('pawnCount', count); // 次も同じ人数から
+      this.scene.start('Role', { pawnCount: count });
+    }, 17));
+    add(textButton(this, x - 70, 390, 100, 40, 'もどる', COLORS.uiPaper, () => {
+      for (const o of parts) o.destroy();
+    }, 14));
+    show();
   }
 
   private showHowTo(): void {

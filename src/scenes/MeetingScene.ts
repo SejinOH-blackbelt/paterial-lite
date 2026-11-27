@@ -139,14 +139,18 @@ export class MeetingScene extends Phaser.Scene {
     this.add.graphics().fillStyle(COLORS.ink).fillRoundedRect(36, 91, SCREEN.width - 72, 14, 6);
     this.timerBar = this.add.graphics();
 
-    // 6体を輪に並べる（置物は置物のまま。投票できない）
+    // みんなを輪に並べる（置物は置物のまま。投票できない）。9人以上は、輪を横に広げて、絵と札を小さくする
+    const crowded = match.pawns.length > 8;
+    const k = crowded ? 0.8 : 1;
+    const ringX = crowded ? RING + 16 : RING;
     match.pawns.forEach((p, i) => {
       const a = (i / match.pawns.length) * Math.PI * 2 - Math.PI / 2;
-      const x = CENTER.x + Math.cos(a) * RING;
+      const x = CENTER.x + Math.cos(a) * ringX;
       const y = CENTER.y + Math.sin(a) * RING * 0.85 + 24;
-      const ring = this.add.ellipse(x, y, 56, 20, p.h.frozen ? COLORS.uiSlate : COLORS.uiPaperEdge)
+      const ring = this.add.ellipse(x, y, 56 * k, 20 * k, p.h.frozen ? COLORS.uiSlate : COLORS.uiPaperEdge)
         .setStrokeStyle(2, COLORS.uiWood);
       const view = new PateView(this, x, y);
+      view.setScale(k);
       view.setHeadPart(p.part as never);
       view.setElement((p.element ?? null) as never);
       if (p.h.departed) {
@@ -156,12 +160,12 @@ export class MeetingScene extends Phaser.Scene {
       }
       else if (p.h.frozen) view.setStatue(true);
       const done = missionsDone(p.h, match.board);
-      panel(this, x, y + 22, 98, 23, p.h.frozen ? COLORS.uiSlate : COLORS.uiWood);
+      panel(this, x, y + 22 * k, 98 * k, 23 * k, p.h.frozen ? COLORS.uiSlate : COLORS.uiWood);
       const name = p === player ? 'きみ' : PART_NAMES[p.part as keyof typeof PART_NAMES];
-      label(this, x, y + 20, p.h.departed ? `${name}  旅に出た` : `${name}  ${p.h.frozen ? '置物' : '仕事'} ${done}/${p.h.missions.length}`, 11);
+      label(this, x, y + 20 * k, p.h.departed ? `${name} 旅に出た` : `${name} ${p.h.frozen ? '置物' : '仕事'}${done}/${p.h.missions.length}`, crowded ? 9 : 11);
       const voteMark = label(this, x + 28, y - 34, '', 15, cssColor(COLORS.uiHoney)).setDepth(11);
       if (!p.h.frozen) {
-        const hit = this.add.zone(x, y - 22, 60, 66).setInteractive();
+        const hit = this.add.zone(x, y - 22 * k, 60 * k, 66 * k).setInteractive();
         hit.on('pointerdown', () => this.select(p));
       }
       this.seats.set(p, { x, y, view, ring, voteMark });

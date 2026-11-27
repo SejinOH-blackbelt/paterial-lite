@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { ZONES, PART_NAMES, TREASURE, SPOT as SPOT_RULE, BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { ZONES, PLAYERS, PART_NAMES, TREASURE, SPOT as SPOT_RULE, BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   createHarvester,
@@ -163,6 +163,11 @@ const BOT_STARTS = [
   { x: 440, y: 760 },
   { x: 250, y: 900 },
   { x: 600, y: 1100 },
+  // 7人目から（人数を増やしたとき）
+  { x: 500, y: 620 },
+  { x: 200, y: 680 },
+  { x: 330, y: 260 },
+  { x: 620, y: 880 },
 ] as const;
 /** 宝物庫と出口を選ぶ乱数のたねに混ぜる数（試合の乱数と別の並びにするため） */
 const TREASURE_SEED_SALT = 0x7e45a5;
@@ -254,6 +259,8 @@ export class FieldScene extends Phaser.Scene {
   private spotViews: Phaser.GameObjects.Image[][] = [];
   /** 宝物庫の絵（盗まれたら、扉があいた絵に差し替える） */
   private vaultView: Phaser.GameObjects.Image | null = null;
+  /** この試合の人数（ひとりで遊ぶとき。友達と遊ぶときは席の数） */
+  private pawnCount: number = PLAYERS.default;
   /** 王様（プレイヤー）が選んだ宝物庫と出口（ひとりのときだけ） */
   private treasureIds: { v: string; e: [string, string] } | null = null;
   /** 会議で知られて、採取場から片づけた置物 */
@@ -322,6 +329,7 @@ export class FieldScene extends Phaser.Scene {
     this.netGauge = null;
     this.plan = data?.plan ?? null;
     this.treasureIds = data?.treasure ?? null;
+    this.pawnCount = Math.max(PLAYERS.min, Math.min(PLAYERS.max, data?.pawnCount ?? PLAYERS.default));
     this.planElements = data?.elements ?? null;
     this.quitDialog = false;
     this.scanButton = null;
@@ -381,7 +389,9 @@ export class FieldScene extends Phaser.Scene {
     this.rng = createRng(this.net ? this.net.seed : Date.now());
     this.pates = [];
     this.addPate(createHarvester(createWalker({ ...PLAYER_START })), PLAYER_PART, PLAYER_ELEMENT, null, 'player');
-    BOT_PROFILES.forEach((profile, i) => {
+    // 人数：友達と遊ぶときは席の数、ひとりのときは選んだ数（6〜10）
+    const count = this.net ? this.net.seats.length : this.pawnCount;
+    BOT_PROFILES.slice(0, count - 1).forEach((profile, i) => {
       // 友達が座った席は Bot にしない（その人のスマホが動かす）
       const human = !!this.net && this.net.seats[i + 1] !== 0;
       const bot = human ? null : createBot(profile, BOT_STARTS[i]);

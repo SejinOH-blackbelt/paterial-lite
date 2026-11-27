@@ -376,7 +376,19 @@ export const BOT_PROFILES = [
   { id: 'pomCap', part: 'pomCap', element: 'wind', timingError: 0.07 },
   { id: 'dotScarf', part: 'dotScarf', element: 'earth', timingError: 0.09 },
   { id: 'beret', part: 'beret', element: 'thunder', timingError: 0.12 }, // のんびり屋
+  // 7人目から（人数を増やしたとき）
+  { id: 'stripeScarf', part: 'stripeScarf', element: 'fire', timingError: 0.06 },
+  { id: 'headband', part: 'headband', element: 'earth', timingError: 0.04 },
+  { id: 'topHat', part: 'topHat', element: 'water', timingError: 0.1 },
+  { id: 'catCap', part: 'catCap', element: 'wind', timingError: 0.08 },
 ] as const;
+
+/** 1試合の人数（使い手の決定 Nov 28：6〜10人から選べる。スパイはいまは1人） */
+export const PLAYERS = {
+  min: 6,
+  max: 10,
+  default: 6,
+} as const;
 
 /** 名物（スパイがスキャンして設計図のカケラを集める、和の国の設備） */
 export const LANDMARKS = [

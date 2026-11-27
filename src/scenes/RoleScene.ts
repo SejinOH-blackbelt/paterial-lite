@@ -1,6 +1,6 @@
 // 役の発表：「きみは 王様」（市民側）か「きみは スパイ」。スパイをここで決めて、採取場に渡す
 import Phaser from 'phaser';
-import { COLORS, ELEMENT_NAMES, ELEMENTS, KING_PART, MISSIONS, NET, PLAYER_ELEMENT, PLAYER_PART, SCREEN, SPOT } from '../game/config';
+import { COLORS, PLAYERS, ELEMENT_NAMES, ELEMENTS, KING_PART, MISSIONS, NET, PLAYER_ELEMENT, PLAYER_PART, SCREEN, SPOT } from '../game/config';
 import { planBoard, type BoardPlan } from '../game/board';
 import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
@@ -23,11 +23,15 @@ export interface RoleData {
   /** 友達と遊ぶとき：親機が決めた、席ごとのエレメントと、共同ミッションの配り方 */
   elements?: ElementId[];
   plan?: BoardPlan;
+  /** 1試合の人数（ひとりで遊ぶとき。友達と遊ぶときは席の数） */
+  pawnCount?: number;
   /** 王様（プレイヤー）が選んだ宝物庫と出口の場所（ひとりで遊ぶときだけ。なければ王様 Bot の決め方） */
   treasure?: { v: string; e: [string, string] };
 }
 
 export class RoleScene extends Phaser.Scene {
+  /** この試合の人数 */
+  private pawnCount: number = PLAYERS.default;
   private pate!: PateView;
   private t = 0;
 
@@ -41,7 +45,9 @@ export class RoleScene extends Phaser.Scene {
     // URL の最後が #spy なら必ずスパイ、#citizen なら必ず市民（テスト用。友達と遊ぶときは親機が決める）
     const rng = createRng(Date.now());
     const hash = typeof location !== 'undefined' ? location.hash : '';
-    const spyIndex = net ? net.spy : hash === '#spy' ? 0 : hash === '#citizen' ? 1 + Math.floor(rng() * 5) : chooseSpy(6, rng);
+    const count = net ? net.seats.length : Math.max(PLAYERS.min, Math.min(PLAYERS.max, data?.pawnCount ?? PLAYERS.default));
+    this.pawnCount = count;
+    const spyIndex = net ? net.spy : hash === '#spy' ? 0 : hash === '#citizen' ? 1 + Math.floor(rng() * (count - 1)) : chooseSpy(count, rng);
     const isSpy = spyIndex === (net ? net.mySeat : 0);
     if (net) this.listenNet(net);
 
@@ -113,11 +119,11 @@ export class RoleScene extends Phaser.Scene {
         // ひとりで遊ぶとき、プレイヤーが市民側なら王様：宝物庫と出口の場所を選んでから始める
         if (!isSpy) {
           openTreasurePicker(this, createRng(Date.now()), (plan) =>
-            this.scene.start('Field', { spyIndex, net, element: e, treasure: planToIds(plan) } satisfies RoleData),
+            this.scene.start('Field', { spyIndex, net, element: e, treasure: planToIds(plan), pawnCount: this.pawnCount } satisfies RoleData),
           );
           return;
         }
-        this.scene.start('Field', { spyIndex, net, element: e } satisfies RoleData);
+        this.scene.start('Field', { spyIndex, net, element: e, pawnCount: this.pawnCount } satisfies RoleData);
         return;
       }
       // 友達と遊ぶとき：全員が選び終えてから、いっせいに始める（親機だけ先に動けないように）
