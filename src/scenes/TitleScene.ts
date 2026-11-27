@@ -9,16 +9,17 @@ import { PateView } from './PateView';
 import { makeSpyTextures } from './spyTextures';
 import { makeTextures } from './textures';
 import { SCORE_TOTALS_KEY } from './ScoreScene';
+import { askPlayerName, loadPlayerName, savePlayerName } from './playerName';
 import { FONT, INK, cssColor, label, panel, textButton, fitCamera } from './ui';
 
 const HOW_TO = [
-  '和の国に、バイキングのスパイが1体まぎれこんだ！',
+  '和の国に、バイキングのスパイがまぎれこんだ！（何人いるかは ないしょ）',
   '',
   '【操作】左下のスティックで進む（パソコンは矢印キーも）。右下のボタンは押せるときに光る：素材のそばで「採取」、施設のそばで「アクション」。',
   '',
-  '【王様】王冠のパテ。素材を集め、配られた3つのミッションをこなして国の仕事ゲージを満タンに。置物を見つけたら「呼び出し」、土の祠で「緊急の呼び出し」。投票でスパイを当てよう。ぬれぎぬは支持度が下がる。',
+  '【王様と市民】配られた3つのミッション（相方と2人で受け持つ）をこなして、国の仕事ゲージを満タンに。置物を見つけたら「呼び出し」、土の祠で「緊急の呼び出し」。投票でスパイを当てよう。ぬれぎぬは支持度が下がり、着せられたパテは旅に出る。宝物庫があいていたら「アラート」！',
   '',
-  '【スパイ】名物をスキャンして、自分のミッションも終えれば勝ち。近くのパテを置物にもできる。',
+  '【スパイ】宝物庫の宝を盗んで、出口から逃げれば勝ち。名物をスキャンしておくと、盗むときにアラートが鳴りにくい。近くのパテを置物にもできる。スイッチは「ふり」もできる。',
   '',
   '【エレメント】パテは魂。体のエレメントでミッションに得意・苦手・不可［×］がある。不可なら「依代の祠」でコマンドを押して乗りうつろう。視界は前だけ（雷のミッションのあと、しばらくまるい）。',
   '',
@@ -67,6 +68,19 @@ export class TitleScene extends Phaser.Scene {
       return;
     }
     {
+      // 自分の名前（頭の上や会議に出る）。押すと入力欄が出る
+      const nameLabel = () => {
+        const n = loadPlayerName();
+        return n ? `なまえ：${n} ✎` : 'なまえを入れる ✎';
+      };
+      const nameButton = textButton(this, SCREEN.width - 76, 26, 140, 34, nameLabel(), COLORS.uiPaper, () => {
+        askPlayerName(loadPlayerName(), (name) => {
+          savePlayerName(name);
+          (nameButton.list[0] as Phaser.GameObjects.Container).list.forEach((o) => {
+            if (o instanceof Phaser.GameObjects.Text) o.setText(nameLabel());
+          });
+        });
+      }, 13);
       textButton(this, SCREEN.width / 2, 500, 210, 48, 'ひとりで あそぶ', COLORS.uiHoney, () => this.choosePawnCount(), 19);
       textButton(this, SCREEN.width / 2, 556, 210, 46, '友達と あそぶ', COLORS.uiMoss, () => this.scene.start('Lobby', {} satisfies LobbyData), 18);
       textButton(this, SCREEN.width / 2, 610, 160, 38, 'あそびかた', COLORS.uiPaper, () => this.showHowTo(), 15);
@@ -85,7 +99,7 @@ export class TitleScene extends Phaser.Scene {
     add(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.6).setOrigin(0).setInteractive());
     add(panel(this, x, 320, 290, 230, COLORS.uiPaper));
     add(label(this, x, 238, '何人で あそぶ？', 20, INK).setStroke(INK, 0));
-    add(label(this, x, 266, 'きみ以外は Bot。スパイは 1人', 12, INK).setStroke(INK, 0));
+    add(label(this, x, 266, 'きみ以外は Bot', 12, INK).setStroke(INK, 0));
     const num = add(label(this, x, 316, '', 34, INK).setStroke('#fff8e8', 4));
     const show = () => num.setText(`${count}人`);
     add(textButton(this, x - 92, 316, 52, 48, '−', COLORS.uiPaperEdge, () => {

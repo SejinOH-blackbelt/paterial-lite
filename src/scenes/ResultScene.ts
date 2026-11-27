@@ -1,12 +1,13 @@
 // リザルト：勝ち負け、スパイの正体、スパイがいつどこで何をしたかの振り返り、「もう1回」
 import Phaser from 'phaser';
-import { COLORS, LANDMARKS, PART_NAMES, SCREEN } from '../game/config';
+import { COLORS, LANDMARKS, SCREEN } from '../game/config';
 import type { MatchState, OutcomeReason, Pawn } from '../game/match';
 import { PateView } from './PateView';
 import type { ScoreData } from './ScoreScene';
 import type { GameAudio } from './audio';
 import type { Bgm } from './bgm';
 import { FONT, INK, cssColor, label, mmss, panel, textButton, fitCamera } from './ui';
+import { pawnName } from '../game/names';
 
 export interface ResultData {
   match: MatchState;
@@ -29,7 +30,7 @@ const REASON: Record<OutcomeReason, string> = {
   timeout: '時間切れ… 国の仕事が 終わらなかった',
 };
 
-const partName = (p: Pawn) => PART_NAMES[p.part as keyof typeof PART_NAMES] ?? p.part;
+const partName = (p: Pawn) => pawnName(p);
 
 export class ResultScene extends Phaser.Scene {
   private spyView!: PateView;

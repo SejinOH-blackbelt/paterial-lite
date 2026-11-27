@@ -308,6 +308,8 @@ export interface StartWire {
 export interface ReadyWire {
   k: 'ready';
   e: number;
+  /** その人が入れた名前（入れていなければ ''） */
+  n?: string;
 }
 
 /** 親機 → みんな：全員が選び終えたので、いっせいに試合を始める（席ごとのエレメントと、共同ミッションの配り方） */
@@ -315,6 +317,8 @@ export interface GoWire {
   k: 'go';
   els: number[];
   plan: BoardPlan;
+  /** 席ごとの名前（Bot の席と、入れていない人は ''） */
+  names?: string[];
 }
 
 /** 子機 → 親機：呼び出しボタンを押した（置物のそばなら呼び出し、土の祠なら緊急の呼び出し。親機が確かめる） */

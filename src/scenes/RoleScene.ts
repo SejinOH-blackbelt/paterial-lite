@@ -8,6 +8,8 @@ import { PateView } from './PateView';
 import { INK, cssColor, label, panel, textButton, fitCamera } from './ui';
 import { ELEMENT_PICTURE as ELEMENT_ICON, makeElementPictures as makeElementIcons } from './elementPictures';
 import { randomElement, type ElementId } from '../game/elements';
+import { sanitizeName } from '../game/names';
+import { loadPlayerName } from './playerName';
 import type { NetGame } from '../net/netGame';
 import type { GoWire, NetMessage, ReadyWire } from '../net/sync';
 import { openTreasurePicker } from './TreasurePicker';
@@ -25,6 +27,8 @@ export interface RoleData {
   plan?: BoardPlan;
   /** 1試合の人数（ひとりで遊ぶとき。友達と遊ぶときは席の数） */
   pawnCount?: number;
+  /** 友達と遊ぶとき：席ごとの名前（Bot の席と、入れていない人は ''）。ひとりのときは、自分の名前を Field が読みこむ */
+  names?: string[];
   /** 王様（プレイヤー）が選んだ宝物庫と出口の場所（ひとりで遊ぶときだけ。なければ王様 Bot の決め方） */
   treasure?: { v: string; e: [string, string] };
 }
@@ -75,7 +79,7 @@ export class RoleScene extends Phaser.Scene {
       SCREEN.width / 2,
       460,
       isSpy
-        ? 'バイキングから来た スパイ。\n茶色に塗って 和の国にまぎれこんだ。\n名物を全部スキャンしよう。\nスイッチは「ふり」もできる。'
+        ? 'バイキングから来た スパイ。\n茶色に塗って 和の国にまぎれこんだ。\n宝を盗んで 出口から逃げよう。\n名物をスキャンすると 見つかりにくい。'
         : '和の国の 王様パテ。\nミッションで ゲージを満タンに。\nスパイを当てよう。でも ぬれぎぬは\n支持度が下がる。0 でストライキ！',
       16,
     );
@@ -153,10 +157,10 @@ export class RoleScene extends Phaser.Scene {
     label(this, x, 300, `${ELEMENT_NAMES[element]}の体にやどった！`, 20, cssColor(COLORS.uiHoney));
     label(this, x, 340, 'みんなが選ぶのを 待っています…', 14);
     let started = false;
-    const start = (elements: ElementId[], plan: BoardPlan) => {
+    const start = (elements: ElementId[], plan: BoardPlan, names: string[]) => {
       if (started) return;
       started = true;
-      this.scene.start('Field', { spyIndex, net, element: elements[net.mySeat] ?? element, elements, plan } satisfies RoleData);
+      this.scene.start('Field', { spyIndex, net, element: elements[net.mySeat] ?? element, elements, plan, names } satisfies RoleData);
     };
     const host = net.mySeat === 0;
     const humans = net.seats.map((id, seat) => (id !== 0 ? seat : -1)).filter((seat) => seat >= 0);
@@ -166,8 +170,9 @@ export class RoleScene extends Phaser.Scene {
       const rng = createRng(net.seed + 977);
       const elements = net.seats.map((_, seat) => (seat === 0 ? element : this.readySeats.get(seat) ?? randomElement(rng)));
       const plan = planBoard(elements, rng);
-      net.relay.send('all', { k: 'go', els: elements.map((e) => ELEMENTS.indexOf(e)), plan } satisfies GoWire);
-      start(elements, plan);
+      const names = net.seats.map((id, seat) => (seat === 0 ? loadPlayerName() : id !== 0 ? this.readyNames.get(seat) ?? '' : ''));
+      net.relay.send('all', { k: 'go', els: elements.map((e) => ELEMENTS.indexOf(e)), plan, names } satisfies GoWire);
+      start(elements, plan, names);
     };
     // 選んでいるあいだに届いた知らせ（create で受けとり始めている）も使う
     this.onReady = () => {
@@ -175,7 +180,8 @@ export class RoleScene extends Phaser.Scene {
     };
     this.onGo = (msg) => {
       const elements = msg.els.map((i) => ELEMENTS[i] ?? 'earth');
-      start(elements, msg.plan);
+      const names = net.seats.map((_, seat) => sanitizeName(msg.names?.[seat]));
+      start(elements, msg.plan, names);
     };
     if (this.goReceived) this.onGo(this.goReceived);
     if (host) {
@@ -183,13 +189,14 @@ export class RoleScene extends Phaser.Scene {
       this.onReady();
       this.time.delayedCall(NET.readyTimeout * 1000, goAll); // 抜けた人がいても、待ちすぎたら始める
     } else {
-      net.relay.send('host', { k: 'ready', e: ELEMENTS.indexOf(element) } satisfies ReadyWire);
+      net.relay.send('host', { k: 'ready', e: ELEMENTS.indexOf(element), n: loadPlayerName() } satisfies ReadyWire);
     }
   }
 
   /** 友達と遊ぶとき：役の画面を開いたときから、ほかの人の「選び終えた」「始める」を受けとる */
   private listenNet(net: NetGame): void {
     this.readySeats = new Map();
+    this.readyNames = new Map();
     this.goReceived = null;
     this.onReady = () => {};
     this.onGo = () => {};
@@ -202,6 +209,7 @@ export class RoleScene extends Phaser.Scene {
       }
       if (msg?.k === 'ready' && seat > 0) {
         this.readySeats.set(seat, ELEMENTS[msg.e] ?? 'earth');
+        this.readyNames.set(seat, sanitizeName(msg.n));
         this.onReady();
       }
     });
@@ -217,6 +225,8 @@ export class RoleScene extends Phaser.Scene {
 
   /** 親機：選び終えた席と、そのエレメント */
   private readySeats = new Map<number, ElementId>();
+  /** 親機：選び終えた席の名前 */
+  private readyNames = new Map<number, string>();
   /** 子機：届いた「始める」の知らせ（選んでいるあいだに届いたら、選び終えたらすぐ始める） */
   private goReceived: GoWire | null = null;
   private onReady: () => void = () => {};

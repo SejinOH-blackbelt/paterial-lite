@@ -1,10 +1,11 @@
 // スコア表：この試合でもらった点と、続けて遊んだ合計。そのあと「もう1試合」か「タイトルへ」を選ぶ
 import Phaser from 'phaser';
-import { COLORS, PART_NAMES, SCREEN } from '../game/config';
+import { COLORS, SCREEN } from '../game/config';
 import type { MatchState, Pawn } from '../game/match';
 import { addPoints, matchPoints } from '../game/score';
 import { PateView } from './PateView';
 import { INK, cssColor, fitCamera, label, panel, textButton } from './ui';
+import { pawnName } from '../game/names';
 
 export interface ScoreData {
   match: MatchState;
@@ -60,7 +61,7 @@ export class ScoreScene extends Phaser.Scene {
       view.setElement((p.element ?? null) as never);
       view.setScale(0.8 * k);
       this.views.push(view);
-      const name = me ? 'きみ' : `${PART_NAMES[p.part as keyof typeof PART_NAMES] ?? p.part}のパテ`;
+      const name = me ? 'きみ' : `${pawnName(p)}のパテ`;
       const role = p.isSpy ? 'スパイ' : p.isKing ? '王様' : '市民';
       const roleColor = p.isSpy ? cssColor(COLORS.landmarkVermilion) : p.isKing ? cssColor(COLORS.uiWood) : INK;
       this.add.text(92, y - 8 * k - (1 - k) * 4, name, { fontFamily: 'sans-serif', fontSize: `${Math.round(15 * Math.max(0.85, k))}px`, fontStyle: 'bold', color: INK });

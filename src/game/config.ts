@@ -172,7 +172,7 @@ export const NET = {
    * ゲームのルールの版。友達と遊ぶとき、親機と子機でちがったら、読みこみ直してもらう
    * （ルールや通信の中身を変えたら、1 つ上げる）
    */
-  version: 8,
+  version: 9,
   /** ようすを送る間隔（秒）。短いほど動きがなめらかだが、通信が増える */
   sendInterval: 0.1,
   /** 親機が、みんながエレメントを選び終えるのを待つ最長の秒数（抜けた人がいても始められるように） */
@@ -727,6 +727,24 @@ export const PART_NAMES = {
   topHat: 'ゴマ',
   catCap: 'ミケ',
   crown: '王様', // 王冠をかぶったパテは「王様」と呼ぶ
+} as const;
+
+/**
+ * キャラクター（頭の飾りごと）：その子の色（名前の札とスカーフの色）と、ひとことプロフィール。
+ * 試合の最初の紹介と、頭の上の名前の札に使う（遊び方には効かない。見分けやすく、愛着がわくように）
+ */
+export const CHARACTERS = {
+  redKerchief: { color: 0xd64737, profile: '元気いっぱい。いつも走ってる' },
+  strawHat: { color: 0xc8922e, profile: 'リズムの名人。採取がとくい' },
+  bowScarf: { color: 0x489dce, profile: 'おっとり。空をながめるのが好き' },
+  pomCap: { color: 0x20a6a3, profile: 'くいしんぼう。おやつは魚' },
+  dotScarf: { color: 0xe0a52a, profile: 'きれい好き。水玉がじまん' },
+  beret: { color: 0x94538b, profile: 'のんびり屋。絵をかくのが好き' },
+  stripeScarf: { color: 0x40996a, profile: '物知り。名物のことなら何でも' },
+  headband: { color: 0xb93835, profile: 'がんばり屋。はちまきは本気の印' },
+  topHat: { color: 0x343c59, profile: 'すまし屋。でも実はさみしがり' },
+  catCap: { color: 0xeb997c, profile: '気まぐれ。ねこが大好き' },
+  crown: { color: 0xc8922e, profile: '和の国の王様。みんなを見守る' },
 } as const;
 
 /** 王様の支持度（国の住民が王様を信じている度合い） */

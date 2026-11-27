@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { ZONES, PLAYERS, PART_NAMES, TREASURE, SPOT as SPOT_RULE, BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { ZONES, PLAYERS, TREASURE, SPOT as SPOT_RULE, BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   createHarvester,
@@ -109,7 +109,7 @@ import type { Bgm } from './bgm';
 import type { MeetingData } from './MeetingScene';
 import type { ResultData } from './ResultScene';
 import type { RoleData } from './RoleScene';
-import { INK, label, mmss, panel, pinToScreen, textButton, fitCamera } from './ui';
+import { INK, cssColor, label, mmss, panel, pinToScreen, textButton, fitCamera } from './ui';
 import { makePartTextures, type HeadPart } from './partTextures';
 import type { Element } from './elementTextures';
 import { PateView } from './PateView';
@@ -124,6 +124,8 @@ import { makeMissionArt, MISSION_SPOT_TEX as SPOT_TEX } from './missionArt';
 import { ELEMENT_PICTURE, makeElementPictures } from './elementPictures';
 import { ELEMENT_COLOR } from './elementIcons';
 import { drawGround, drawPart, makeTextures, TEX } from './textures';
+import { characterOf, pawnName, sanitizeName } from '../game/names';
+import { loadPlayerName } from './playerName';
 
 /** 「採取」ボタンの大きさ（r）と、採取中に画面の真ん中で大きく出す位置（x, y）と拡大率（scale） */
 const BUTTON = { x: SCREEN.width / 2, y: 400, r: 38, scale: 1.9 } as const;
@@ -193,6 +195,8 @@ export class FieldScene extends Phaser.Scene {
   private me = 0;
   /** 役の発表で選んだ、自分の最初のエレメント */
   private myElement: ElementId = PLAYER_ELEMENT;
+  /** 友達と遊ぶとき：席ごとの名前（ひとりのときは null。自分の名前はスマホに保存したもの） */
+  private seatNames: string[] | null = null;
   /** 友達と遊ぶとき：親機が決めた共同ミッションの配り方と、席ごとのエレメント */
   private plan: BoardPlan | null = null;
   private planElements: ElementId[] | null = null;
@@ -320,6 +324,7 @@ export class FieldScene extends Phaser.Scene {
     this.yoriView = null;
     this.spyChoice = null;
     this.spotViews = [];
+    this.spotOnMarks = [];
     // 宝物庫まわり（画面は試合ごとに使い回されるので、前の試合の印を消す）
     this.vaultView = null;
     this.missionInfo = null;
@@ -331,6 +336,7 @@ export class FieldScene extends Phaser.Scene {
     this.treasureIds = data?.treasure ?? null;
     this.pawnCount = Math.max(PLAYERS.min, Math.min(PLAYERS.max, data?.pawnCount ?? PLAYERS.default));
     this.planElements = data?.elements ?? null;
+    this.seatNames = data?.names ?? null;
     this.quitDialog = false;
     this.scanButton = null;
     this.prankButton = null;
@@ -402,6 +408,7 @@ export class FieldScene extends Phaser.Scene {
     this.dealElementsAndMissions();
     this.all = this.pates.map((e) => e.h);
     this.setupMatch();
+    this.applyNames();
     this.makeSpotViews();
     this.makeTreasureViews();
 
@@ -439,6 +446,7 @@ export class FieldScene extends Phaser.Scene {
     // タップ：スティック・採取ボタン・呼び出し・スパイのボタン（地面をタップしても歩かない）
     this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
       this.audio.resume();
+      if (this.introParts) return; // 試合の前の紹介のあいだ（紹介の画面が自分でタップを受けとる）
       if (this.match.phase !== 'play' || this.quitDialog) return;
       // スキャンのミニゲームのパネルはスティックの上に重なるので、パネルが先に受けとる
       if (this.scanView?.owns(over)) return;
@@ -521,6 +529,7 @@ export class FieldScene extends Phaser.Scene {
     });
 
     for (const e of this.pates) this.syncPate(e, 0);
+    this.startIntro(); // 試合の前：メンバーの紹介 → 自分のミッション → よーいドン
   }
 
   private addPate(h: Harvester, part: HeadPart, element: Element, bot: Bot | null, id: string): void {
@@ -830,6 +839,18 @@ export class FieldScene extends Phaser.Scene {
     const dt = Math.min(deltaMs, 100) / 1000;
     const heard = this.audio.heardTime();
     this.bgm.update();
+    if (this.introParts) {
+      // 試合の前の紹介のあいだは、時間を進めない（絵だけ出しておく）
+      // 締め切りが過ぎていたら次の場面へ（裏に回っていたときは、いくつか続けて進む）
+      for (let i = 0; i < 4 && this.introTimer && performance.now() >= this.introTimer.at; i++) {
+        const { fn } = this.introTimer;
+        this.introTimer = null;
+        fn();
+      }
+      for (const e of this.pates) this.syncPate(e, 0);
+      this.updateFog();
+      return;
+    }
     if (this.match.phase !== 'play') return;
     updateFieldState(this.field, heard);
     this.drive(dt);
@@ -994,6 +1015,8 @@ export class FieldScene extends Phaser.Scene {
     switch (msg.k) {
       case 'snap': {
         if (host || fromSeat !== 0) return;
+        // 親機は紹介を終えてから ようすを送りはじめる。届いたら、こちらも紹介を閉じて合流する
+        if (this.introParts) this.beginPlay();
         msg.pw.forEach((w, i) => {
           const e = this.pates[i];
           if (!e) return;
@@ -1425,10 +1448,28 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /** スイッチの絵を置く（入ったら絵が変わる） */
+  /** 入ったスイッチの目印（足元の光と ✓ の札） */
+  private spotOnMarks: { glow: Phaser.GameObjects.Ellipse; badge: Phaser.GameObjects.Container }[][] = [];
+
   private makeSpotViews(): void {
     this.spotViews = this.board.missions.map((m) =>
       m.spots.map((s) => this.add.image(s.x, s.y, SPOT_TEX(missionType(m.type).element, s.on)).setOrigin(0.5, 1).setDepth(s.y)),
     );
+    // 入ったスイッチの目印：足元の光（エレメントの色）と、上の「✓」の札。入る前は絵をくすませる（オン・オフをひと目で分かるように）
+    this.spotOnMarks = this.board.missions.map((m) =>
+      m.spots.map((s) => {
+        const color = ELEMENT_COLOR[missionType(m.type).element];
+        const glow = this.add.ellipse(s.x, s.y - 2, 58, 22, color, 0.55).setDepth(s.y - 1).setVisible(false);
+        const badge = this.add.container(s.x + 14, s.y - 60, [
+          this.add.circle(0, 0, 10, COLORS.ink),
+          this.add.circle(0, 0, 8, 0x2f9e44),
+          this.add.text(0, 0, '✓', { fontFamily: 'sans-serif', fontSize: '12px', fontStyle: 'bold', color: '#fff8e8' }).setOrigin(0.5),
+        ]).setDepth(s.y + 1).setVisible(false);
+        this.tweens.add({ targets: glow, alpha: { from: 0.35, to: 0.75 }, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+        return { glow, badge };
+      }),
+    );
+    this.syncSpotViews(true);
   }
 
   /** 宝物庫と出口の絵を置く（場所は試合の最初に王様が決めたところ） */
@@ -1564,7 +1605,7 @@ export class FieldScene extends Phaser.Scene {
 
   /** 呼び止めの結果を画面に出す */
   private onStopped(by: Pawn, target: Pawn, caught: boolean, lost: number): void {
-    const name = (p: Pawn) => (p === this.playerPawn ? 'きみ' : `${PART_NAMES[p.part as keyof typeof PART_NAMES] ?? p.part}のパテ`);
+    const name = (p: Pawn) => (p === this.playerPawn ? 'きみ' : `${pawnName(p)}のパテ`);
     if (caught) this.popText(`${name(by)}が ${name(target)}を 呼び止めた\n宝を持っていた！`, '#2b6b2f', 15, 0);
     else this.popText(`${name(by)}が ${name(target)}を 呼び止めた… ぬれぎぬ！\n${name(target)}は プンプン怒って 旅に出た（支持度 -${lost}）`, '#b3322a', 13, 0);
   }
@@ -1617,17 +1658,221 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /** 毎コマ：入ったスイッチの絵を変える */
-  private syncSpotViews(): void {
+  private syncSpotViews(first = false): void {
     this.board.missions.forEach((m, i) =>
       m.spots.forEach((s, k) => {
         const img = this.spotViews[i]?.[k];
         const key = SPOT_TEX(missionType(m.type).element, s.on);
-        if (img && img.texture.key !== key) {
+        if (img && (first || img.texture.key !== key)) {
           img.setTexture(key);
-          if (s.on) this.squash(img, 0.8);
+          // 入る前はくすんだ色、入ったら元の色（光・✓の札といっしょに）
+          if (s.on) img.clearTint();
+          else img.setTint(0x8c877e);
+          const mark = this.spotOnMarks[i]?.[k];
+          mark?.glow.setVisible(s.on);
+          mark?.badge.setVisible(s.on);
+          if (s.on && !first) {
+            this.squash(img, 0.8);
+            if (mark) {
+              mark.badge.setScale(0.3);
+              this.tweens.add({ targets: mark.badge, scale: 1, duration: 260, ease: 'Back.Out' });
+            }
+          }
         }
       }),
     );
+  }
+
+  // ---------- 試合の前：メンバーの紹介 → 自分のミッション → よーいドン ----------
+
+  /** 紹介の画面の部品（出ているあいだだけ）。出ているあいだは試合の時計を進めない */
+  private introParts: Phaser.GameObjects.GameObject[] | null = null;
+  /** 紹介の次の場面へ進む時刻（実際の時計。もたつくスマホでも、みんなの進み方がずれないように） */
+  private introTimer: { at: number; fn: () => void } | null = null;
+
+  /** 友達と遊ぶとき、紹介の各場面の締め切り（紹介を始めた時刻から積み上げる。裏に回って戻っても、遅れを取り戻す） */
+  private introDue = 0;
+
+  /** ms ミリ秒たったら fn（紹介のあいだだけ。update で見張る） */
+  private introAfter(ms: number, fn: () => void): void {
+    const base = this.net ? this.introDue : performance.now();
+    this.introDue = base + ms;
+    this.introTimer = { at: this.introDue, fn };
+  }
+
+  /** 紹介のあいだ、後ろのボタン（ミッション確認・やめる）にタップが届かないように、全面でうけとめる */
+  private introBlocker(): Phaser.GameObjects.Zone {
+    return this.introAdd(this.add.zone(0, 0, SCREEN.width, SCREEN.height).setOrigin(0).setInteractive());
+  }
+
+  /**
+   * 試合の前に、だれがいるか（名前・色・ひとこと。スパイの人数は言わない）と、自分のミッションを見せてから「よーい、ドン！」。
+   * ひとりのときはタップで先へ進める。友達と遊ぶときは、みんなで同じ長さ（INTRO の秒数）で進む
+   */
+  private startIntro(): void {
+    this.introParts = [];
+    this.introTimer = null;
+    this.introDue = performance.now();
+    this.showMembers();
+  }
+
+  private clearIntro(): void {
+    for (const o of this.introParts ?? []) o.destroy();
+    this.introParts = [];
+  }
+
+  /** 紹介の画面に部品を足す（画面に貼りつけて、いちばん手前に） */
+  private introAdd<T extends Phaser.GameObjects.GameObject>(o: T): T {
+    this.introParts?.push(o);
+    (o as unknown as Phaser.GameObjects.Components.Depth).setDepth?.(9960);
+    return this.hud(o);
+  }
+
+  /** 次へ進む：ひとりのときはタップか時間、友達と遊ぶときは決まった時間 */
+  private introNext(seconds: { solo: number; net: number }, next: () => void): void {
+    let done = false;
+    const go = () => {
+      if (done || !this.introParts) return;
+      done = true;
+      next();
+    };
+    this.introAfter((this.net ? seconds.net : seconds.solo) * 1000, go);
+    const hit = this.introBlocker();
+    if (!this.net) hit.once('pointerdown', go);
+  }
+
+  /** ① きょうのメンバー：名前・色・ひとこと（自分は「きみ」の印） */
+  private showMembers(): void {
+    this.clearIntro();
+    const cx = SCREEN.width / 2;
+    this.introAdd(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.78).setOrigin(0));
+    this.introAdd(panel(this, cx, 330, 344, 560, COLORS.uiPaper));
+    this.introAdd(label(this, cx, 72, 'きょうの メンバー', 22, INK).setStroke(INK, 0));
+    const n = this.pates.length;
+    const rows = Math.ceil(n / 2);
+    const cellH = Math.min(96, 470 / rows);
+    this.pates.forEach((e, i) => {
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const x = cx - 84 + col * 168;
+      const y = 108 + row * cellH + cellH / 2;
+      const char = characterOf(e.pawn.part);
+      this.introAdd(this.add.rectangle(x, y, 160, cellH - 8, char.color, 0.16).setStrokeStyle(2, char.color, 0.9));
+      const v = new PateView(this, x - 52, y + cellH * 0.22);
+      v.setHeadPart(e.pawn.part as HeadPart);
+      v.setElement(e.h.element as Element);
+      v.setScale(Math.min(0.62, cellH / 120));
+      this.introAdd(v);
+      const light = Phaser.Display.Color.IntegerToColor(char.color).v > 0.75;
+      const tag = this.introAdd(
+        this.add
+          .text(x - 22, y - cellH / 2 + 10, pawnName(e.pawn), { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: light ? INK : '#fff8e8', backgroundColor: cssColor(char.color) })
+          .setPadding(5, 1, 5, 2)
+          .setResolution(2),
+      );
+      // 長い名前は、欄の中に収まるように縮める（右の端は x + 78）
+      const room = 98;
+      if (tag.width > room) tag.setScale(room / tag.width);
+      if (i === this.me) {
+        // 自分の印は、名前とは別に、パテの上に出す
+        this.introAdd(
+          this.add
+            .text(x - 52, y - cellH / 2 + 6, 'きみ', { fontFamily: 'sans-serif', fontSize: '11px', fontStyle: 'bold', color: '#fff8e8', backgroundColor: cssColor(COLORS.ink) })
+            .setOrigin(0.5, 0)
+            .setPadding(4, 1, 4, 1)
+            .setResolution(2),
+        );
+      }
+      this.introAdd(
+        this.add
+          .text(x - 22, y - cellH / 2 + 32, char.profile, { fontFamily: 'sans-serif', fontSize: '10px', color: INK, wordWrap: { width: 96, useAdvancedWrap: true } })
+          .setResolution(2),
+      );
+    });
+    this.introAdd(label(this, cx, 596, this.net ? 'まもなく ミッションの説明' : 'タップで つぎへ', 12, INK).setStroke(INK, 0).setAlpha(0.7));
+    this.introNext({ solo: 8, net: 5 }, () => this.showBriefing());
+  }
+
+  /** ② きみのミッション：3つ（または2つ）の、ゾーン・スイッチの数・相性・使う資源 */
+  private showBriefing(): void {
+    this.clearIntro();
+    const cx = SCREEN.width / 2;
+    const me = this.player;
+    this.introAdd(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.78).setOrigin(0));
+    this.introAdd(panel(this, cx, 320, 344, 520, COLORS.uiPaper));
+    const role = this.isPlayerSpy ? 'スパイ' : this.playerPawn.isKing ? '王様' : '市民';
+    this.introAdd(label(this, cx, 86, `きみは ${role}`, 22, INK).setStroke(INK, 0));
+    this.introAdd(label(this, cx, 116, `${ELEMENT_NAMES[me.element]}の体で、この ミッションを受け持つ`, 13, INK).setStroke(INK, 0));
+    const AFF: Record<string, { text: string; color: number }> = {
+      good: { text: '得意', color: 0x2f7a4a },
+      plain: { text: '普通', color: 0x7a6a55 },
+      weak: { text: '苦手', color: 0xb57a17 },
+      never: { text: '不可', color: 0xb3322a },
+    };
+    myMissions(me, this.board).forEach((m, i) => {
+      const t = missionType(m.type);
+      const zone = ZONES.find((z) => z.element === t.element);
+      const y = 168 + i * 92;
+      this.introAdd(this.add.rectangle(cx, y, 312, 84, ELEMENT_COLOR[t.element], 0.14).setStrokeStyle(2, ELEMENT_COLOR[t.element], 0.9));
+      this.introAdd(this.add.image(cx - 124, y, ELEMENT_PICTURE(t.element)).setScale(0.72));
+      this.introAdd(this.add.text(cx - 86, y - 30, t.name, { fontFamily: 'sans-serif', fontSize: '16px', fontStyle: 'bold', color: INK }).setResolution(2));
+      const need = t.needPerSpot > 0 ? `${RESOURCE_NAMES[t.element]}を ${t.needPerSpot}個ずつ` : '資源は いらない';
+      this.introAdd(
+        this.add
+          .text(cx - 86, y - 6, `${zone?.name ?? ''}の スイッチ ${m.spots.length}か所\n${need}`, { fontFamily: 'sans-serif', fontSize: '11px', color: INK, lineSpacing: 2 })
+          .setResolution(2),
+      );
+      const a = AFF[missionAffinity(me, m)];
+      this.introAdd(this.add.rectangle(cx + 120, y - 18, 46, 22, a.color).setStrokeStyle(1.5, COLORS.ink));
+      this.introAdd(this.add.text(cx + 120, y - 18, a.text, { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#fff8e8' }).setOrigin(0.5).setResolution(2));
+    });
+    const notes = [
+      '相方は ないしょ。スイッチの進み具合は いっしょ',
+      this.isPlayerSpy ? 'スイッチは「ふり」もできる。宝を盗んで 出口へ！' : '「不可」なら 依代の祠で 乗りうつろう',
+    ];
+    this.introAdd(label(this, cx, 470, notes.join('\n'), 12, INK).setStroke(INK, 0));
+    this.introAdd(label(this, cx, 560, this.net ? 'まもなく スタート' : 'タップで スタート', 13, INK).setStroke(INK, 0).setAlpha(0.7));
+    this.introNext({ solo: 12, net: 8 }, () => this.showCountdown());
+  }
+
+  /** ③ よーい、ドン！ → 試合の時計を動かす */
+  private showCountdown(): void {
+    this.clearIntro();
+    const cx = SCREEN.width / 2;
+    this.introAdd(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.35).setOrigin(0));
+    this.introBlocker();
+    const word = this.introAdd(label(this, cx, 300, 'よーい…', 40, cssColor(COLORS.uiHoney)));
+    word.setScale(0.6);
+    this.tweens.add({ targets: word, scale: 1, duration: 250, ease: 'Back.Out' });
+    this.audio.pon();
+    this.introAfter(900, () => {
+      if (!this.introParts) return;
+      word.setText('ドン！').setScale(0.6);
+      this.tweens.add({ targets: word, scale: 1.2, duration: 220, ease: 'Back.Out' });
+      this.audio.piron();
+      this.introAfter(550, () => this.beginPlay());
+    });
+  }
+
+  /** 試合を始める：紹介を片づけ、試合の時計を「いま」から数える */
+  private beginPlay(): void {
+    if (!this.introParts) return;
+    this.clearIntro();
+    this.introParts = null;
+    this.introTimer = null;
+    const now = this.audio.heardTime();
+    this.match.startedAt = now;
+    this.spy.startedAt = now; // 塗りムラの広がりと、最初のイタズラまでの待ちも、ここから
+  }
+
+  /** 名前をつける：人が座っている席は、その人が入れた名前（入れていなければ頭の飾りの呼び名のまま） */
+  private applyNames(): void {
+    this.pates.forEach((e, seat) => {
+      const human = this.net ? this.net.seats[seat] !== 0 : seat === this.me;
+      if (!human) return;
+      const name = this.net ? sanitizeName(this.seatNames?.[seat]) : loadPlayerName();
+      if (name) e.pawn.name = name;
+    });
   }
 
   /** 試合を始める。スパイは役の発表で決まった番号のパテ */
@@ -2363,8 +2608,17 @@ export class FieldScene extends Phaser.Scene {
     e.view.setAlpha(seen).setVisible(seen > 0);
     e.shadow.setAlpha(seen).setVisible(seen > 0);
     // 頭の上の名前（王様は王冠と「王様」。自分の名前も出す）。見えないパテの名前も出さない
-    const name = PART_NAMES[e.pawn.part as keyof typeof PART_NAMES] ?? e.pawn.part;
-    if (e.nameTag.text !== name) e.nameTag.setText(name);
+    const name = pawnName(e.pawn);
+    if (e.nameTag.text !== name) {
+      // 名前の札は、その子の色（スカーフ・帽子の色）。色が明るければ墨色の字、暗ければ白い字
+      const c = characterOf(e.pawn.part).color;
+      const light = Phaser.Display.Color.IntegerToColor(c).v > 0.75;
+      e.nameTag
+        .setText(name)
+        .setStyle({ backgroundColor: cssColor(c), color: light ? INK : '#fff8e8' })
+        .setPadding(5, 1, 5, 2)
+        .setStroke(INK, 0);
+    }
     e.nameTag.setPosition(x, y - PateView.height - 34).setDepth(y + 1).setAlpha(seen).setVisible(seen > 0);
   }
 

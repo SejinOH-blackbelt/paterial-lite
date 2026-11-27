@@ -1,7 +1,7 @@
 // 会議の画面。採取場の上に重ねて出します（採取場はそのあいだ止まる）。
 // 6体が輪になって並び、スタンプで話し合って投票します。ルールは src/game/match.ts。
 import Phaser from 'phaser';
-import { COLORS, ELEMENTS, PART_NAMES, SCREEN, SUPPORT, SUSPICION } from '../game/config';
+import { COLORS, ELEMENTS, SCREEN, SUPPORT, SUSPICION } from '../game/config';
 import { missionsDone } from '../game/missions';
 import { addNote, botVote, castVote, currentStrikeChance, everyoneVoted, hearStamp, meetingTimeLeft, resolveMeeting, sightingOf, suspicionOf, type MatchState, type MeetingResult, type Pawn } from '../game/match';
 import type { Rng } from '../game/random';
@@ -14,6 +14,7 @@ import { DEPART_TEX, makeDepartTextures } from './departTextures';
 import { FONT, INK, cssColor, label, panel, textButton, fitCamera } from './ui';
 import { MeetingMap } from './MeetingMap';
 import type { Point } from '../game/movement';
+import { pawnName } from '../game/names';
 
 export interface MeetingData {
   match: MatchState;
@@ -37,7 +38,7 @@ const MINI_W = 56;
 const STAMP_SUS = 0xe8590c;
 const STAMP_SAW = 0x1c7ed6;
 
-const nameOf = (p: Pawn) => `${PART_NAMES[p.part as keyof typeof PART_NAMES] ?? p.part}のパテ`;
+const nameOf = (p: Pawn) => `${pawnName(p)}のパテ`;
 
 export class MeetingScene extends Phaser.Scene {
   private ctx!: MeetingData;
@@ -161,8 +162,9 @@ export class MeetingScene extends Phaser.Scene {
       else if (p.h.frozen) view.setStatue(true);
       const done = missionsDone(p.h, match.board);
       panel(this, x, y + 22 * k, 98 * k, 23 * k, p.h.frozen ? COLORS.uiSlate : COLORS.uiWood);
-      const name = p === player ? 'きみ' : PART_NAMES[p.part as keyof typeof PART_NAMES];
-      label(this, x, y + 20 * k, p.h.departed ? `${name} 旅に出た` : `${name} ${p.h.frozen ? '置物' : '仕事'}${done}/${p.h.missions.length}`, crowded ? 9 : 11);
+      const name = p === player ? 'きみ' : pawnName(p);
+      const tag = label(this, x, y + 20 * k, p.h.departed ? `${name} 旅に出た` : `${name} ${p.h.frozen ? '置物' : '仕事'}${done}/${p.h.missions.length}`, crowded ? 9 : 11);
+      if (tag.width > 92 * k) tag.setScale((92 * k) / tag.width); // 長い名前でも札の中に収める
       const voteMark = label(this, x + 28, y - 34, '', 15, cssColor(COLORS.uiHoney)).setDepth(11);
       if (!p.h.frozen) {
         const hit = this.add.zone(x, y - 22 * k, 60 * k, 66 * k).setInteractive();
@@ -228,7 +230,7 @@ export class MeetingScene extends Phaser.Scene {
     this.selected = p;
     this.ctx.audio.kachi();
     this.spotlight(p);
-    const name = p === player ? 'じぶん' : PART_NAMES[p.part as keyof typeof PART_NAMES];
+    const name = p === player ? 'じぶん' : pawnName(p);
     this.setButtonText(this.voteButton, `${name}に投票`);
   }
 
@@ -321,7 +323,7 @@ export class MeetingScene extends Phaser.Scene {
     }
     addNote(match, p, s, target, at, this.now());
     const seat = this.seats.get(p)!;
-    const tname = target ? (target === this.ctx.player ? 'きみ' : PART_NAMES[target.part as keyof typeof PART_NAMES]) : '';
+    const tname = target ? (target === this.ctx.player ? 'きみ' : pawnName(target)) : '';
     this.bubble(seat.x, seat.y - 60, target ? `${s}→${tname}${at ? '（地図）' : ''}` : s);
     const color = s === 'みてた！' ? STAMP_SAW : STAMP_SUS;
     if (target) {
@@ -329,7 +331,7 @@ export class MeetingScene extends Phaser.Scene {
       if (!p.isSpy || p.isPlayer || this.ctx.rng() < 0.5) hearStamp(match, p, target, s === 'みてた！' ? 'saw' : 'sus');
       this.pointArrow(p, target, color);
     }
-    const who = p === this.ctx.player ? 'きみ' : PART_NAMES[p.part as keyof typeof PART_NAMES];
+    const who = p === this.ctx.player ? 'きみ' : pawnName(p);
     if (at) {
       this.marks.push({ at, color, who });
       this.miniMap.addMark(at, color, who);
@@ -390,7 +392,7 @@ export class MeetingScene extends Phaser.Scene {
     const W = 262;
     const map = new MeetingMap(this, CENTER.x - W / 2, 150, W, true, this.statues);
     for (const m of this.marks) map.addMark(m.at, m.color, m.who);
-    const tname = pending ? (pending.target === this.ctx.player ? 'きみ' : PART_NAMES[pending.target.part as keyof typeof PART_NAMES]) : '';
+    const tname = pending ? (pending.target === this.ctx.player ? 'きみ' : pawnName(pending.target)) : '';
     const title = label(this, CENTER.x, 118, pending ? `${tname}を どこで見た？` : '見かけた場所の地図', 18, cssColor(COLORS.uiHoney));
     const hint = label(this, CENTER.x, 140, pending ? '地図をタップ（場所なしでも言える）' : '', 11);
     const parts: Phaser.GameObjects.GameObject[] = [cover, map.container, title, hint];
