@@ -10,6 +10,7 @@ import type { Bgm } from './bgm';
 import type { NetGame } from '../net/netGame';
 import type { NetMessage, ResultWire, SayWire, VoteWire } from '../net/sync';
 import { PateView } from './PateView';
+import { DEPART_TEX, makeDepartTextures } from './departTextures';
 import { FONT, INK, cssColor, label, panel, textButton, fitCamera } from './ui';
 import { MeetingMap } from './MeetingMap';
 import type { Point } from '../game/movement';
@@ -101,6 +102,7 @@ export class MeetingScene extends Phaser.Scene {
 
   create(): void {
     fitCamera(this); // 内部の細かさに合わせてカメラを拡大する（座標は 360×640 のまま）
+    makeDepartTextures(this);
     const { match, player } = this.ctx;
     const meeting = match.meeting!;
     this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.85).setOrigin(0);
@@ -147,7 +149,11 @@ export class MeetingScene extends Phaser.Scene {
       const view = new PateView(this, x, y);
       view.setHeadPart(p.part as never);
       view.setElement((p.element ?? null) as never);
-      if (p.h.departed) view.setVisible(false); // 旅に出た人は輪にいない（札だけ残る）
+      if (p.h.departed) {
+        // 旅に出た人は、風呂敷をかついだ旅立ちの絵（輪にはいない）
+        view.setVisible(false);
+        this.add.image(x, y + 8, DEPART_TEX).setOrigin(0.5, 1).setScale(0.6).setAlpha(0.85);
+      }
       else if (p.h.frozen) view.setStatue(true);
       const done = missionsDone(p.h, match.board);
       panel(this, x, y + 22, 98, 23, p.h.frozen ? COLORS.uiSlate : COLORS.uiWood);
@@ -657,10 +663,18 @@ export class MeetingScene extends Phaser.Scene {
         // しょんぼり：ぷるぷる震えて、少し縮む
         this.tweens.add({ targets: seat.view, x: seat.x + 4, duration: 50, yoyo: true, repeat: 7 });
         this.tweens.add({ targets: seat.view, scaleY: 0.9, duration: 300, delay: 400, ease: 'Quad.Out' });
+        // 少しして、プンプン怒って旅に出る（風呂敷をかついだ絵になって、輪から去っていく）
+        this.time.delayedCall(1100, () => {
+          seat.view.setVisible(false);
+          const walker = this.add.image(seat.x, seat.y + 8, DEPART_TEX).setOrigin(0.5, 1).setScale(0.7).setDepth(12);
+          this.tweens.add({ targets: walker, x: seat.x + 70, alpha: 0, duration: 1800, delay: 500, ease: 'Quad.In' });
+        });
         const sub =
-          match.support <= 0
-            ? '王様の支持度が 0 に… 市民たちが ストライキ！'
-            : `${nm(target)}は 市民だった… プンプン怒って 旅に出た（支持度 -${result.supportLost}）`;
+          match.outcome?.reason === 'kingLeft'
+            ? '王様が プンプン怒って 旅に出てしまった…'
+            : match.outcome?.reason === 'strike'
+              ? `${nm(target)}は 市民だった… 市民たちの不満が あふれて ストライキ！`
+              : `${nm(target)}は 市民だった… プンプン怒って 旅に出た（支持度 -${result.supportLost}）`;
         this.showVerdict('ぬれぎぬ…！', sub, cssColor(COLORS.uiRose));
         this.pop(this.supportText);
       }
