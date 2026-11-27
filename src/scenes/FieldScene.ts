@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { ZONES, PLAYERS, TREASURE, SPOT as SPOT_RULE, BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { ZONES, PLAYERS, TREASURE, SPOT as SPOT_RULE, BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, GREET, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   createHarvester,
@@ -53,6 +53,7 @@ import {
 import { buildBoard, isRite, missionComplete, missionIdsOf, missionType, planBoard, spotsOn, type Board, type BoardPlan, type MissionInst, type Spot } from '../game/board';
 import type { Step } from '../game/missionGames';
 import { createWalker, isWalking, setTarget, steerWalker, stepWalker, type Walker } from '../game/movement';
+import { botWantsToGreet, bowOf, greetKing, greetTarget } from '../game/greet';
 import { botChaseTarget, botGuardSpot, canAlarm, raiseAlarm, canSteal, carrierPawn, steal, stopAndSearch, stopTarget, stopWait, updateAwareness, walkSpeed } from '../game/heist';
 import { createRng, type Rng } from '../game/random';
 import {
@@ -94,6 +95,8 @@ import {
   type StealRequest,
   type AlarmRequest,
   type StopRequest,
+  type GreetRequest,
+  type GreetWire,
   type CallRequest,
   type MeetWire,
   type MissionWire,
@@ -625,6 +628,10 @@ export class FieldScene extends Phaser.Scene {
     const r = missionChance(this.player, this.board, this.all, this.isPlayerSpy);
     if (!r) {
       // そばにパテがいれば「呼び止める」（持ち物を調べる。宝を持っていれば市民の勝ち、ちがえばぬれぎぬ）
+      // 呼び止められる相手がいれば呼び止め、いなければ王様のそばで「あいさつ」（ボタンの表示と同じ順）。
+      // どちらでもなければ、呼び止めの待ち時間を知らせる
+      if (this.canOfferStop() && stopTarget(this.match, this.playerPawn, now) && this.playerStops(now)) return;
+      if (this.canOfferStop() && this.playerGreets(now)) return;
       if (this.canOfferStop() && this.playerStops(now)) return;
       if (!this.player.task) this.popText('そばにスイッチがない', '#2b1d14', 14, 0);
       return;
@@ -711,8 +718,10 @@ export class FieldScene extends Phaser.Scene {
     const alarmable = canAlarm(this.match, this.playerPawn);
     // 呼び止めは、スイッチも祠もないときだけ（そばのパテを調べる）
     const stoppable = !shrine && !stealable && !alarmable && !m && this.canOfferStop() && stopTarget(this.match, this.playerPawn, now) !== null;
-    this.actionButton.setLit(!this.driving && !this.spyChoice && (m?.state === 'ready' || !!m?.canFake || shrine?.state === 'ready' || stealable || alarmable || stoppable));
-    this.actionButton.setLabel(shrine ? '乗りうつる' : alarmable ? 'アラート' : stealable ? '盗む' : m ? 'スイッチ' : stoppable ? '呼び止める' : 'アクション');
+    // あいさつは、ほかに何もできないときだけ（王様のそば）
+    const greetable = !shrine && !stealable && !alarmable && !m && !stoppable && this.canOfferStop() && greetTarget(this.match, this.playerPawn, now) !== null;
+    this.actionButton.setLit(!this.driving && !this.spyChoice && (m?.state === 'ready' || !!m?.canFake || shrine?.state === 'ready' || stealable || alarmable || stoppable || greetable));
+    this.actionButton.setLabel(shrine ? '乗りうつる' : alarmable ? 'アラート' : stealable ? '盗む' : m ? 'スイッチ' : stoppable ? '呼び止める' : greetable ? 'あいさつ' : 'アクション');
     const body = reportableBody(this.match, this.playerPawn);
     const emergency = canEmergency(this.match, this.playerPawn);
     this.callButton.setVisible(playing && !inGame);
@@ -899,6 +908,8 @@ export class FieldScene extends Phaser.Scene {
       } else if (e.bot) {
         for (const ev of updateBot(e.bot, this.field, this.board, this.all, ahead, this.rng)) this.onBotTap(e, ev, heard);
       }
+      // Bot：王様のそばにいると、ときどきあいさつする（スパイ Bot も、しないと不自然なので、ときどき）
+      if (e.bot && this.isSim() && botWantsToGreet(this.match, e.pawn, heard, dt, this.rng)) this.doGreet(e.pawn, heard);
     }
     if (this.overSent) return; // Bot の呼び止めで試合が終わった
     this.netUpdate(heard);
@@ -1164,6 +1175,22 @@ export class FieldScene extends Phaser.Scene {
         if (!host || fromSeat <= 0) return;
         const by = this.pates[fromSeat]?.pawn;
         if (by) this.doAlarm(by, heard);
+        return;
+      }
+      case 'greet': {
+        // 子機があいさつした：王様のそばにいるか・待ち時間を親機が確かめる
+        if (!host || fromSeat <= 0) return;
+        const by = this.pates[fromSeat]?.pawn;
+        if (by) this.doGreet(by, heard);
+        return;
+      }
+      case 'greeted': {
+        // 親機からの知らせ：だれかが王様にあいさつした
+        if (host || fromSeat !== 0) return;
+        const by = this.pates[msg.s]?.pawn;
+        if (!by) return;
+        this.match.greetReady.set(by, heard + GREET.cooldown);
+        this.onGreeted(by);
         return;
       }
       case 'stop': {
@@ -1620,6 +1647,46 @@ export class FieldScene extends Phaser.Scene {
       this.netSend('host', { k: 'stop', t: this.pates.findIndex((e) => e.pawn === target) } satisfies StopRequest);
     }
     return true;
+  }
+
+  /** プレイヤーが「あいさつ」を押した。そばに王様がいなければ false */
+  private playerGreets(heard: number): boolean {
+    if (!greetTarget(this.match, this.playerPawn, heard)) return false;
+    if (this.isSim()) {
+      this.doGreet(this.playerPawn, heard);
+    } else {
+      // 子機：親機に頼む（自分の場所を先に送る）。返事が来るまでの少しのあいだだけ、続けて押せないようにする
+      // （本当の待ち時間は、親機から「あいさつした」が届いたときに始める。受けつけられなかったら、すぐまた押せる）
+      this.match.greetReady.set(this.playerPawn, heard + GREET.pendingSeconds);
+      this.netSend('host', { k: 'me', p: pawnToWire(this.player, this.driving, heard) } satisfies SelfState);
+      this.netSend('host', { k: 'greet' } satisfies GreetRequest);
+    }
+    return true;
+  }
+
+  /** by が王様にあいさつする（ひとりのときと親機だけ）。みんなに知らせる */
+  private doGreet(by: Pawn, heard: number): void {
+    const ev = greetKing(this.match, by, heard);
+    if (!ev) return;
+    this.netSend('all', { k: 'greeted', s: this.pates.findIndex((e) => e.pawn === by) } satisfies GreetWire);
+    this.onGreeted(by);
+  }
+
+  /**
+   * あいさつの見せ方：おじぎ（くせがある。スパイは少しずれる）と、王様のうなずき。
+   * 印や文字では区別しない（よく見ている人だけが「何となく違うかな…」と思える）
+   */
+  private onGreeted(by: Pawn): void {
+    const e = this.pates.find((x) => x.pawn === by);
+    const king = this.pates.find((x) => x.pawn.isKing);
+    if (!e || !king) return;
+    e.view.playBow(bowOf(by.part), by.isSpy);
+    this.time.delayedCall(650, () => king.view.playBow('nod'));
+    // 近くにいれば、小さく「ぺこり」（スパイでも同じ）
+    const me = this.listenerPos();
+    if (Math.hypot(e.h.walker.pos.x - me.x, e.h.walker.pos.y - me.y) < 260) {
+      this.popText('ぺこり', '#6b4f2a', 12, 2, { x: e.h.walker.pos.x, y: e.h.walker.pos.y - 70 });
+    }
   }
 
   /** by が target を呼び止めて調べる（ひとりのときと親機だけ） */

@@ -107,6 +107,8 @@ export interface MatchState {
   support: number;
   /** 王様の儀式がすんで、支持度を戻したか（1試合に1回） */
   riteRewarded: boolean;
+  /** 王様にあいさつしたパテが、次にあいさつできるようになる時刻 */
+  greetReady: Map<Pawn, number>;
   /** 宝物庫と出口（M10）。場所は試合の最初に王様が決める */
   treasure: TreasureState;
   /** 呼び止めて外したパテが、次に呼び止められるようになる時刻 */
@@ -172,6 +174,7 @@ export function createMatch(pawns: Pawn[], now: number, rng: Rng, board: Board, 
     sightings: new Map(),
     support: SUPPORT.start,
     riteRewarded: false,
+    greetReady: new Map(),
     // 省いたときに試合の乱数（rng）を使わないのは、ほかの決まり（塗りムラの位置など）の並びを変えないため
     treasure: createTreasure(treasure ?? botTreasurePlan(createRng(1))),
     stopReady: new Map(),
@@ -326,7 +329,7 @@ export function suspicionOf(m: MatchState, observer: Pawn, target: Pawn): number
   return m.suspicion.get(observer)?.get(target) ?? 0;
 }
 
-function addSuspicion(m: MatchState, observer: Pawn, target: Pawn, amount: number, at?: Point): void {
+export function addSuspicion(m: MatchState, observer: Pawn, target: Pawn, amount: number, at?: Point): void {
   if (observer === target || observer.isPlayer) return;
   const row = m.suspicion.get(observer)!;
   row.set(target, (row.get(target) ?? 0) + amount);

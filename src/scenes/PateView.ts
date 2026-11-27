@@ -300,6 +300,48 @@ export class PateView extends Phaser.GameObjects.Container {
     this.placeElement(0);
   }
 
+  /** おじぎ（王様へのあいさつ）：始めてからの秒数・くせ・少しずれるか（スパイ）。null なら、おじぎしていない */
+  private bow: { t: number; kind: string; delay: number; depth: number; tilt: number } | null = null;
+
+  /**
+   * おじぎをする（王様へのあいさつ・王様のうなずき）。kind はくせ（deep・double・quick・slow・nod）。
+   * だれのおじぎも、毎回少しずつゆらぐ（遅れ・深さ・傾き）。off（スパイ）は、ゆらぎの幅が少しだけ
+   * 「おそく・浅く・傾く」ほうへずれる。幅は重なっているので、1回見ただけでは決めきれない（何度か見ると何となく違う）
+   */
+  playBow(kind: string, off = false): void {
+    if (this.isStatue || this.strikeSign) return;
+    const r = (a: number, b: number) => a + Math.random() * (b - a);
+    const side = Math.random() < 0.5 ? -1 : 1;
+    this.bow = off
+      ? { t: 0, kind, delay: r(0.08, 0.26), depth: r(0.68, 0.95), tilt: side * r(0.04, 0.14) }
+      : { t: 0, kind, delay: r(0, 0.14), depth: r(0.85, 1.1), tilt: side * r(0, 0.08) };
+  }
+
+  /** いまのおじぎの深さ（0〜1）と横の傾き。おじぎが終わったら片づける */
+  private bowPose(dtSeconds: number): { dip: number; tilt: number } {
+    const b = this.bow;
+    if (!b) return { dip: 0, tilt: 0 };
+    b.t += dtSeconds;
+    // くせ：1回の長さ（秒）・回数・深さ
+    const style: Record<string, { len: number; times: number; depth: number }> = {
+      deep: { len: 0.7, times: 1, depth: 1 },
+      double: { len: 0.32, times: 2, depth: 0.7 },
+      quick: { len: 0.3, times: 1, depth: 0.5 },
+      slow: { len: 1.1, times: 1, depth: 0.9 },
+      nod: { len: 0.35, times: 1, depth: 0.45 },
+    };
+    const st = style[b.kind] ?? style.deep;
+    const t = b.t - b.delay;
+    if (t >= st.len * st.times) {
+      this.bow = null;
+      return { dip: 0, tilt: 0 };
+    }
+    if (t < 0) return { dip: 0, tilt: 0 };
+    const phase = (t % st.len) / st.len;
+    const dip = Math.sin(Math.PI * phase) * st.depth * b.depth;
+    return { dip, tilt: dip * b.tilt };
+  }
+
   /** 背中を向けた姿勢から、両腕を素材に振り上げる。 */
   playHit(): void {
     if (this.isStatue || this.strikeSign || this.facing !== 'up') return;
@@ -365,7 +407,11 @@ export class PateView extends Phaser.GameObjects.Container {
     this.armL.rotation += swing;
     this.armR.rotation -= swing;
     this.upperBody.y -= this.hitPose * PATE.hitLean;
-    const torsoStretch = stretch - this.hitPose * PATE.hitSquash;
+    // おじぎ：上体を下げて、少しつぶす（スパイは少し横に傾く）
+    const bow = this.bowPose(dtSeconds);
+    this.upperBody.y += bow.dip * 9;
+    this.upperBody.rotation += bow.tilt;
+    const torsoStretch = stretch - this.hitPose * PATE.hitSquash - bow.dip * 0.12;
     this.torso.setScale(1 / torsoStretch, torsoStretch);
   }
 

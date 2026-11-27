@@ -94,6 +94,17 @@ export interface AlarmRequest {
   k: 'alarm';
 }
 
+/** 子機 → 親機：王様にあいさつしたい（そばにいるかは親機が確かめる） */
+export interface GreetRequest {
+  k: 'greet';
+}
+
+/** 親機 → みんな：s の席のパテが、王様にあいさつした（おじぎと、王様のうなずきを見せる） */
+export interface GreetWire {
+  k: 'greeted';
+  s: number;
+}
+
 /** 市民の席のスマホ → 親機：この席のパテを呼び止めたい */
 export interface StopRequest {
   k: 'stop';
@@ -366,7 +377,7 @@ export interface ResultWire {
   st?: number;
 }
 
-export type NetMessage = ReadyWire | GoWire | CallRequest | MeetWire | SayWire | VoteWire | ResultWire | Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | StealRequest | StopRequest | AlarmRequest | HeistWire | OverWire | StartWire;
+export type NetMessage = ReadyWire | GoWire | CallRequest | MeetWire | SayWire | VoteWire | ResultWire | Snapshot | SelfState | TapEvent | TapFix | MissionWire | SpyWire | PrankRequest | StealRequest | StopRequest | AlarmRequest | GreetRequest | GreetWire | HeistWire | OverWire | StartWire;
 
 /**
  * 親機が席を決める：親機は 0 番、ほかの人は入った順に 1 番から。残りは Bot。
