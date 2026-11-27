@@ -304,6 +304,10 @@ export class FieldScene extends Phaser.Scene {
     this.yoriView = null;
     this.spyChoice = null;
     this.spotViews = [];
+    // 宝物庫まわり（画面は試合ごとに使い回されるので、前の試合の印を消す）
+    this.vaultView = null;
+    this.alarmShown = false;
+    this.overSent = false;
     this.netGauge = null;
     this.plan = data?.plan ?? null;
     this.planElements = data?.elements ?? null;
@@ -1455,7 +1459,9 @@ export class FieldScene extends Phaser.Scene {
   private showAlarm(): void {
     this.alarmShown = true;
     this.audio.siren(TREASURE.alarmSirenSeconds);
-    const flash = this.hud(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, 0xe03131, 0).setOrigin(0).setDepth(9590));
+    // 色は濃いまま置いて、全体の濃さ（alpha）を動かして点滅させる。ミニゲームの画面（9700）より手前に出す。
+    // 押せないように、触っても下へ通す（setInteractive しない）
+    const flash = this.hud(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, 0xe03131, 1).setOrigin(0).setAlpha(0).setDepth(9890));
     this.tweens.add({
       targets: flash,
       alpha: { from: 0, to: 0.32 },
@@ -1464,7 +1470,7 @@ export class FieldScene extends Phaser.Scene {
       repeat: TREASURE.alarmFlashes - 1,
       onComplete: () => flash.destroy(),
     });
-    const text = this.hud(label(this, SCREEN.width / 2, 150, '盗まれているぞー！', 26, '#e03131').setDepth(9600));
+    const text = this.hud(label(this, SCREEN.width / 2, 150, '盗まれているぞー！', 26, '#e03131').setDepth(9891));
     this.tweens.add({ targets: text, scale: { from: 0.6, to: 1 }, duration: 260, ease: 'Back.Out' });
     this.time.delayedCall(TREASURE.alarmSirenSeconds * 1000, () => text.destroy());
   }
