@@ -46,7 +46,8 @@ describe('宝物庫と出口の候補', () => {
 
   it('出口の候補は、施設・名物・依代の祠・スイッチ・資源と重ならない', () => {
     const others = [...FACILITIES, ...LANDMARKS, YORISHIRO, ...SPOT.sites, ...RESOURCE_POINTS];
-    for (const e of EXIT_SITES) for (const o of others) expect(dist(e, o)).toBeGreaterThanOrEqual(80);
+    // 下の辺は雷の原のスイッチが並んでいて 80 空く所がないので、60 まで（出口の「そば」の半径 56 より広いので、判定は重ならない）
+    for (const e of EXIT_SITES) for (const o of others) expect(dist(e, o)).toBeGreaterThanOrEqual(e.side === 'bottom' ? 60 : 80);
   });
 });
 

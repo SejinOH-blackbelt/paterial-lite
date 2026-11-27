@@ -2769,7 +2769,8 @@ export class FieldScene extends Phaser.Scene {
   private followCamera(lerp: number): void {
     const cam = this.cameras.main;
     const tx = Phaser.Math.Clamp(this.camTarget.x - SCREEN.width / 2, 0, WORLD.width - SCREEN.width);
-    const ty = Phaser.Math.Clamp(this.camTarget.y - SCREEN.height / 2, 0, WORLD.height - SCREEN.height);
+    // 下は、地図の端より少し下まで動ける（いちばん下にある物が、画面下のボタンに隠れないように）
+    const ty = Phaser.Math.Clamp(this.camTarget.y - SCREEN.height / 2, 0, WORLD.height - SCREEN.height + WORLD.cameraBottomPad);
     cam.setScroll(cam.scrollX + (tx - cam.scrollX) * lerp, cam.scrollY + (ty - cam.scrollY) * lerp);
   }
 
