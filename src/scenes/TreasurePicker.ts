@@ -4,7 +4,7 @@
 import Phaser from 'phaser';
 import { COLORS, SCREEN } from '../game/config';
 import type { Rng } from '../game/random';
-import { botTreasurePlan, EXIT_SITES, exitsAllowed, vaultChoices, type ExitSite, type TreasurePlan, type VaultSite } from '../game/treasure';
+import { botTreasurePlan, EXIT_SITES, exitChoices, exitsAllowed, vaultChoices, type ExitSite, type TreasurePlan, type VaultSite } from '../game/treasure';
 import { MeetingMap } from './MeetingMap';
 import { makeFacilityTextures } from './facilityTextures';
 import { makeResourceTextures } from './resourceTextures';
@@ -14,7 +14,7 @@ import { INK, cssColor, label, panel, textButton } from './ui';
 
 /** 選び終えるまでの秒数（過ぎたら、王様 Bot と同じ決め方で埋める） */
 const PICK_SECONDS = 25;
-const MAP_W = 300;
+const MAP_W = 280;
 const MAP_TOP = 96;
 
 export function openTreasurePicker(scene: Phaser.Scene, rng: Rng, done: (plan: TreasurePlan) => void): void {
@@ -84,8 +84,9 @@ export function openTreasurePicker(scene: Phaser.Scene, rng: Rng, done: (plan: T
     }
     for (const m of exitMarks) {
       const on = exits.includes(m.e);
-      // 1つ選んだあとは、同じ辺の出口はうすくして押せないことを見せる
-      const blocked = !on && exits.length === 1 && !exitsAllowed(exits[0], m.e);
+      // 押しても入らない出口はうすくする。1つ選んだあとは同じ辺。2つ選んだあとは、入れかえで残るほう（新しいほう）と同じ辺
+      const keep = exits.length === 1 ? exits[0] : exits.length === 2 ? exits[1] : null;
+      const blocked = !on && keep !== null && !exitsAllowed(keep, m.e);
       m.img.setVisible(on);
       m.box.setFillStyle(COLORS.landmarkVermilion, on ? 0.25 : blocked ? 0.2 : 0.85).setAlpha(blocked ? 0.45 : 1);
     }
@@ -105,8 +106,18 @@ export function openTreasurePicker(scene: Phaser.Scene, rng: Rng, done: (plan: T
   let left = PICK_SECONDS;
   const tick = () => {
     count.setText(`あと ${left} 秒で おまかせ`);
-    if (left-- <= 0) finish(vault && exits.length === 2 ? { vault, exits: [exits[0], exits[1]] } : botTreasurePlan(rng));
+    if (left-- <= 0) finish(fillRest());
   };
+
+  /** 時間切れ：選んだ場所はそのままにして、空いているところだけを決まりに合う候補から埋める（何も選んでいなければ王様 Bot と同じ） */
+  function fillRest(): TreasurePlan {
+    if (!vault && exits.length === 0) return botTreasurePlan(rng);
+    const pick = <T>(list: T[]): T => list[Math.floor(rng() * list.length) % list.length];
+    const v = vault ?? pick(vaultChoices());
+    const first = exits[0] ?? pick(exitChoices(null));
+    const second = exits[1] ?? pick(exitChoices(first));
+    return { vault: v, exits: [first, second] };
+  }
   const timer = scene.time.addEvent({ delay: 1000, repeat: PICK_SECONDS, callback: tick });
   tick();
   refresh();
