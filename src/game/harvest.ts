@@ -24,6 +24,8 @@ export interface Harvester {
   waitingFor: string | null;
   /** スパイのイタズラで「土の置物」にされた（試合が終わるまで動けない） */
   frozen: boolean;
+  /** ぬれぎぬを着せられて、怒って旅に出た（その試合から抜けた）。frozen も true になる（動けない・投票できない） */
+  departed: boolean;
   /** いまスティックで動かしている（そのあいだは採取を始めない・スキャンは中断） */
   driving: boolean;
   /** スイッチの前でミッションをしているところ。していなければ null */
@@ -63,6 +65,7 @@ export function createHarvester(walker: Walker, element: ElementId = 'earth', mi
     claim: null,
     waitingFor: null,
     frozen: false,
+    departed: false,
     driving: false,
     task: null,
     element,

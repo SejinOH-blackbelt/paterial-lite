@@ -10,7 +10,7 @@ import { createRng, type Rng } from './random';
 import { canSee } from './vision';
 import { createSpyState, patchSize, type SpyEvent, type SpyState } from './spy';
 import { botTreasurePlan, createTreasure, nearExit, type TreasurePlan, type TreasureState } from './treasure';
-import { carrierPawn } from './heist';
+import { carrierPawn, depart } from './heist';
 
 /** 試合に出ているパテ1体 */
 export interface Pawn {
@@ -360,6 +360,8 @@ export function resolveMeeting(m: MatchState, now: number): MeetingResult {
       giveHeld(target.h, paid);
       result.compensation += Object.values(paid).reduce((n, v) => n + v, 0);
     }
+    // ぬれぎぬを着せられた市民は、怒って旅に出る（その試合から抜ける）
+    depart(m, target);
     // 住民を疑ったので、王様の支持度が下がる。0 になったら、市民がストライキ（スパイの勝ち）
     result.supportLost = Math.min(m.support, SUPPORT.wrongAccusation);
     m.support -= result.supportLost;

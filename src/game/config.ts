@@ -713,8 +713,8 @@ export const PART_NAMES = {
 export const SUPPORT = {
   /** 最初の支持度 */
   start: 100,
-  /** 会議でぬれぎぬ（スパイでない市民を調べた）になったときに下がる量 */
-  wrongAccusation: 30,
+  /** 会議・呼び止めでぬれぎぬ（スパイでない市民を調べた）になったときに下がる量（その市民は旅に出て、試合から抜ける） */
+  wrongAccusation: 40,
   /** ストライキ（プラカードを掲げた市民）を見せてから、リザルトへ進むまでの秒数 */
   strikeShowSeconds: 2.8,
 } as const;

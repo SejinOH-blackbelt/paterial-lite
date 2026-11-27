@@ -273,7 +273,7 @@ describe('王様パテと支持度', () => {
 
   it('支持度が0になると、市民がストライキを起こしてスパイの勝ち', () => {
     const { m, pawns } = setup();
-    // 支持度が尽きるまでに必要なぬれぎぬの回数（-30 なら4回）
+    // 支持度が尽きるまでに必要なぬれぎぬの回数（-40 なら3回）
     const times = Math.ceil(SUPPORT.start / SUPPORT.wrongAccusation);
     const citizens = pawns.filter((p) => !p.isSpy);
     for (let i = 0; i < times - 1; i++) {
@@ -284,5 +284,33 @@ describe('王様パテと支持度', () => {
     expect(m.support).toBe(0);
     expect(m.phase).toBe('over');
     expect(m.outcome).toMatchObject({ winner: 'spy', reason: 'strike' });
+  });
+});
+
+describe('ぬれぎぬを着せられたら、旅に出る', () => {
+  it('会議でぬれぎぬになった市民は旅に出て、次の会議では投票できない', () => {
+    const { m, pawns } = setup();
+    startMeeting(m, pawns[0], 'emergency', null, 5);
+    for (const p of pawns) castVote(m, p, pawns[1]);
+    const r = resolveMeeting(m, 10);
+    expect(r.wasSpy).toBe(false);
+    expect(pawns[1].h.departed).toBe(true);
+    expect(pawns[1].h.frozen).toBe(true);
+    startMeeting(m, pawns[0], 'emergency', null, 20);
+    expect(castVote(m, pawns[1], null)).toBe(false);
+    expect(castVote(m, pawns[2], pawns[1])).toBe(false); // 旅に出た人には投票できない
+  });
+
+  it('旅に出た市民は「動ける市民」から外れる（減りすぎるとスパイの勝ち）', () => {
+    const { m, pawns } = setup();
+    for (const i of [1, 2, 3]) {
+      startMeeting(m, pawns[0], 'emergency', null, i * 10);
+      for (const p of pawns) castVote(m, p, pawns[i]);
+      resolveMeeting(m, i * 10 + 5);
+      m.support = 100; // ストライキにならないように
+    }
+    expect(checkOutcome(m, 50)).toBeNull(); // 動ける市民 2・スパイ 1
+    pawns[4].h.frozen = true;
+    expect(checkOutcome(m, 60)).toMatchObject({ winner: 'spy', reason: 'frozen' });
   });
 });

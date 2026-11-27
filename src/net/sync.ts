@@ -22,7 +22,7 @@ export interface PawnWire {
   f: number;
   /** 歩いている（1）か */
   w: number;
-  /** 置物か（1） */
+  /** 置物か（1）、旅に出たか（2） */
   fr: number;
   /** 採取しているポイント（RESOURCE_POINTS の番号。していなければ -1） */
   h: number;
@@ -122,7 +122,7 @@ export function pawnToWire(h: Harvester, walking: boolean, now = 0): PawnWire {
     y: Math.round(h.walker.pos.y * 10) / 10,
     f: FACINGS.indexOf(h.walker.facing),
     w: walking ? 1 : 0,
-    fr: h.frozen ? 1 : 0,
+    fr: h.departed ? 2 : h.frozen ? 1 : 0,
     h: r,
     tk: h.task ? h.task.missionId : -1,
     sp: h.task ? h.task.spot : -1,
@@ -143,7 +143,8 @@ export function applyWireToPawn(h: Harvester, w: PawnWire, makeSession: (pointId
   h.walker.pos = { x: w.x, y: w.y };
   h.walker.target = null;
   h.walker.facing = FACINGS[w.f] ?? h.walker.facing;
-  h.frozen = w.fr === 1;
+  h.frozen = w.fr >= 1;
+  h.departed = w.fr === 2;
   const pointId = w.h >= 0 ? RESOURCE_POINTS[w.h]?.id ?? null : null;
   if (!pointId) h.session = null;
   else if (h.session?.pointId !== pointId) h.session = makeSession(pointId);

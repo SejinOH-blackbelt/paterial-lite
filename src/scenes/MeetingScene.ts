@@ -111,7 +111,7 @@ export class MeetingScene extends Phaser.Scene {
     this.add.ellipse(CENTER.x, 316, 236, 184, COLORS.uiPaper)
       .setStrokeStyle(2, COLORS.uiWood, 0.5);
     // 輪の真ん中に、採取場の小さな地図（タップで大きく。見かけた場所の印が出る）
-    const statues = [...match.known].map((h) => h.walker.pos);
+    const statues = [...match.known].filter((h) => !h.departed).map((h) => h.walker.pos);
     this.miniMap = new MeetingMap(this, CENTER.x - MINI_W / 2, 258, MINI_W, false, statues);
     this.add.zone(CENTER.x, 258 + this.miniMap.height / 2, MINI_W + 10, this.miniMap.height + 10)
       .setInteractive()
@@ -147,11 +147,12 @@ export class MeetingScene extends Phaser.Scene {
       const view = new PateView(this, x, y);
       view.setHeadPart(p.part as never);
       view.setElement((p.element ?? null) as never);
-      if (p.h.frozen) view.setStatue(true);
+      if (p.h.departed) view.setVisible(false); // 旅に出た人は輪にいない（札だけ残る）
+      else if (p.h.frozen) view.setStatue(true);
       const done = missionsDone(p.h, match.board);
       panel(this, x, y + 22, 98, 23, p.h.frozen ? COLORS.uiSlate : COLORS.uiWood);
       const name = p === player ? 'きみ' : PART_NAMES[p.part as keyof typeof PART_NAMES];
-      label(this, x, y + 20, `${name}  ${p.h.frozen ? '置物' : '仕事'} ${done}/${p.h.missions.length}`, 11);
+      label(this, x, y + 20, p.h.departed ? `${name}  旅に出た` : `${name}  ${p.h.frozen ? '置物' : '仕事'} ${done}/${p.h.missions.length}`, 11);
       const voteMark = label(this, x + 28, y - 34, '', 15, cssColor(COLORS.uiHoney)).setDepth(11);
       if (!p.h.frozen) {
         const hit = this.add.zone(x, y - 22, 60, 66).setInteractive();
@@ -652,7 +653,7 @@ export class MeetingScene extends Phaser.Scene {
         const sub =
           match.support <= 0
             ? '王様の支持度が 0 に… 市民たちが ストライキ！'
-            : `${nm(target)}は 市民だった（賠償 ${result.compensation}・支持度 -${result.supportLost}）`;
+            : `${nm(target)}は 市民だった… プンプン怒って 旅に出た（支持度 -${result.supportLost}）`;
         this.showVerdict('ぬれぎぬ…！', sub, cssColor(COLORS.uiRose));
         this.pop(this.supportText);
       }

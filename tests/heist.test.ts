@@ -6,7 +6,7 @@ import { createSpyBotMind, updateSpyBot } from '../src/game/spyBot';
 import { buildBoard, dealBoard } from '../src/game/board';
 import { createFieldState, createHarvester, updateHarvester } from '../src/game/harvest';
 import { botChaseTarget, botGuardSpot, canAlarm, canSteal, carrierPawn, raiseAlarm, steal, stopAndSearch, stopTarget, stopWait, updateAwareness, walkSpeed } from '../src/game/heist';
-import { checkOutcome, createMatch, type Pawn } from '../src/game/match';
+import { checkOutcome, createMatch, reportableBody, type Pawn } from '../src/game/match';
 import { createWalker, faceTo, stepWalker } from '../src/game/movement';
 import { createRng } from '../src/game/random';
 import { alarmChance, botTreasurePlan, createTreasure, nearExit, nearVault } from '../src/game/treasure';
@@ -155,16 +155,29 @@ describe('呼び止める', () => {
     expect(m.outcome).toBeNull();
   });
 
-  it('市民を呼び止めたら、ぬれぎぬで会議と同じだけ支持度が下がり、しばらく呼び止められない', () => {
+  it('市民を呼び止めたら、ぬれぎぬで会議と同じだけ支持度が下がり、その市民は旅に出る。しばらく呼び止められない', () => {
     const { m, pawns } = setup();
     put(pawns[0], 300, 600);
     put(pawns[1], 310, 600);
+    put(pawns[2], 320, 600);
     const r = stopAndSearch(m, pawns[0], pawns[1], 5);
     expect(r).toEqual({ caught: false, supportLost: SUPPORT.wrongAccusation });
     expect(m.support).toBe(SUPPORT.start - SUPPORT.wrongAccusation);
+    expect(pawns[1].h.departed).toBe(true);
+    expect(pawns[1].h.frozen).toBe(true);
     expect(stopWait(m, pawns[0], 6)).toBeCloseTo(TREASURE.stopCooldown - 1);
     expect(stopTarget(m, pawns[0], 6)).toBeNull();
-    expect(stopTarget(m, pawns[0], 5 + TREASURE.stopCooldown)).toBe(pawns[1]);
+    // 待ち時間のあとは、また呼び止められる（旅に出た人は、もういないので相手にならない）
+    expect(stopTarget(m, pawns[0], 5 + TREASURE.stopCooldown)).toBe(pawns[2]);
+  });
+
+  it('旅に出た市民は、呼び出し（置物を見つけた）の対象にならない', () => {
+    const { m, pawns } = setup();
+    put(pawns[0], 300, 600);
+    put(pawns[1], 310, 600);
+    stopAndSearch(m, pawns[0], pawns[1], 5);
+    put(pawns[2], 312, 600);
+    expect(reportableBody(m, pawns[2])).toBeNull();
   });
 
   it('呼び止めのぬれぎぬで支持度が 0 になったら、ストライキ', () => {

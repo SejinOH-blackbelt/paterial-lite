@@ -980,7 +980,7 @@ export class FieldScene extends Phaser.Scene {
           }
           const wasFrozen = e.h.frozen;
           this.remoteWalking.set(e.h, applyWireToPawn(e.h, w, makeSession, heard));
-          if (!wasFrozen && e.h.frozen) e.view.setStatue(true);
+          if (!wasFrozen && e.h.frozen && !e.h.departed) e.view.setStatue(true);
         });
         applyFieldWire(this.field, msg.st, msg.rg, heard);
         this.match.support = msg.sup;
@@ -1534,7 +1534,7 @@ export class FieldScene extends Phaser.Scene {
   private onStopped(by: Pawn, target: Pawn, caught: boolean, lost: number): void {
     const name = (p: Pawn) => (p === this.playerPawn ? 'きみ' : `${PART_NAMES[p.part as keyof typeof PART_NAMES] ?? p.part}のパテ`);
     if (caught) this.popText(`${name(by)}が ${name(target)}を 呼び止めた\n宝を持っていた！`, '#2b6b2f', 15, 0);
-    else this.popText(`${name(by)}が ${name(target)}を 呼び止めた\nぬれぎぬ！（支持度 -${lost}）`, '#b3322a', 14, 0);
+    else this.popText(`${name(by)}が ${name(target)}を 呼び止めた… ぬれぎぬ！\n${name(target)}は プンプン怒って 旅に出た（支持度 -${lost}）`, '#b3322a', 13, 0);
   }
 
   /**
@@ -1879,6 +1879,7 @@ export class FieldScene extends Phaser.Scene {
   /** 置物にされたプレイヤーは「土の精」になって、ふわふわ動き回れる（ほかのパテからは見えない） */
   private updateSpirit(dt: number): void {
     if (!this.player.frozen) return;
+    if (!this.spirit && this.player.departed) this.popText('ぬれぎぬに 怒って 旅に出た…\n空から 見守ろう', '#2b1d14', 15, 0);
     if (!this.spirit) {
       const view = new PateView(this, 0, 0);
       view.setHeadPart(PLAYER_PART);
@@ -2250,7 +2251,7 @@ export class FieldScene extends Phaser.Scene {
   /** 計算した位置と歩行状態を絵に反映する */
   private syncPate(e: PateEntity, dt: number): void {
     const { x, y } = e.h.walker.pos;
-    if (e.h.frozen && !e.view.isStatue) e.view.setStatue(true);
+    if (e.h.frozen && !e.h.departed && !e.view.isStatue) e.view.setStatue(true);
     // 依代の祠で乗りうつったら、体の絵を変える
     if (e.h.element !== e.shownElement && !e.h.frozen) {
       e.shownElement = e.h.element;
@@ -2265,7 +2266,7 @@ export class FieldScene extends Phaser.Scene {
     e.view.setDepth(y);
     e.shadow.setDepth(y - PateView.height);
     // 見える範囲の外にいるほかのパテ（置物も）は見えない。ふちの少し内側から、ふわっと消える
-    const seen = e.h === this.player && !this.spirit ? 1 : this.visibility(x, y);
+    const seen = e.h.departed ? 0 : e.h === this.player && !this.spirit ? 1 : this.visibility(x, y);
     e.view.setAlpha(seen).setVisible(seen > 0);
     e.shadow.setAlpha(seen).setVisible(seen > 0);
   }

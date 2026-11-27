@@ -15,6 +15,24 @@ import { canSee } from './vision';
 
 const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
 
+/**
+ * ぬれぎぬを着せられたパテが、怒って旅に出る（その試合から抜ける。次の試合には戻る）。
+ * 動けず投票もできない（置物と同じく「動ける市民」から外れる）。置物とちがって呼び出しの対象にはならない
+ * （「スパイではない」と分かった人が残ると、消去法でスパイが分かってしまうため。使い手の決定 Nov 27）
+ */
+export function depart(m: MatchState, p: Pawn): void {
+  const h = p.h;
+  h.frozen = true;
+  h.departed = true;
+  h.session = null;
+  h.task = null;
+  h.claim = null;
+  h.waitingFor = null;
+  h.possess = null;
+  h.walker.target = null;
+  m.known.add(h);
+}
+
 /** 宝を持っているパテ（だれも持っていなければ null） */
 export function carrierPawn(m: MatchState): Pawn | null {
   const i = m.treasure.carrier;
@@ -106,6 +124,7 @@ export function stopAndSearch(m: MatchState, by: Pawn, target: Pawn, now: number
   const lost = Math.min(m.support, SUPPORT.wrongAccusation);
   m.support -= lost;
   m.stopReady.set(by, now + TREASURE.stopCooldown);
+  depart(m, target);
   return { caught: false, supportLost: lost };
 }
 
