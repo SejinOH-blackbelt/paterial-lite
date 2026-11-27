@@ -4,3 +4,6 @@ dist
 
 # Claude Code の個人設定（コミットしない）
 .claude/settings.local.json
+
+# Claude Code / Codex の作業用フォルダ（コミットしない）
+.claude/worktrees/
