@@ -122,6 +122,7 @@ describe('足がおそい・出口から逃げる', () => {
 describe('呼び止める', () => {
   it('そばにいる、いちばん近いパテを呼び止められる', () => {
     const { m, pawns } = setup();
+    m.treasure.alarmAt = 0; // 呼び止めはアラートのあとだけ
     put(pawns[0], 300, 600);
     put(pawns[1], 330, 600);
     put(pawns[2], 310, 600);
@@ -141,6 +142,7 @@ describe('呼び止める', () => {
     const { m, pawns, spy } = setup();
     put(spy, m.treasure.vault.x, m.treasure.vault.y);
     steal(m, spy, 10, quiet);
+    m.treasure.alarmAt = 10;
     put(pawns[2], spy.h.walker.pos.x + 10, spy.h.walker.pos.y);
     expect(stopTarget(m, pawns[2], 11)).toBe(spy);
     expect(stopAndSearch(m, pawns[2], spy, 11)).toEqual({ caught: true, supportLost: 0 });
@@ -157,6 +159,7 @@ describe('呼び止める', () => {
 
   it('市民を呼び止めたら、ぬれぎぬで会議と同じだけ支持度が下がり、その市民は旅に出る。しばらく呼び止められない', () => {
     const { m, pawns } = setup();
+    m.treasure.alarmAt = 0;
     put(pawns[0], 300, 600);
     put(pawns[1], 310, 600);
     put(pawns[2], 320, 600);
@@ -347,5 +350,25 @@ describe('呼び止めと旅に出る（Codex の点検から）', () => {
     expect(r.caught).toBe(false);
     expect(spy.h.departed).toBe(false);
     expect(spy.h.frozen).toBe(false);
+  });
+});
+
+describe('呼び止めはアラートのあとだけ・王様が旅に出たら市民の負け', () => {
+  it('アラートが鳴る前は、だれも呼び止められない（盗まれていても）', () => {
+    const { m, pawns, spy } = setup();
+    put(spy, m.treasure.vault.x, m.treasure.vault.y);
+    steal(m, spy, 10, quiet);
+    put(pawns[1], spy.h.walker.pos.x + 10, spy.h.walker.pos.y);
+    expect(stopTarget(m, pawns[1], 11)).toBeNull();
+    m.treasure.alarmAt = 12;
+    expect(stopTarget(m, pawns[1], 13)).toBe(spy);
+  });
+
+  it('王様が呼び止めでぬれぎぬを着せられて旅に出たら、市民の負け', () => {
+    const { m, pawns } = setup();
+    pawns[2].isKing = true;
+    m.treasure.alarmAt = 0;
+    stopAndSearch(m, pawns[1], pawns[2], 5);
+    expect(checkOutcome(m, 6)).toMatchObject({ winner: 'spy', reason: 'kingLeft' });
   });
 });

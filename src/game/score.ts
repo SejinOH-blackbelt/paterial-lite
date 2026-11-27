@@ -6,7 +6,7 @@
 // | スパイを捕まえた・当てた       | +1   | +2   | -2     |
 // ・スパイが1人だけの試合では、スパイの点は1.5倍
 // ・宝を持ったスパイを呼び止めて捕まえた市民（押した人だけ）は +2、王様なら +3
-// ・表にない勝ち方（仮・使い手に未確認）：国の仕事ゲージ満タンは「捕まえた」と同じ、時間切れは「置物にされた」と同じ
+// ・表にない勝ち方（仮・使い手に未確認）：国の仕事ゲージ満タンは「捕まえた」と同じ、時間切れ・王様が旅に出たは「置物にされた」と同じ
 
 import { SCORE } from './config';
 import type { MatchState, OutcomeReason } from './match';
@@ -21,7 +21,7 @@ function table(reason: OutcomeReason): { citizen: number; king: number; spy: num
     case 'gauge':
       return SCORE.caught;
     default:
-      // frozen・strike・timeout・scanned（スパイの勝ち）
+      // frozen・strike・kingLeft・timeout・scanned（スパイの勝ち）
       return SCORE.frozen;
   }
 }

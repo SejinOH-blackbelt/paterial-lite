@@ -31,9 +31,10 @@ export interface Pawn {
 export type Winner = 'citizens' | 'spy';
 /**
  * 勝敗の理由。escaped：宝を盗んで出口から逃げた（王様の一人負け）、stopped：宝を持ったスパイを呼び止めて捕まえた。
- * scanned は M10 より前の「名物の全スキャンで勝ち」（いまは使わない。スキャンはアラートを鳴りにくくするだけ）
+ * scanned は M10 より前の「名物の全スキャンで勝ち」（いまは使わない。スキャンはアラートを鳴りにくくするだけ）。
+ * kingLeft：王様がぬれぎぬを着せられて旅に出た（市民の負け。使い手の決定 Nov 27 夜）
  */
-export type OutcomeReason = 'gauge' | 'caught' | 'stopped' | 'escaped' | 'scanned' | 'frozen' | 'strike' | 'timeout';
+export type OutcomeReason = 'gauge' | 'caught' | 'stopped' | 'escaped' | 'scanned' | 'frozen' | 'strike' | 'kingLeft' | 'timeout';
 
 export interface Outcome {
   winner: Winner;
@@ -175,6 +176,7 @@ export function checkOutcome(m: MatchState, now: number): Outcome | null {
   const spies = m.pawns.filter((p) => p.isSpy).length;
   const active = citizens.filter((p) => !p.h.frozen).length;
   if (citizens.length > 0 && active <= spies) o = { winner: 'spy', reason: 'frozen', time: now };
+  else if (m.pawns.some((p) => p.isKing && p.h.departed)) o = { winner: 'spy', reason: 'kingLeft', time: now };
   else if (m.support <= 0) o = { winner: 'spy', reason: 'strike', time: now };
   // M10：宝を持ったスパイが出口のそばまで行けば、スパイの勝ち（名物の全スキャンでは、もう勝ちにならない）
   else if (carrierPawn(m) && nearExit(m.treasure, carrierPawn(m)!.h.walker.pos)) o = { winner: 'spy', reason: 'escaped', time: now };
@@ -365,7 +367,10 @@ export function resolveMeeting(m: MatchState, now: number): MeetingResult {
     // 住民を疑ったので、王様の支持度が下がる。0 になったら、市民がストライキ（スパイの勝ち）
     result.supportLost = Math.min(m.support, SUPPORT.wrongAccusation);
     m.support -= result.supportLost;
-    if (m.support <= 0) {
+    if (target.isKing) {
+      m.outcome = { winner: 'spy', reason: 'kingLeft', time: now };
+      m.phase = 'over';
+    } else if (m.support <= 0) {
       m.outcome = { winner: 'spy', reason: 'strike', time: now };
       m.phase = 'over';
     }

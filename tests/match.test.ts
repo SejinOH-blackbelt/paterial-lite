@@ -314,3 +314,15 @@ describe('ぬれぎぬを着せられたら、旅に出る', () => {
     expect(checkOutcome(m, 60)).toMatchObject({ winner: 'spy', reason: 'frozen' });
   });
 });
+
+describe('王様のぬれぎぬ', () => {
+  it('会議で王様がぬれぎぬになったら、王様は旅に出て市民の負け', () => {
+    const { m, pawns } = setup();
+    pawns[1].isKing = true;
+    startMeeting(m, pawns[0], 'emergency', null, 5);
+    for (const p of pawns) castVote(m, p, pawns[1]);
+    resolveMeeting(m, 10);
+    expect(pawns[1].h.departed).toBe(true);
+    expect(m.outcome).toMatchObject({ winner: 'spy', reason: 'kingLeft' });
+  });
+});

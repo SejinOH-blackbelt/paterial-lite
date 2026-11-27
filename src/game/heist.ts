@@ -87,8 +87,13 @@ export function stopWait(m: MatchState, by: Pawn, now: number): number {
   return Math.max(0, (m.stopReady.get(by) ?? -Infinity) - now);
 }
 
-/** by が呼び止められる相手（いちばん近い、動けるパテ）。呼び止められなければ null */
+/**
+ * by が呼び止められる相手（いちばん近い、動けるパテ）。呼び止められなければ null。
+ * 呼び止められるのは、アラートが鳴ったあと（宝物庫があいているのが見つかったあと）だけ（使い手の決定 Nov 27 夜）。
+ * アラートは盗まれたあとにしか鳴らないので、呼び止めた相手がスパイなら、必ず宝を持っている
+ */
 export function stopTarget(m: MatchState, by: Pawn, now: number): Pawn | null {
+  if (m.treasure.alarmAt === null) return null;
   if (by.isSpy || by.h.frozen || m.phase !== 'play' || stopWait(m, by, now) > 0) return null;
   let best: Pawn | null = null;
   let bestD: number = TREASURE.stopRadius;
