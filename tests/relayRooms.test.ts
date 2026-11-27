@@ -7,7 +7,7 @@ type Msg = { t: string; [k: string]: unknown };
 function setup() {
   let n = 0;
   const rooms = createRooms(() => (n++ * 0.137) % 1);
-  const people = Array.from({ length: 8 }, () => {
+  const people = Array.from({ length: MAX_MEMBERS + 2 }, () => {
     const inbox: Msg[] = [];
     const client = rooms.connect((m: Msg) => inbox.push(m));
     return { client, inbox, last: (t: string) => [...inbox].reverse().find((m) => m.t === t) };
@@ -54,17 +54,19 @@ describe('中継サーバーのルーム', () => {
 
   it('ない合言葉・満員・試合が始まったルームには入れない', () => {
     const { rooms, people } = setup();
-    rooms.handle(people[7].client, { t: 'join', room: 'ZZZZ' });
-    expect(people[7].last('error')!.code).toBe('no-room');
+    const late = people[MAX_MEMBERS + 1];
+    rooms.handle(late.client, { t: 'join', room: 'ZZZZ' });
+    expect(late.last('error')!.code).toBe('no-room');
     rooms.handle(people[0].client, { t: 'create' });
     const code = people[0].last('joined')!.room;
     for (let i = 1; i < MAX_MEMBERS; i++) rooms.handle(people[i].client, { t: 'join', room: code });
-    rooms.handle(people[6].client, { t: 'join', room: code });
-    expect(people[6].last('error')!.code).toBe('full');
+    const extra = people[MAX_MEMBERS];
+    rooms.handle(extra.client, { t: 'join', room: code });
+    expect(extra.last('error')!.code).toBe('full');
     rooms.handle(people[0].client, { t: 'start' });
-    rooms.disconnect(people[5].client);
-    rooms.handle(people[6].client, { t: 'join', room: code });
-    expect(people[6].last('error')!.code).toBe('started');
+    rooms.disconnect(people[MAX_MEMBERS - 1].client);
+    rooms.handle(extra.client, { t: 'join', room: code });
+    expect(extra.last('error')!.code).toBe('started');
   });
 
   it('伝言は、みんな・親機・特定の人へ届く。中身はそのまま', () => {

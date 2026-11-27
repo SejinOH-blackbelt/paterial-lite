@@ -15,8 +15,8 @@
 //     { t: 'error', code }                    できなかった（no-room / full / started / few / bad）
 //     { t: 'closed' }                         親機が抜けたので、ルームがなくなった
 
-/** 1ルームの最大人数（パテは6体） */
-export const MAX_MEMBERS = 6;
+/** 1ルームの最大人数（1試合は 6〜10体。人が入らなかった席は Bot） */
+export const MAX_MEMBERS = 10;
 /** 試合を始められる最少人数 */
 export const MIN_MEMBERS = 2;
 

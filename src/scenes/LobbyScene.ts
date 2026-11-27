@@ -1,7 +1,7 @@
 // 友達と遊ぶ：ルームを作る・合言葉で入る・QR で招待する。集まったら、ルームを作った人（親機）が「はじめる」
 import Phaser from 'phaser';
 import QRCode from 'qrcode';
-import { BOT_PROFILES, COLORS, NET, PLAYER_PART, SCREEN } from '../game/config';
+import { BOT_PROFILES, COLORS, NET, PLAYERS, PLAYER_PART, SCREEN } from '../game/config';
 import { inviteUrl, RelayClient, type JoinError } from '../net/relay';
 import type { NetGame } from '../net/netGame';
 import { assignSeats, type StartWire } from '../net/sync';
@@ -21,13 +21,13 @@ export interface LobbyData {
 
 /** 合言葉に使う文字（server/rooms.js と同じ） */
 const CODE_CHARS = 'ACDEFGHJKLMNPQRTUVWXY34679';
-const MAX_MEMBERS = 6;
+const MAX_MEMBERS = PLAYERS.max;
 /** 席ごとのパテの頭の飾り（1番目は親機） */
 const SEAT_PARTS: HeadPart[] = [PLAYER_PART as HeadPart, ...BOT_PROFILES.map((p) => p.part as HeadPart)];
 
 const ERROR_TEXT: Record<JoinError, string> = {
   'no-room': 'その合言葉のルームは ありません',
-  full: '満員です（6人まで）',
+  full: `満員です（${PLAYERS.max}人まで）`,
   started: 'もう試合が 始まっています',
   few: '2人以上 そろってから はじめてね',
   bad: 'うまく入れませんでした',
@@ -41,6 +41,9 @@ export class LobbyScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   private seats: { view: PateView; tag: Phaser.GameObjects.Text }[] = [];
   private startButton: Phaser.GameObjects.Container | null = null;
+  /** 親機が選んだ人数（6〜10）と、その表示 */
+  private chosenCount: number = PLAYERS.default;
+  private countText: Phaser.GameObjects.Text | null = null;
   private code = '';
 
   constructor() {
@@ -48,6 +51,8 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   create(data: LobbyData): void {
+    this.chosenCount = (this.registry.get('pawnCount') as number | undefined) ?? PLAYERS.default;
+    this.countText = null;
     fitCamera(this); // 内部の細かさに合わせてカメラを拡大する（座標は 360×640 のまま）
     makeTextures(this);
     makePartTextures(this);
@@ -70,6 +75,7 @@ export class LobbyScene extends Phaser.Scene {
     this.parts = [];
     this.seats = [];
     this.startButton = null;
+    this.countText = null;
   }
 
   private add2<T extends Phaser.GameObjects.GameObject>(o: T): T {
@@ -81,7 +87,7 @@ export class LobbyScene extends Phaser.Scene {
   private showMenu(message = ''): void {
     this.clear();
     this.statusText.setText(message);
-    this.add2(label(this, SCREEN.width / 2, 150, '友達を招待して、いっしょに遊ぼう\n（2〜6人。空いた席は Bot）', 14, INK).setStroke(INK, 0));
+    this.add2(label(this, SCREEN.width / 2, 150, `友達を招待して、いっしょに遊ぼう\n（2〜${PLAYERS.max}人。空いた席は Bot）`, 14, INK).setStroke(INK, 0));
     this.add2(textButton(this, SCREEN.width / 2, 260, 230, 56, 'ルームを作る', COLORS.uiHoney, () => void this.connect((r) => r.create()), 20));
     this.add2(textButton(this, SCREEN.width / 2, 336, 230, 50, '合言葉で入る', COLORS.uiPaper, () => this.showKeypad(), 18));
     this.add2(textButton(this, SCREEN.width / 2, 520, 160, 44, 'もどる', COLORS.uiPaper, () => this.scene.start('Title'), 16));
@@ -198,15 +204,22 @@ export class LobbyScene extends Phaser.Scene {
         this.textures.addBase64(key, url);
       });
     }
-    this.add2(label(this, SCREEN.width / 2, 360, 'QR を読むか、合言葉を入れてもらおう', 12, INK).setStroke(INK, 0));
-    // 6つの席（集まった人はパテ、空いた席は Bot）
+    this.add2(label(this, SCREEN.width / 2, 357, 'QR を読むか、合言葉を入れてもらおう', 12, INK).setStroke(INK, 0));
+    // 人数（親機が選ぶ。6〜10。集まった人より少なくはできない）
+    if (relay.isHost) {
+      this.add2(textButton(this, 116, 381, 36, 26, '−', COLORS.uiPaperEdge, () => this.changeCount(-1), 16));
+      this.add2(textButton(this, 244, 381, 36, 26, '＋', COLORS.uiPaperEdge, () => this.changeCount(1), 16));
+    }
+    this.countText = this.add2(label(this, SCREEN.width / 2, 381, '', 14, INK).setStroke(INK, 0));
+    // 10の席（2段に5つずつ。集まった人はパテ、空いた席は Bot、使わない席はうすく）
     for (let i = 0; i < MAX_MEMBERS; i++) {
-      const x = 40 + i * 56;
-      const view = new PateView(this, x, 448);
+      const x = 52 + (i % 5) * 64;
+      const y = 425 + Math.floor(i / 5) * 52;
+      const view = new PateView(this, x, y);
       view.setHeadPart(SEAT_PARTS[i]);
-      view.setScale(0.62);
+      view.setScale(0.5);
       this.add2(view);
-      const tag = this.add2(label(this, x, 466, '', 11, INK).setStroke(INK, 0));
+      const tag = this.add2(label(this, x, y + 13, '', 10, INK).setStroke(INK, 0));
       this.seats.push({ view, tag });
     }
     if (relay.isHost) {
@@ -228,16 +241,32 @@ export class LobbyScene extends Phaser.Scene {
     if (!relay || this.seats.length === 0) return;
     // 親機を先頭に、入った順に並べる
     const members = [...relay.members].sort((a, b) => Number(b.host) - Number(a.host) || a.id - b.id);
+    const count = this.matchCount();
+    this.countText?.setText(relay.isHost ? `${count}人で 遊ぶ` : '人数は 親機が決めます');
     this.seats.forEach((seat, i) => {
       const m = members[i];
-      seat.view.setAlpha(m ? 1 : 0.3);
-      seat.tag.setText(m ? (m.id === relay.you ? 'きみ' : m.host ? '親機' : `${i + 1}P`) : 'Bot');
+      const used = i < count || !!m;
+      seat.view.setAlpha(m ? 1 : used ? 0.35 : 0.1);
+      seat.tag.setText(m ? (m.id === relay.you ? 'きみ' : m.host ? '親機' : `${i + 1}P`) : used ? 'Bot' : '');
     });
     if (this.startButton) {
       const ok = members.length >= 2;
       this.startButton.setAlpha(ok ? 1 : 0.45);
-      this.statusText.setText(ok ? `${members.length}人 と Bot ${MAX_MEMBERS - members.length}体 で遊びます` : '友達が入るのを 待っています');
+      this.statusText.setText(ok ? `${members.length}人 と Bot ${count - members.length}体 で遊びます` : '友達が入るのを 待っています');
     }
+  }
+
+  /** 試合の人数：親機が選んだ数（6〜10）。集まった人のほうが多ければ、その数 */
+  private matchCount(): number {
+    const members = this.relay?.members.length ?? 0;
+    return Math.max(PLAYERS.min, Math.min(PLAYERS.max, Math.max(this.chosenCount, members)));
+  }
+
+  /** 親機：人数を1つ増やす・減らす */
+  private changeCount(d: number): void {
+    this.chosenCount = Math.max(PLAYERS.min, Math.min(PLAYERS.max, this.matchCount() + d));
+    this.registry.set('pawnCount', this.chosenCount);
+    this.drawSeats();
   }
 
   /** 親機：はじめる。人数はサーバーが確かめ、通ったらみんなに started が届く */
@@ -256,9 +285,10 @@ export class LobbyScene extends Phaser.Scene {
     this.clear();
     this.add2(label(this, SCREEN.width / 2, 260, 'みんな そろいました！', 22, INK).setStroke(INK, 0));
     if (!relay.isHost) return; // 親機からの「match」を待つ（listen で受けとる）
-    const seats = assignSeats(relay.host, relay.members.map((m) => m.id), MAX_MEMBERS);
+    const count = this.matchCount();
+    const seats = assignSeats(relay.host, relay.members.map((m) => m.id), count);
     const seed = Math.floor(Math.random() * 2 ** 31);
-    const spy = chooseSpy(MAX_MEMBERS, createRng(seed ^ 0x5eed));
+    const spy = chooseSpy(count, createRng(seed ^ 0x5eed));
     const msg: StartWire = { k: 'match', v: NET.version, seats, spy, seed };
     relay.send('all', msg);
     this.goRole(msg);
