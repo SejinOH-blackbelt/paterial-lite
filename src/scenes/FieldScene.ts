@@ -149,6 +149,8 @@ interface PateEntity {
   pawn: Pawn;
   /** 絵に出しているエレメント（乗りうつったら絵を変える） */
   shownElement: string | null;
+  /** 頭の上の名前の札（だれか見分けるため。王様は「王様」） */
+  nameTag: Phaser.GameObjects.Text;
 }
 
 /** 依代の祠のコマンドのボタンの音（火・水・土・風・雷） */
@@ -517,7 +519,8 @@ export class FieldScene extends Phaser.Scene {
     view.setHeadPart(part);
     view.setElement(element); // 火・水・土・風の飾り（見た目だけ）
     const pawn: Pawn = { id, part, element, h, isSpy: false, isPlayer: bot === null, emergencyLeft: MATCH.emergencyPerPawn };
-    this.pates.push({ h, view, shadow, bot, pawn, shownElement: element });
+    const nameTag = label(this, 0, 0, "", 12, INK).setStroke("#fff8e8", 3);
+    this.pates.push({ h, view, shadow, bot, pawn, shownElement: element, nameTag });
   }
 
   /**
@@ -2342,6 +2345,10 @@ export class FieldScene extends Phaser.Scene {
     const seen = e.h.departed || this.clearedStatues.has(e.h) ? 0 : e.h === this.player && !this.spirit ? 1 : this.visibility(x, y);
     e.view.setAlpha(seen).setVisible(seen > 0);
     e.shadow.setAlpha(seen).setVisible(seen > 0);
+    // 頭の上の名前（王様は王冠と「王様」。自分の名前も出す）。見えないパテの名前も出さない
+    const name = PART_NAMES[e.pawn.part as keyof typeof PART_NAMES] ?? e.pawn.part;
+    if (e.nameTag.text !== name) e.nameTag.setText(name);
+    e.nameTag.setPosition(x, y - PateView.height - 34).setDepth(y + 1).setAlpha(seen).setVisible(seen > 0);
   }
 
   /** その場所が、いま見える範囲にどれだけ入っているか（1 = はっきり見える、0 = 見えない） */
