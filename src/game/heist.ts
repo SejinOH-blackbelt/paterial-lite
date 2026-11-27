@@ -156,7 +156,8 @@ export function updateAwareness(m: MatchState, now: number): void {
  */
 export function botChaseTarget(m: MatchState, p: Pawn, now: number, dt: number, rng: Rng): Pawn | null {
   const carrier = carrierPawn(m);
-  if (!carrier || p.isSpy || p.h.frozen || m.phase !== 'play' || !m.knowsStolen.has(p)) {
+  // アラートの前は追いかけない（呼び止めはアラートのあとだけなので、先に宝物庫へ鳴らしに行く）
+  if (!carrier || p.isSpy || p.h.frozen || m.phase !== 'play' || !m.knowsStolen.has(p) || m.treasure.alarmAt === null) {
     m.chasers.delete(p);
     return null;
   }

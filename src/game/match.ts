@@ -175,8 +175,8 @@ export function checkOutcome(m: MatchState, now: number): Outcome | null {
   // 動ける市民の数が、スパイの数まで減ったらスパイの勝ち（もう多数決で勝てないため）
   const spies = m.pawns.filter((p) => p.isSpy).length;
   const active = citizens.filter((p) => !p.h.frozen).length;
-  if (citizens.length > 0 && active <= spies) o = { winner: 'spy', reason: 'frozen', time: now };
-  else if (m.pawns.some((p) => p.isKing && p.h.departed)) o = { winner: 'spy', reason: 'kingLeft', time: now };
+  if (m.pawns.some((p) => p.isKing && p.h.departed)) o = { winner: 'spy', reason: 'kingLeft', time: now };
+  else if (citizens.length > 0 && active <= spies) o = { winner: 'spy', reason: 'frozen', time: now };
   else if (m.support <= 0) o = { winner: 'spy', reason: 'strike', time: now };
   // M10：宝を持ったスパイが出口のそばまで行けば、スパイの勝ち（名物の全スキャンでは、もう勝ちにならない）
   else if (carrierPawn(m) && nearExit(m.treasure, carrierPawn(m)!.h.walker.pos)) o = { winner: 'spy', reason: 'escaped', time: now };

@@ -894,8 +894,9 @@ export class MissionGameView {
     const cues = currentCues(g);
     const next = g.pos < cues.length ? cues[g.pos] : null;
     const until = next ? cueTime(g, g.pos) - now : Infinity;
-    // 次の操作が近い（1拍以内）なら、帯をその操作の色に光らせる
-    const soon = until <= b && until > -g.window;
+    // 次の操作が近い（半拍以内）なら、帯をその操作の色に光らせる。印は毎拍まんなかを通るので、
+    // 1拍前から光らせると、何もしない拍で「叩く！」に見えてしまう（半拍なら、その操作の拍の通過だけになる）
+    const soon = until <= b / 2 && until > -g.window;
     const tapColor = COLORS.meterNeedle;
     const swipeColor = COLORS.partFlag;
     const bandColor = !next ? COLORS.uiPaperEdge : next.action === 'swipe' ? swipeColor : tapColor;

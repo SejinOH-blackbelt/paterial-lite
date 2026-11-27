@@ -254,6 +254,8 @@ export class FieldScene extends Phaser.Scene {
   private vaultView: Phaser.GameObjects.Image | null = null;
   /** 王様（プレイヤー）が選んだ宝物庫と出口（ひとりのときだけ） */
   private treasureIds: { v: string; e: [string, string] } | null = null;
+  /** 会議で知られて、採取場から片づけた置物 */
+  private clearedStatues = new Set<Harvester>();
   /** アラートの演出（赤い点滅・サイレン）をもう出したか */
   private alarmShown = false;
   /** 勝ち負けを知らせて、リザルトへ進み始めたか（2回送らないように） */
@@ -312,6 +314,7 @@ export class FieldScene extends Phaser.Scene {
     // 宝物庫まわり（画面は試合ごとに使い回されるので、前の試合の印を消す）
     this.vaultView = null;
     this.missionInfo = null;
+    this.clearedStatues = new Set();
     this.alarmShown = false;
     this.overSent = false;
     this.netGauge = null;
@@ -666,7 +669,7 @@ export class FieldScene extends Phaser.Scene {
     // ミニゲーム中は、スティックと右下のボタンを消す（パネルの操作だけに集中できるように。やめるのはパネルの「やめる」）
     const inGame = this.missionView !== null || this.yoriView !== null;
     if (inGame && this.pad.isVisible) this.pad.reset();
-    if ((inGame || me.frozen) && this.missionInfo) this.closeMissionInfo(); // ミニゲームが始まったら、確認の画面は閉じる
+    if ((inGame || me.frozen || (this.isPlayerSpy && this.spy.scan)) && this.missionInfo) this.closeMissionInfo(); // ミニゲームが始まったら、確認の画面は閉じる
     this.pad.setVisible(!inGame);
     this.quitButton.setVisible(!inGame);
     this.scanButton?.setVisible(playing && !inGame);
@@ -1672,7 +1675,7 @@ export class FieldScene extends Phaser.Scene {
   /** ミッションの確認の画面を開く・閉じる */
   private toggleMissionInfo(): void {
     if (this.missionInfo) this.closeMissionInfo();
-    else if (this.match.phase === 'play' && !this.missionView && !this.yoriView) this.openMissionInfo();
+    else if (this.match.phase === 'play' && !this.missionView && !this.yoriView && !this.spy.scan) this.openMissionInfo();
   }
 
   private closeMissionInfo(): void {
@@ -1719,7 +1722,7 @@ export class FieldScene extends Phaser.Scene {
     }
     map.addMark(me.walker.pos, COLORS.uiHoney, '');
     add(label(this, x, 296 + map.height + 10, '金のピン：きみ　色のピン：まだのスイッチ', 10, INK).setStroke(INK, 0));
-    add(textButton(this, x, 296 + map.height + 34, 120, 32, 'とじる', COLORS.uiHoney, () => this.closeMissionInfo(), 14));
+    add(textButton(this, x, 296 + map.height + 34, 120, 32, 'とじる', COLORS.uiHoney, () => this.time.delayedCall(0, () => this.closeMissionInfo()), 14));
     this.missionInfo = parts;
   }
 
@@ -1884,6 +1887,8 @@ export class FieldScene extends Phaser.Scene {
           return;
         }
         this.witnessed = null;
+        // 会議でみんなに知られた置物は、採取場から片づける（使い手の要望：古い置物は地図から消す）
+        for (const h of this.match.known) if (h.frozen && !h.departed) this.clearedStatues.add(h);
         this.pad.reset();
         this.pad.setVisible(true);
         this.scanButton?.setVisible(!this.player.frozen);
@@ -2334,7 +2339,7 @@ export class FieldScene extends Phaser.Scene {
     e.view.setDepth(y);
     e.shadow.setDepth(y - PateView.height);
     // 見える範囲の外にいるほかのパテ（置物も）は見えない。ふちの少し内側から、ふわっと消える
-    const seen = e.h.departed ? 0 : e.h === this.player && !this.spirit ? 1 : this.visibility(x, y);
+    const seen = e.h.departed || this.clearedStatues.has(e.h) ? 0 : e.h === this.player && !this.spirit ? 1 : this.visibility(x, y);
     e.view.setAlpha(seen).setVisible(seen > 0);
     e.shadow.setAlpha(seen).setVisible(seen > 0);
   }

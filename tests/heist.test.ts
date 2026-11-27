@@ -372,3 +372,24 @@ describe('呼び止めはアラートのあとだけ・王様が旅に出たら�
     expect(checkOutcome(m, 6)).toMatchObject({ winner: 'spy', reason: 'kingLeft' });
   });
 });
+
+describe('Codex の点検から（アラート前の追いかけ・王様と人数の条件）', () => {
+  it('アラートが鳴る前は、気づいた市民Botも追いかけない（先に鳴らしに行く）', () => {
+    const { m, spy, pawns } = setup();
+    put(spy, m.treasure.vault.x, m.treasure.vault.y);
+    steal(m, spy, 10, quiet);
+    m.knowsStolen.add(pawns[1]);
+    put(pawns[1], spy.h.walker.pos.x, spy.h.walker.pos.y + 60);
+    faceTo(pawns[1].h.walker, 'up');
+    expect(botChaseTarget(m, pawns[1], 11, 1, ring)).toBeNull();
+  });
+
+  it('王様が旅に出て、動ける市民もスパイと同じ数になったときは「王様が旅に出た」で決まる', () => {
+    const { m, pawns } = setup();
+    pawns[0].isKing = true;
+    for (const p of pawns.slice(1, 4)) p.h.frozen = true; // 動ける市民：王様と 4番
+    m.treasure.alarmAt = 0;
+    stopAndSearch(m, pawns[4], pawns[0], 5);
+    expect(checkOutcome(m, 6)).toMatchObject({ reason: 'kingLeft' });
+  });
+});
