@@ -4,20 +4,25 @@ import { NAME_MAX, sanitizeName } from '../game/names';
 
 const KEY = 'paterial-name';
 
+/** いま開いているあいだの名前（スマホに保存できない環境でも、ページを閉じるまでは使えるように） */
+let current: string | null = null;
+
 /** 保存してある名前（なければ ''） */
 export function loadPlayerName(): string {
+  if (current !== null) return current;
   try {
     return sanitizeName(localStorage.getItem(KEY) ?? '');
   } catch {
-    return ''; // 保存できない環境（プライベートモードなど）では、毎回入れてもらう
+    return ''; // 保存できない環境（プライベートモードなど）では、ページを開くたびに入れてもらう
   }
 }
 
 export function savePlayerName(name: string): void {
+  current = sanitizeName(name);
   try {
-    localStorage.setItem(KEY, sanitizeName(name));
+    localStorage.setItem(KEY, current);
   } catch {
-    // 保存できなくても、この試合では使える
+    // 保存できなくても、ページを閉じるまでは current の名前を使う
   }
 }
 

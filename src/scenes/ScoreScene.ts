@@ -64,7 +64,10 @@ export class ScoreScene extends Phaser.Scene {
       const name = me ? 'きみ' : `${pawnName(p)}のパテ`;
       const role = p.isSpy ? 'スパイ' : p.isKing ? '王様' : '市民';
       const roleColor = p.isSpy ? cssColor(COLORS.landmarkVermilion) : p.isKing ? cssColor(COLORS.uiWood) : INK;
-      this.add.text(92, y - 8 * k - (1 - k) * 4, name, { fontFamily: 'sans-serif', fontSize: `${Math.round(15 * Math.max(0.85, k))}px`, fontStyle: 'bold', color: INK });
+      const nameText = this.add.text(92, y - 8 * k - (1 - k) * 4, name, { fontFamily: 'sans-serif', fontSize: `${Math.round(15 * Math.max(0.85, k))}px`, fontStyle: 'bold', color: INK });
+      // 長い名前は「この試合」の点（x=214 のまわり）に重ならないように縮める
+      const room = 92;
+      if (nameText.width > room) nameText.setScale(room / nameText.width);
       this.add.text(92, y + 12 * k, role, { fontFamily: 'sans-serif', fontSize: `${Math.round(12 * Math.max(0.85, k))}px`, fontStyle: 'bold', color: roleColor });
       const pt = points[i];
       label(this, 214, y + 4, fmt(pt), rowH < 50 ? 16 : 20, pt > 0 ? '#2b6b2f' : pt < 0 ? '#b3322a' : INK).setStroke('#fff8e8', 3);

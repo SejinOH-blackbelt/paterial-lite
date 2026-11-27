@@ -1850,7 +1850,11 @@ export class FieldScene extends Phaser.Scene {
       word.setText('ドン！').setScale(0.6);
       this.tweens.add({ targets: word, scale: 1.2, duration: 220, ease: 'Back.Out' });
       this.audio.piron();
-      this.introAfter(550, () => this.beginPlay());
+      // 子機は、親機から最初の「ようす」が届くまで「ドン！」のまま待つ（親機より先に動き出さない。届いたら onNet で始まる）
+      this.introAfter(550, () => {
+        if (this.net && !this.isSim()) return;
+        this.beginPlay();
+      });
     });
   }
 

@@ -125,5 +125,16 @@ describe('人数 6〜10人のミッションの配り方', () => {
         expect(new Set(used).size).toBe(used.length);
       }
     });
+
+    it(`${n}人：どの体にも、苦手か不可のミッションが1つ以上`, () => {
+      for (let seed = 1; seed <= 300; seed++) {
+        const elements = elementsOf(n, seed);
+        const plan = planBoard(elements, createRng(seed * 7));
+        elements.forEach((e, s) => {
+          const mine = plan.pairs.flatMap((p, i) => (p.includes(s) ? [plan.types[i]] : []));
+          expect(mine.some((t) => ['weak', 'never'].includes(affinity(e, missionType(t).element)))).toBe(true);
+        });
+      }
+    });
   }
 });

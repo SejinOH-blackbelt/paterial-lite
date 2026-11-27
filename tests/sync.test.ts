@@ -5,7 +5,7 @@ import { createFieldState, createHarvester } from '../src/game/harvest';
 import { createWalker } from '../src/game/movement';
 import { createRng } from '../src/game/random';
 import { startSession } from '../src/game/rhythm';
-import { chooseKing } from '../src/game/match';
+import { chooseKing, kingSeat } from '../src/game/match';
 import { createSpyState, prankWait } from '../src/game/spy';
 import { applyBoardWire, boardToWire, applyFieldWire, applySpyWire, applyWireToPawn, assignSeats, fieldToWire, overGain, pawnToWire, spyToWire } from '../src/net/sync';
 
@@ -113,6 +113,29 @@ describe('友達と遊ぶときの、ようすの伝え方', () => {
       emergencyLeft: 1,
     }));
     expect(chooseKing(pawns).id).toBe('p1');
+  });
+
+  it('役の発表の王様の席（kingSeat）は、試合で王冠をかぶるパテ（chooseKing）と同じ', () => {
+    const cases: { humans: boolean[]; spy: number }[] = [
+      { humans: [true, true, true, false, false, false], spy: 2 },
+      { humans: [true, true, true, false, false, false], spy: 0 },
+      { humans: [true, false, false, false, false, false, false, false, false, false], spy: 0 },
+      { humans: [true, true, false, false, false, false, false, false], spy: 5 },
+    ];
+    for (const { humans, spy } of cases) {
+      const pawns = humans.map((h, i) => ({
+        id: `p${i}`,
+        part: 'redKerchief',
+        h: createHarvester(createWalker({ x: 0, y: 0 })),
+        isSpy: i === spy,
+        isPlayer: h,
+        emergencyLeft: 1,
+      }));
+      expect(kingSeat(humans, spy)).toBe(pawns.indexOf(chooseKing(pawns)));
+    }
+    // 3人で遊ぶと、王様は1人だけ。ほかの人は市民
+    const humans = [true, true, true, false, false, false];
+    expect([0, 1, 2].filter((s) => s !== 2 && kingSeat(humans, 2) === s)).toEqual([0]);
   });
 
   it('席：親機が 0 番、ほかの人は入った順、残りは Bot（0）', () => {

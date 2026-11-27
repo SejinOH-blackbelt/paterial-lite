@@ -245,7 +245,8 @@ export class LobbyScene extends Phaser.Scene {
     this.countText?.setText(relay.isHost ? `${count}人で 遊ぶ` : '人数は 親機が決めます');
     this.seats.forEach((seat, i) => {
       const m = members[i];
-      const used = i < count || !!m;
+      // 子機は親機が選んだ人数を知らないので、Bot の席は出さない（集まった人だけ）
+      const used = relay.isHost ? i < count || !!m : !!m;
       seat.view.setAlpha(m ? 1 : used ? 0.35 : 0.1);
       seat.tag.setText(m ? (m.id === relay.you ? 'きみ' : m.host ? '親機' : `${i + 1}P`) : used ? 'Bot' : '');
     });

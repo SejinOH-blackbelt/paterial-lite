@@ -1,4 +1,4 @@
-// 役の発表：「きみは 王様」（市民側）か「きみは スパイ」。スパイをここで決めて、採取場に渡す
+// 役の発表：「きみは 王様」「きみは 市民」（友達と遊ぶとき、王様でない人）か「きみは スパイ」。スパイをここで決めて、採取場に渡す
 import Phaser from 'phaser';
 import { COLORS, PLAYERS, ELEMENT_NAMES, ELEMENTS, KING_PART, MISSIONS, NET, PLAYER_ELEMENT, PLAYER_PART, SCREEN, SPOT } from '../game/config';
 import { planBoard, type BoardPlan } from '../game/board';
@@ -13,6 +13,7 @@ import { loadPlayerName } from './playerName';
 import type { NetGame } from '../net/netGame';
 import type { GoWire, NetMessage, ReadyWire } from '../net/sync';
 import { openTreasurePicker } from './TreasurePicker';
+import { kingSeat } from '../game/match';
 import { planToIds } from '../game/treasure';
 
 export interface RoleData {
@@ -52,7 +53,11 @@ export class RoleScene extends Phaser.Scene {
     const count = net ? net.seats.length : Math.max(PLAYERS.min, Math.min(PLAYERS.max, data?.pawnCount ?? PLAYERS.default));
     this.pawnCount = count;
     const spyIndex = net ? net.spy : hash === '#spy' ? 0 : hash === '#citizen' ? 1 + Math.floor(rng() * (count - 1)) : chooseSpy(count, rng);
-    const isSpy = spyIndex === (net ? net.mySeat : 0);
+    const mySeat = net ? net.mySeat : 0;
+    const isSpy = spyIndex === mySeat;
+    // 王様は1人だけ（人が座る市民の先頭）。友達と遊ぶとき、ほかの人は「市民」
+    const humans = net ? net.seats.map((id) => id !== 0) : Array.from({ length: count }, (_, i) => i === 0);
+    const isKing = !isSpy && kingSeat(humans, spyIndex) === mySeat;
     if (net) this.listenNet(net);
 
     const x = SCREEN.width / 2;
@@ -68,9 +73,9 @@ export class RoleScene extends Phaser.Scene {
     this.add.ellipse(x, 371, 118, 24, isSpy ? COLORS.uiStone : COLORS.uiPaperEdge).setStrokeStyle(2, trim);
     panel(this, x, 460, 292, 112, isSpy ? COLORS.uiStone : COLORS.scanPaper);
     label(this, x, 150, 'きみは', 26);
-    label(this, x, 205, isSpy ? 'スパイ' : '王様', 56, cssColor(COLORS.uiHoney));
+    label(this, x, 205, isSpy ? 'スパイ' : isKing ? '王様' : '市民', 56, cssColor(COLORS.uiHoney));
     this.pate = new PateView(this, SCREEN.width / 2, 370);
-    this.pate.setHeadPart(isSpy ? PLAYER_PART : KING_PART);
+    this.pate.setHeadPart(isKing ? KING_PART : PLAYER_PART);
     this.pate.setElement(PLAYER_ELEMENT);
     this.pate.setScale(1.6);
     if (isSpy) this.pate.setPatch(0.7, 0.4, 5);
@@ -80,7 +85,9 @@ export class RoleScene extends Phaser.Scene {
       460,
       isSpy
         ? 'バイキングから来た スパイ。\n茶色に塗って 和の国にまぎれこんだ。\n宝を盗んで 出口から逃げよう。\n名物をスキャンすると 見つかりにくい。'
-        : '和の国の 王様パテ。\nミッションで ゲージを満タンに。\nスパイを当てよう。でも ぬれぎぬは\n支持度が下がる。0 でストライキ！',
+        : isKing
+          ? '和の国の 王様パテ。\nミッションで ゲージを満タンに。\nスパイを当てよう。でも ぬれぎぬは\n支持度が下がる。0 でストライキ！'
+          : '和の国の 市民パテ。\nミッションで ゲージを満タンに。\n王様と力を合わせて スパイを当てよう。\nぬれぎぬを着せると 旅に出てしまう。',
       16,
     );
     // 役を見たら、エレメントを選ぶ（タップか、少したったら）

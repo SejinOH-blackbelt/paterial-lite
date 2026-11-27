@@ -116,6 +116,15 @@ export interface MatchState {
 }
 
 /**
+ * 王様になる席の番号（chooseKing と同じ決め方。試合の前の役の発表で使う）。
+ * humans[i] はその席に人が座っているか。人が座る市民の先頭、いなければ最初の市民
+ */
+export function kingSeat(humans: boolean[], spy: number): number {
+  const seat = humans.findIndex((h, i) => h && i !== spy);
+  return seat >= 0 ? seat : humans.findIndex((_, i) => i !== spy);
+}
+
+/**
  * 王様パテを決める：プレイヤーが市民側ならプレイヤー、スパイ側なら市民Botの最初の1体。
  * スパイを決めたあとに呼ぶ。
  */
