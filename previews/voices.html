@@ -23,19 +23,9 @@
     <h1>パテの声（聞きくらべ）</h1>
     <p>開発用のページです（公開ページには入りません）。ボタンを押すと鳴ります。</p>
     <section>
-      <h2>本物の王様</h2>
-      <div class="row">
-        <button data-king="start">はじめ（「ドン！」のとき）</button>
-        <button data-king="reply">うむ（あいさつの返事）</button>
-      </div>
-    </section>
-    <section>
-      <h2>偽の王様（なりすましたスパイ。M11 で使う）</h2>
-      <p>本物の王様にぐっと寄せて、ほんの少しだけちがう（少し高く、ゆれ方が少しちがう）。</p>
-      <div class="row">
-        <button data-king="reply" data-fake="1" class="spy">うむ（偽）</button>
-        <button data-king="start" data-fake="1" class="spy">はじめ（偽・くらべる用）</button>
-      </div>
+      <h2>王様の声（試合ごとに、どれか1つ）</h2>
+      <p>なりすましたスパイは、その試合の本物とは別のパターンで話す。はじめの「ドン！」と聞きくらべるしか見分けられない。</p>
+      <div id="kings"></div>
     </section>
     <section>
       <h2>あいさつの「ぺこっ」</h2>

@@ -53,7 +53,7 @@ import {
 import { buildBoard, isRite, missionComplete, missionIdsOf, missionType, planBoard, spotsOn, type Board, type BoardPlan, type MissionInst, type Spot } from '../game/board';
 import type { Step } from '../game/missionGames';
 import { createWalker, isWalking, setTarget, steerWalker, stepWalker, type Walker } from '../game/movement';
-import { botWantsToGreet, bowOf, greetKing, greetTarget } from '../game/greet';
+import { botWantsToGreet, bowOf, greetKing, greetTarget, pickKingVoice } from '../game/greet';
 import { botChaseTarget, botGuardSpot, canAlarm, raiseAlarm, canSteal, carrierPawn, steal, stopAndSearch, stopTarget, stopWait, updateAwareness, walkSpeed } from '../game/heist';
 import { createRng, type Rng } from '../game/random';
 import {
@@ -180,6 +180,8 @@ const BOT_STARTS = [
 ] as const;
 /** 宝物庫と出口を選ぶ乱数のたねに混ぜる数（試合の乱数と別の並びにするため） */
 const TREASURE_SEED_SALT = 0x7e45a5;
+/** 王様の声のパターンを選ぶ乱数のたねに混ぜる数（試合の乱数・宝物庫の乱数と別にする） */
+const KING_VOICE_SEED_SALT = 0x7a1c3;
 /** プレイヤーの最初の位置（鳥居の少し下） */
 const PLAYER_START = { x: 350, y: 720 } as const;
 
@@ -1677,6 +1679,9 @@ export class FieldScene extends Phaser.Scene {
    * あいさつの見せ方：おじぎ（くせがある。スパイは少しずれる）と、王様のうなずき。
    * 印や文字では区別しない（よく見ている人だけが「何となく違うかな…」と思える）
    */
+  /** この試合の王様の声のパターン（voices.ts の KING_VOICES の番号） */
+  private kingVoicePattern = 0;
+
   /** 王様が最後に返事をした時刻（画面の時計、ミリ秒） */
   private lastKingReply = -Infinity;
 
@@ -1699,7 +1704,7 @@ export class FieldScene extends Phaser.Scene {
       // 返事の音量は、返事のときの自分の場所で
       const at = this.listenerPos();
       const v2 = Math.max(0, 1 - Math.hypot(king.h.walker.pos.x - at.x, king.h.walker.pos.y - at.y) / GREET.hearRadius) ** 2;
-      if (v2 > 0.03) kingVoice(this.audio, 'reply', v2);
+      if (v2 > 0.03) kingVoice(this.audio, 'reply', v2, this.kingVoicePattern);
     });
     // 近くにいれば、小さく「ぺこり」（スパイでも同じ）
     if (Math.hypot(e.h.walker.pos.x - me.x, e.h.walker.pos.y - me.y) < 260) {
@@ -1985,7 +1990,7 @@ export class FieldScene extends Phaser.Scene {
       word.setText('ドン！').setScale(0.6);
       this.tweens.add({ targets: word, scale: 1.2, duration: 220, ease: 'Back.Out' });
       // 「ドン！」は王様の声（みんなが本物の王様の声を一度聞く。あいさつの返事も同じ声）
-      kingVoice(this.audio, 'start');
+      kingVoice(this.audio, 'start', 1, this.kingVoicePattern);
       this.audio.piron(0.4);
       // 子機は、親機から最初の「ようす」が届くまで「ドン！」のまま待つ（親機より先に動き出さない。届いたら onNet で始まる）
       this.introAfter(550, () => {
@@ -2019,6 +2024,8 @@ export class FieldScene extends Phaser.Scene {
   /** 試合を始める。スパイは役の発表で決まった番号のパテ */
   private setupMatch(): void {
     this.riteAnnounced = false; // 同じ画面を次の試合でも使うので、試合ごとに戻す
+    // この試合の王様の声のパターン（友達と遊ぶときは、同じ乱数のたねから選ぶので、みんな同じ声。試合の乱数とは別にする）
+    this.kingVoicePattern = pickKingVoice(createRng(((this.net ? this.net.seed : Date.now()) ^ KING_VOICE_SEED_SALT) >>> 0));
     const index = Math.min(this.spyIndex, this.pates.length - 1);
     this.pates.forEach((e, i) => (e.pawn.isSpy = i === index));
     this.spyEntity = this.pates[index];

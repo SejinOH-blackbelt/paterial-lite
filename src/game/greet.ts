@@ -62,6 +62,16 @@ export function greetKing(m: MatchState, by: Pawn, now: number): GreetEvent | nu
   return { by, king, off, time: now, at };
 }
 
+/** この試合の王様の声のパターン（0〜GREET.kingVoices-1） */
+export function pickKingVoice(rng: Rng): number {
+  return Math.floor(rng() * GREET.kingVoices);
+}
+
+/** なりすましたスパイ（M11）の声：この試合の本物とは別のパターン（ふつうの王様の声に聞こえる） */
+export function pickFakeKingVoice(real: number, rng: Rng): number {
+  return (real + 1 + Math.floor(rng() * (GREET.kingVoices - 1))) % GREET.kingVoices;
+}
+
 /** Bot：王様のそばにいるとき、ときどきあいさつする（スパイ Bot も、しないと不自然なので、ときどき） */
 export function botWantsToGreet(m: MatchState, bot: Pawn, now: number, dt: number, rng: Rng): boolean {
   if (bot.h.task || bot.h.session || bot.h.possess) return false;

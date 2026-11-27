@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ELEMENTS, GREET, HEAD_PARTS, MATCH } from '../src/game/config';
 import { dealBoard } from '../src/game/board';
-import { botWantsToGreet, bowOf, greetKing, greetTarget, greetWait } from '../src/game/greet';
+import { botWantsToGreet, bowOf, greetKing, greetTarget, greetWait, pickFakeKingVoice, pickKingVoice } from '../src/game/greet';
+import { KING_VOICES } from '../src/scenes/voices';
 import { createHarvester } from '../src/game/harvest';
 import { chooseKing, createMatch, suspicionOf, type Pawn } from '../src/game/match';
 import { createWalker, faceTo } from '../src/game/movement';
@@ -75,5 +76,22 @@ describe('王様へのあいさつ', () => {
     expect(n).toBeLessThan(20);
     pawns[2].h.task = { missionId: 0, spot: 0, start: 0, game: null, endsAt: 9, willFail: false, fake: false, credit: 1 };
     for (let i = 0; i < 200; i++) expect(botWantsToGreet(m, pawns[2], 0, 0.1, rng)).toBe(false);
+  });
+
+  it('王様の声は試合ごとにいくつかのパターンから選ぶ。なりすましたスパイの声は、いつも本物とは別のパターン', () => {
+    expect(KING_VOICES).toHaveLength(GREET.kingVoices);
+    const rng = createRng(9);
+    const seen = new Set<number>();
+    for (let i = 0; i < 200; i++) {
+      const real = pickKingVoice(rng);
+      seen.add(real);
+      expect(real).toBeGreaterThanOrEqual(0);
+      expect(real).toBeLessThan(GREET.kingVoices);
+      const fake = pickFakeKingVoice(real, rng);
+      expect(fake).not.toBe(real);
+      expect(fake).toBeGreaterThanOrEqual(0);
+      expect(fake).toBeLessThan(GREET.kingVoices);
+    }
+    expect(seen.size).toBe(GREET.kingVoices);
   });
 });
