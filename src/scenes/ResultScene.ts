@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 import { COLORS, LANDMARKS, PART_NAMES, SCREEN } from '../game/config';
 import type { MatchState, OutcomeReason, Pawn } from '../game/match';
 import { PateView } from './PateView';
+import type { ScoreData } from './ScoreScene';
 import type { GameAudio } from './audio';
 import type { Bgm } from './bgm';
 import { FONT, INK, cssColor, label, mmss, panel, textButton, fitCamera } from './ui';
@@ -97,7 +98,8 @@ export class ResultScene extends Phaser.Scene {
     }
     if (timeline.height > 207) timeline.setScale(1, 207 / timeline.height);
 
-    textButton(this, SCREEN.width / 2 - 80, 600, 140, 48, 'もう1回', COLORS.uiHoney, () => this.scene.start('Role'), 20);
+    // 毎試合のあとにスコアを出し、そこで「もう1試合」かを選ぶ
+    textButton(this, SCREEN.width / 2 - 80, 600, 140, 48, 'スコアへ', COLORS.uiHoney, () => this.scene.start('Score', { match, player } satisfies ScoreData), 20);
     textButton(this, SCREEN.width / 2 + 80, 600, 140, 48, 'タイトルへ', COLORS.uiPaper, () => this.scene.start('Title'), 16);
   }
 

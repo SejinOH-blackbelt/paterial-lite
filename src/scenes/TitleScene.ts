@@ -8,6 +8,7 @@ import { makePartTextures } from './partTextures';
 import { PateView } from './PateView';
 import { makeSpyTextures } from './spyTextures';
 import { makeTextures } from './textures';
+import { SCORE_TOTALS_KEY } from './ScoreScene';
 import { FONT, INK, cssColor, label, panel, textButton, fitCamera } from './ui';
 
 const HOW_TO = [
@@ -41,6 +42,7 @@ export class TitleScene extends Phaser.Scene {
 
   create(): void {
     fitCamera(this); // 内部の細かさに合わせてカメラを拡大する（座標は 360×640 のまま）
+    this.registry.set(SCORE_TOTALS_KEY, []); // タイトルに戻ったら、スコアの合計は 0 点から
     makeTextures(this);
     makePartTextures(this);
     makeSpyTextures(this);

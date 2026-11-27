@@ -770,3 +770,21 @@ export const TREASURE = {
   /** 追いかけている Bot が、見失ってからあきらめるまでの秒数 */
   botChaseMemory: 4,
 } as const;
+
+/**
+ * 試合ごとのスコア（Lite だけの決まり。負けた人の罰ゲームにも使える）。
+ * 表にない勝ち方（国の仕事ゲージ満タン・時間切れ）の点は仮（score.ts を参照）
+ */
+export const SCORE = {
+  /** 全員を置物にされた・ストライキ（市民全員の負け） */
+  frozen: { citizen: -1, king: -2, spy: 1 },
+  /** 宝を盗まれて逃げられた（王様の一人負け） */
+  escaped: { citizen: 0, king: -2, spy: 2 },
+  /** スパイを捕まえた・当てた（スパイの負け） */
+  caught: { citizen: 1, king: 2, spy: -2 },
+  /** スパイが1人だけの試合では、スパイの点はこの倍率 */
+  singleSpyRate: 1.5,
+  /** 宝を持ったスパイを呼び止めて捕まえた人（押した人だけ）の点。市民と王様 */
+  stopCitizen: 2,
+  stopKing: 3,
+} as const;

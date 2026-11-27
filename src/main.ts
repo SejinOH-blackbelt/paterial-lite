@@ -3,6 +3,7 @@ import { COLORS, RENDER, SCREEN } from './game/config';
 import { FieldScene } from './scenes/FieldScene';
 import { MeetingScene } from './scenes/MeetingScene';
 import { ResultScene } from './scenes/ResultScene';
+import { ScoreScene } from './scenes/ScoreScene';
 import { RoleScene } from './scenes/RoleScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { TitleScene } from './scenes/TitleScene';
@@ -29,7 +30,7 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [TitleScene, LobbyScene, RoleScene, FieldScene, MeetingScene, ResultScene],
+  scene: [TitleScene, LobbyScene, RoleScene, FieldScene, MeetingScene, ResultScene, ScoreScene],
 });
 
 // 開発中だけ、自動テストからゲームの中身をのぞけるようにする（公開版には入らない）
