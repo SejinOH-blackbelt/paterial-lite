@@ -613,7 +613,8 @@ export class FieldScene extends Phaser.Scene {
     const now = this.audio.heardTime();
     const shrine = shrineChance(this.player, now);
     if (shrine) {
-      if (shrine.state === 'locked') this.popText(`祠から追い出された… あと${Math.ceil(shrine.wait)}秒 入れない`, '#2b1d14', 14, 0);
+      if (this.playerPawn.isKing) this.popText('王様は 乗りうつれない（王家の体）', '#2b1d14', 14, 0);
+      else if (shrine.state === 'locked') this.popText(`祠から追い出された… あと${Math.ceil(shrine.wait)}秒 入れない`, '#2b1d14', 14, 0);
       else this.openYorishiro();
       return;
     }
@@ -723,7 +724,7 @@ export class FieldScene extends Phaser.Scene {
     const stoppable = !shrine && !stealable && !alarmable && !m && this.canOfferStop() && stopTarget(this.match, this.playerPawn, now) !== null;
     // あいさつは、ほかに何もできないときだけ（王様のそば）
     const greetable = !shrine && !stealable && !alarmable && !m && !stoppable && this.canOfferStop() && greetTarget(this.match, this.playerPawn, now) !== null;
-    this.actionButton.setLit(!this.driving && !this.spyChoice && (m?.state === 'ready' || !!m?.canFake || shrine?.state === 'ready' || stealable || alarmable || stoppable || greetable));
+    this.actionButton.setLit(!this.driving && !this.spyChoice && (m?.state === 'ready' || !!m?.canFake || (shrine?.state === 'ready' && !this.playerPawn.isKing) || stealable || alarmable || stoppable || greetable));
     this.actionButton.setLabel(shrine ? '乗りうつる' : alarmable ? 'アラート' : stealable ? '盗む' : m ? 'スイッチ' : stoppable ? '呼び止める' : greetable ? 'あいさつ' : 'アクション');
     const body = reportableBody(this.match, this.playerPawn);
     const emergency = canEmergency(this.match, this.playerPawn);
@@ -1485,6 +1486,11 @@ export class FieldScene extends Phaser.Scene {
       e.view.setElement(element);
       e.shownElement = element;
     });
+    // 王様はエレメントなし（王家の体）。中では仮のエレメントを持つが、見た目と表示には出さない
+    if (king >= 0 && this.pates[king]) {
+      this.pates[king].view.setRoyal(true);
+      this.pates[king].pawn.element = undefined;
+    }
   }
 
   /** スイッチの絵を置く（入ったら絵が変わる） */
@@ -1502,6 +1508,11 @@ export class FieldScene extends Phaser.Scene {
     this.riteAnnounced = true;
     this.audio.piron();
     this.popText('王様の儀式が すんだ！ 支持度が 戻った', '#b8860b', 17, 7);
+  }
+
+  /** 自分の体の呼び名（王様は「王家」、ほかはエレメントの名前） */
+  private bodyName(): string {
+    return this.playerPawn?.isKing ? '王家' : ELEMENT_NAMES[this.player.element];
   }
 
   /** スイッチの絵の名前（王様の儀式の祭壇は、祭壇の絵） */
@@ -1879,6 +1890,7 @@ export class FieldScene extends Phaser.Scene {
       const v = new PateView(this, x - 52, y + cellH * 0.22);
       v.setHeadPart(e.pawn.part as HeadPart);
       v.setElement(e.h.element as Element);
+      if (e.pawn.isKing) v.setRoyal(true); // 王様はエレメントなし（王家の体）
       v.setScale(Math.min(0.62, cellH / 120));
       this.introAdd(v);
       const light = Phaser.Display.Color.IntegerToColor(char.color).v > 0.75;
@@ -1920,7 +1932,7 @@ export class FieldScene extends Phaser.Scene {
     this.introAdd(panel(this, cx, 320, 344, 520, COLORS.uiPaper));
     const role = this.isPlayerSpy ? 'スパイ' : this.playerPawn.isKing ? '王様' : '市民';
     this.introAdd(label(this, cx, 86, `きみは ${role}`, 22, INK).setStroke(INK, 0));
-    this.introAdd(label(this, cx, 116, `${ELEMENT_NAMES[me.element]}の体で、この ミッションを受け持つ`, 13, INK).setStroke(INK, 0));
+    this.introAdd(label(this, cx, 116, `${this.bodyName()}の体で、この ミッションを受け持つ`, 13, INK).setStroke(INK, 0));
     const AFF: Record<string, { text: string; color: number }> = {
       good: { text: '得意', color: 0x2f7a4a },
       plain: { text: '普通', color: 0x7a6a55 },
@@ -2113,7 +2125,7 @@ export class FieldScene extends Phaser.Scene {
     const me = this.player;
     add(panel(this, x, 352, 330, 476, COLORS.uiPaper).setInteractive());
     add(label(this, x, 132, 'きみのミッション', 17, INK).setStroke(INK, 0));
-    add(label(this, x, 152, `いまの体：${ELEMENT_NAMES[me.element]}（相性は 体のエレメントで変わる）`, 11, INK).setStroke(INK, 0));
+    add(label(this, x, 152, this.playerPawn.isKing ? 'いまの体：王家（エレメントなし）' : `いまの体：${ELEMENT_NAMES[me.element]}（相性は 体のエレメントで変わる）`, 11, INK).setStroke(INK, 0));
     const aff: Record<string, string> = { good: '得意', plain: '普通', weak: '苦手', never: '不可（依代の祠で乗りうつろう）' };
     const missions = myMissions(me, this.board);
     missions.forEach((m, i) => {
@@ -2231,7 +2243,7 @@ export class FieldScene extends Phaser.Scene {
       if (isRite(m)) return `${el}${spotsOn(m)}/${m.spots.length}`;
       return `${el}${spotsOn(m)}/${m.spots.length}[${mark[missionAffinity(me, m)]}]`;
     });
-    const text = `${ELEMENT_NAMES[me.element]}  ${lines.join('  ')}`;
+    const text = `${this.bodyName()}  ${lines.join('  ')}`;
     if (text === this.hudMissionText) return;
     this.hudMissionText = text;
     this.missionText.setText(text);

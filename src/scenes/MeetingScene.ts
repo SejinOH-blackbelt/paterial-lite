@@ -154,6 +154,7 @@ export class MeetingScene extends Phaser.Scene {
       view.setScale(k);
       view.setHeadPart(p.part as never);
       view.setElement((p.element ?? null) as never);
+      if (p.isKing) view.setRoyal(true); // 王様はエレメントなし（王家の体）
       if (p.h.departed) {
         // 旅に出た人は、風呂敷をかついだ旅立ちの絵（輪にはいない）
         view.setVisible(false);

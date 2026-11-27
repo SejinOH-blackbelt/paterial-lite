@@ -59,6 +59,7 @@ export class ScoreScene extends Phaser.Scene {
       const view = new PateView(this, 56, y + 18 * k);
       view.setHeadPart(p.part as never);
       view.setElement((p.element ?? null) as never);
+      if (p.isKing) view.setRoyal(true); // 王様はエレメントなし（王家の体）
       view.setScale(0.8 * k);
       this.views.push(view);
       const name = me ? 'きみ' : `${pawnName(p)}のパテ`;

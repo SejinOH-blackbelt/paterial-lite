@@ -77,6 +77,7 @@ export class RoleScene extends Phaser.Scene {
     this.pate = new PateView(this, SCREEN.width / 2, 370);
     this.pate.setHeadPart(isKing ? KING_PART : PLAYER_PART);
     this.pate.setElement(PLAYER_ELEMENT);
+    if (isKing) this.pate.setRoyal(true); // 王様はエレメントなし（王家の体）
     this.pate.setScale(1.6);
     if (isSpy) this.pate.setPatch(0.7, 0.4, 5);
     label(
@@ -90,12 +91,13 @@ export class RoleScene extends Phaser.Scene {
           : '和の国の 市民パテ。\nミッションで ゲージを満タンに。\n王様と力を合わせて スパイを当てよう。\nぬれぎぬを着せると 旅に出てしまう。',
       16,
     );
-    // 役を見たら、エレメントを選ぶ（タップか、少したったら）
+    // 役を見たら、エレメントを選ぶ（タップか、少したったら）。王様はエレメントなし（王家の体）なので、選ばずに先へ
     let picked = false;
     const next = () => {
       if (picked) return;
       picked = true;
-      this.showPicker(spyIndex, net, isSpy);
+      if (isKing) this.afterPick(spyIndex, net, isSpy, PLAYER_ELEMENT, true);
+      else this.showPicker(spyIndex, net, isSpy);
     };
     this.time.delayedCall(3500, next);
     this.input.once('pointerdown', next);
@@ -126,19 +128,7 @@ export class RoleScene extends Phaser.Scene {
     const go = (e: ElementId) => {
       if (gone) return;
       gone = true;
-      if (!net) {
-        // ひとりで遊ぶとき、プレイヤーが市民側なら王様：宝物庫と出口の場所を選んでから始める
-        if (!isSpy) {
-          openTreasurePicker(this, createRng(Date.now()), (plan) =>
-            this.scene.start('Field', { spyIndex, net, element: e, treasure: planToIds(plan), pawnCount: this.pawnCount } satisfies RoleData),
-          );
-          return;
-        }
-        this.scene.start('Field', { spyIndex, net, element: e, pawnCount: this.pawnCount } satisfies RoleData);
-        return;
-      }
-      // 友達と遊ぶとき：全員が選び終えてから、いっせいに始める（親機だけ先に動けないように）
-      this.waitForEveryone(spyIndex, net, e);
+      this.afterPick(spyIndex, net, isSpy, e, false);
     };
     const random = () => ELEMENTS[Math.floor(Math.random() * ELEMENTS.length)];
     textButton(this, x + 70, 530, 130, 46, 'これにする', COLORS.uiHoney, () => go(chosen ?? random()), 17);
@@ -155,13 +145,33 @@ export class RoleScene extends Phaser.Scene {
   }
 
   /**
+   * エレメントが決まったあと：ひとりのときは試合へ（王様なら、宝物庫と出口の場所を選んでから）、友達と遊ぶときは全員を待つ。
+   * royal：王様（エレメントなしの王家の体。e は中で使うだけの仮の値）
+   */
+  private afterPick(spyIndex: number, net: NetGame | undefined, isSpy: boolean, e: ElementId, royal: boolean): void {
+    if (!net) {
+      // ひとりで遊ぶとき、プレイヤーが市民側なら王様：宝物庫と出口の場所を選んでから始める
+      if (!isSpy) {
+        openTreasurePicker(this, createRng(Date.now()), (plan) =>
+          this.scene.start('Field', { spyIndex, net, element: e, treasure: planToIds(plan), pawnCount: this.pawnCount } satisfies RoleData),
+        );
+        return;
+      }
+      this.scene.start('Field', { spyIndex, net, element: e, pawnCount: this.pawnCount } satisfies RoleData);
+      return;
+    }
+    // 友達と遊ぶとき：全員が選び終えてから、いっせいに始める（親機だけ先に動けないように）
+    this.waitForEveryone(spyIndex, net, e, royal);
+  }
+
+  /**
    * 友達と遊ぶとき：自分の選択を伝えて、全員がそろうのを待つ。
    * 親機は、人の席が全員「選び終えた」を送ってきたら（または待ちすぎたら）「始める」をみんなに送る
    */
-  private waitForEveryone(spyIndex: number, net: NetGame, element: ElementId): void {
+  private waitForEveryone(spyIndex: number, net: NetGame, element: ElementId, royal = false): void {
     const x = SCREEN.width / 2;
     this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.6).setOrigin(0).setInteractive();
-    label(this, x, 300, `${ELEMENT_NAMES[element]}の体にやどった！`, 20, cssColor(COLORS.uiHoney));
+    label(this, x, 300, royal ? '王様は 王家の体（エレメントなし）' : `${ELEMENT_NAMES[element]}の体にやどった！`, 20, cssColor(COLORS.uiHoney));
     label(this, x, 340, 'みんなが選ぶのを 待っています…', 14);
     let started = false;
     const start = (elements: ElementId[], plan: BoardPlan, names: string[]) => {

@@ -100,8 +100,21 @@ export class PateView extends Phaser.GameObjects.Container {
       .setScale(scaleX * (side ? 0.9 : 1), scaleY).setFlipX(flipX);
   }
 
+  /** 王家の体（王様。エレメントなし） */
+  private royal = false;
+
+  /**
+   * 王様の体にする（使い手の決定 Nov 28：王様はエレメントなし）。エレメントの飾りのない、素のハニワの体。
+   * ほかのパテはみんなエレメントの体なので、これだけで王様だと分かる（王冠もある）
+   */
+  setRoyal(on: boolean): void {
+    if (on) this.setElement(null);
+    this.royal = on;
+  }
+
   /** 見分け用のパーツを残し、胴体・手足と属性の飾りを付け替える。 */
   setElement(element: Element | null): void {
+    if (this.royal) return; // 王様の体はエレメントを持たない
     if (this.element === element) return;
     this.element = element;
     this.elementHead?.destroy();
