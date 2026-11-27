@@ -12,9 +12,9 @@ import { sanitizeName } from '../game/names';
 import { loadPlayerName } from './playerName';
 import type { NetGame } from '../net/netGame';
 import type { GoWire, NetMessage, ReadyWire } from '../net/sync';
-import { openTreasurePicker } from './TreasurePicker';
+import { openTreasurePicker, PICK_SECONDS } from './TreasurePicker';
 import { kingSeat } from '../game/match';
-import { planToIds } from '../game/treasure';
+import { planFromIds, planToIds } from '../game/treasure';
 
 export interface RoleData {
   /** スパイになるパテの番号（ひとりで遊ぶときは 0 がプレイヤー。友達と遊ぶときは席の番号） */
@@ -160,7 +160,12 @@ export class RoleScene extends Phaser.Scene {
       this.scene.start('Field', { spyIndex, net, element: e, pawnCount: this.pawnCount } satisfies RoleData);
       return;
     }
-    // 友達と遊ぶとき：全員が選び終えてから、いっせいに始める（親機だけ先に動けないように）
+    // 友達と遊ぶとき：王様（人）は、宝物庫と出口の場所を選んでから待つ（選んだ場所は親機へ送り、親機がみんなに配る）
+    if (royal) {
+      openTreasurePicker(this, createRng(Date.now()), (plan) => this.waitForEveryone(spyIndex, net, e, royal, planToIds(plan)));
+      return;
+    }
+    // 全員が選び終えてから、いっせいに始める（親機だけ先に動けないように）
     this.waitForEveryone(spyIndex, net, e, royal);
   }
 
@@ -168,16 +173,16 @@ export class RoleScene extends Phaser.Scene {
    * 友達と遊ぶとき：自分の選択を伝えて、全員がそろうのを待つ。
    * 親機は、人の席が全員「選び終えた」を送ってきたら（または待ちすぎたら）「始める」をみんなに送る
    */
-  private waitForEveryone(spyIndex: number, net: NetGame, element: ElementId, royal = false): void {
+  private waitForEveryone(spyIndex: number, net: NetGame, element: ElementId, royal = false, treasure?: { v: string; e: [string, string] }): void {
     const x = SCREEN.width / 2;
     this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.6).setOrigin(0).setInteractive();
     label(this, x, 300, royal ? '王様は 王家の体（エレメントなし）' : `${ELEMENT_NAMES[element]}の体にやどった！`, 20, cssColor(COLORS.uiHoney));
     label(this, x, 340, 'みんなが選ぶのを 待っています…', 14);
     let started = false;
-    const start = (elements: ElementId[], plan: BoardPlan, names: string[]) => {
+    const start = (elements: ElementId[], plan: BoardPlan, names: string[], tr?: { v: string; e: [string, string] }) => {
       if (started) return;
       started = true;
-      this.scene.start('Field', { spyIndex, net, element: elements[net.mySeat] ?? element, elements, plan, names } satisfies RoleData);
+      this.scene.start('Field', { spyIndex, net, element: elements[net.mySeat] ?? element, elements, plan, names, treasure: tr } satisfies RoleData);
     };
     const host = net.mySeat === 0;
     const humans = net.seats.map((id, seat) => (id !== 0 ? seat : -1)).filter((seat) => seat >= 0);
@@ -189,8 +194,12 @@ export class RoleScene extends Phaser.Scene {
       // 王様（人が座る市民の先頭）は共同ミッションを持たず、王様の儀式を受け持つ
       const plan = planBoard(elements, rng, kingSeat(net.seats.map((id) => id !== 0), net.spy));
       const names = net.seats.map((id, seat) => (seat === 0 ? loadPlayerName() : id !== 0 ? this.readyNames.get(seat) ?? '' : ''));
-      net.relay.send('all', { k: 'go', els: elements.map((e) => ELEMENTS.indexOf(e)), plan, names } satisfies GoWire);
-      start(elements, plan, names);
+      // 王様（人）が選んだ宝物庫と出口：親機が王様なら自分の、子機が王様ならその人から届いたもの（決まりに合うものだけ）
+      const kingAt = kingSeat(net.seats.map((id) => id !== 0), net.spy);
+      const chosen = kingAt === 0 ? treasure : this.readyTreasure.get(kingAt);
+      const tr = chosen && planFromIds(chosen) ? chosen : undefined;
+      net.relay.send('all', { k: 'go', els: elements.map((e) => ELEMENTS.indexOf(e)), plan, names, tr } satisfies GoWire);
+      start(elements, plan, names, tr);
     };
     // 選んでいるあいだに届いた知らせ（create で受けとり始めている）も使う
     this.onReady = () => {
@@ -199,15 +208,18 @@ export class RoleScene extends Phaser.Scene {
     this.onGo = (msg) => {
       const elements = msg.els.map((i) => ELEMENTS[i] ?? 'earth');
       const names = net.seats.map((_, seat) => sanitizeName(msg.names?.[seat]));
-      start(elements, msg.plan, names);
+      start(elements, msg.plan, names, msg.tr && planFromIds(msg.tr) ? msg.tr : undefined);
     };
     if (this.goReceived) this.onGo(this.goReceived);
     if (host) {
       this.readySeats.set(0, element);
       this.onReady();
-      this.time.delayedCall(NET.readyTimeout * 1000, goAll); // 抜けた人がいても、待ちすぎたら始める
+      // 抜けた人がいても、待ちすぎたら始める（王様が子機の人なら、場所を選ぶ時間のぶん長く待つ）
+      const kingAt = kingSeat(net.seats.map((id) => id !== 0), net.spy);
+      const wait = NET.readyTimeout + (kingAt > 0 ? PICK_SECONDS : 0);
+      this.time.delayedCall(wait * 1000, goAll);
     } else {
-      net.relay.send('host', { k: 'ready', e: ELEMENTS.indexOf(element), n: loadPlayerName() } satisfies ReadyWire);
+      net.relay.send('host', { k: 'ready', e: ELEMENTS.indexOf(element), n: loadPlayerName(), tr: treasure } satisfies ReadyWire);
     }
   }
 
@@ -215,6 +227,7 @@ export class RoleScene extends Phaser.Scene {
   private listenNet(net: NetGame): void {
     this.readySeats = new Map();
     this.readyNames = new Map();
+    this.readyTreasure = new Map();
     this.goReceived = null;
     this.onReady = () => {};
     this.onGo = () => {};
@@ -228,6 +241,7 @@ export class RoleScene extends Phaser.Scene {
       if (msg?.k === 'ready' && seat > 0) {
         this.readySeats.set(seat, ELEMENTS[msg.e] ?? 'earth');
         this.readyNames.set(seat, sanitizeName(msg.n));
+        if (msg.tr) this.readyTreasure.set(seat, msg.tr);
         this.onReady();
       }
     });
@@ -245,6 +259,8 @@ export class RoleScene extends Phaser.Scene {
   private readySeats = new Map<number, ElementId>();
   /** 親機：選び終えた席の名前 */
   private readyNames = new Map<number, string>();
+  /** 王様の席の子機から届いた、宝物庫と出口の場所 */
+  private readyTreasure = new Map<number, { v: string; e: [string, string] }>();
   /** 子機：届いた「始める」の知らせ（選んでいるあいだに届いたら、選び終えたらすぐ始める） */
   private goReceived: GoWire | null = null;
   private onReady: () => void = () => {};

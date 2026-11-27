@@ -2047,7 +2047,8 @@ export class FieldScene extends Phaser.Scene {
     this.playerPawn = this.pates[this.me].pawn;
     // 宝物庫と出口の場所：ひとりで王様のときは、役の発表のあとにプレイヤーが選んだ場所。それ以外は王様 Bot の決め方。
     // 友達と遊ぶときは、同じ乱数のたねから選ぶので、みんなのスマホで同じ場所になる（試合の乱数とは別にして、並びを変えない）
-    const picked = !this.net && this.treasureIds ? planFromIds(this.treasureIds) : null; // ひとりのとき：王様（プレイヤー）が選んだ場所
+    // 王様（人）が選んだ場所：ひとりのときはプレイヤー、友達と遊ぶときは親機が配ったもの（みんな同じ）。なければ王様 Bot の決め方
+    const picked = this.treasureIds ? planFromIds(this.treasureIds) : null;
     const plan = picked ?? botTreasurePlan(createRng(((this.net ? this.net.seed : Date.now()) ^ TREASURE_SEED_SALT) >>> 0));
     this.match = createMatch(
       this.pates.map((e) => e.pawn),

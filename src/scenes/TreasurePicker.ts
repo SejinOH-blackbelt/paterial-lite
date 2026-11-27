@@ -13,7 +13,7 @@ import { EXIT_TEX, VAULT_TEX, makeTreasureTextures } from './treasureTextures';
 import { INK, cssColor, label, panel, textButton } from './ui';
 
 /** 選び終えるまでの秒数（過ぎたら、王様 Bot と同じ決め方で埋める） */
-const PICK_SECONDS = 25;
+export const PICK_SECONDS = 25;
 const MAP_W = 280;
 const MAP_TOP = 96;
 
