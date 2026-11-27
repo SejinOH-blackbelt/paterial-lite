@@ -124,7 +124,8 @@ export function stopAndSearch(m: MatchState, by: Pawn, target: Pawn, now: number
   const lost = Math.min(m.support, SUPPORT.wrongAccusation);
   m.support -= lost;
   m.stopReady.set(by, now + TREASURE.stopCooldown);
-  depart(m, target);
+  // 旅に出るのは市民だけ（盗む前のスパイを呼び止めたときの扱いは、使い手と相談中。いまはスパイは残る）
+  if (!target.isSpy) depart(m, target);
   return { caught: false, supportLost: lost };
 }
 

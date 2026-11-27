@@ -339,3 +339,13 @@ describe('アラート', () => {
     expect(m.treasure.exits.some((e) => e.x === guard.x && e.y === guard.y)).toBe(true);
   });
 });
+
+describe('呼び止めと旅に出る（Codex の点検から）', () => {
+  it('盗む前のスパイを呼び止めても、スパイは旅に出ない（ぬれぎぬの支持度は下がる）', () => {
+    const { m, pawns, spy } = setup();
+    const r = stopAndSearch(m, pawns[1], spy, 5);
+    expect(r.caught).toBe(false);
+    expect(spy.h.departed).toBe(false);
+    expect(spy.h.frozen).toBe(false);
+  });
+});

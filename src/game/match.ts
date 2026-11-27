@@ -205,7 +205,7 @@ const torii = LANDMARKS.find((l) => l.id === 'torii')!;
 export function reportableBody(m: MatchState, p: Pawn): Harvester | null {
   if (p.h.frozen || m.phase !== 'play') return null;
   return (
-    m.pawns.find((o) => o.h.frozen && !m.known.has(o.h) && dist(o.h.walker.pos, p.h.walker.pos) <= MATCH.reportRadius)?.h ??
+    m.pawns.find((o) => o.h.frozen && !o.h.departed && !m.known.has(o.h) && dist(o.h.walker.pos, p.h.walker.pos) <= MATCH.reportRadius)?.h ??
     null
   );
 }

@@ -980,8 +980,9 @@ export class FieldScene extends Phaser.Scene {
           const e = this.pates[i];
           if (!e) return;
           if (i === this.me) {
-            // 自分のパテは自分で動かす。ただし置物にされたことだけは親機に従う
-            if (w.fr === 1 && !e.h.frozen) this.becomeStatue(e.h);
+            // 自分のパテは自分で動かす。ただし置物にされた・旅に出たことだけは親機に従う
+            if (w.fr >= 1 && !e.h.frozen) this.becomeStatue(e.h);
+            if (w.fr === 2) e.h.departed = true;
             return;
           }
           const wasFrozen = e.h.frozen;
@@ -1002,9 +1003,11 @@ export class FieldScene extends Phaser.Scene {
         if (!host || fromSeat <= 0) return;
         const e = this.pates[fromSeat];
         // 置物にしたかどうかは親機が決める（子機から届いた古いようすで戻さない）
+        if (e.h.departed) return; // 旅に出た人のようすは、もう写さない（古い場所や作業を戻さない）
         const frozen = e.h.frozen;
         this.remoteWalking.set(e.h, applyWireToPawn(e.h, msg.p, makeSession, heard));
         e.h.frozen = frozen;
+        e.h.departed = false;
         return;
       }
       case 'tap': {
@@ -1947,7 +1950,7 @@ export class FieldScene extends Phaser.Scene {
     if (!this.spirit && this.player.departed) this.popText('ぬれぎぬに 怒って 旅に出た…\n空から 見守ろう', '#2b1d14', 15, 0);
     if (!this.spirit) {
       const view = new PateView(this, 0, 0);
-      view.setHeadPart(PLAYER_PART);
+      view.setHeadPart(this.playerPawn.part as HeadPart);
       view.setAlpha(0.62).setDepth(9000);
       const glow = this.add.graphics().setDepth(8999);
       glow.fillStyle(COLORS.uiSpirit, 0.12).fillEllipse(0, -25, 72, 78);
