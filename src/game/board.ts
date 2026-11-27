@@ -127,14 +127,21 @@ function chooseTypes(pairs: [number, number][], elements: ElementId[], rng: Rng)
   return best ?? pairs.map((_, i) => ids[i % ids.length]);
 }
 
-/** スイッチの場所を選ぶ。同じミッションのスイッチどうしは、できるだけ SPOT.spreadMin 以上離す */
+/** スイッチの場所を選ぶ。そのエレメントのゾーンの中から選び、同じミッションのスイッチどうしは、できるだけ SPOT.spreadMin 以上離す */
 function chooseSites(types: MissionId[], rng: Rng): number[][] {
-  const free = shuffle(
+  const all = shuffle(
     SPOT.sites.map((_, i) => i),
     rng,
   );
+  // ゾーンごとの空いている場所（ミッションのスイッチは、そのエレメントのゾーンの中から選ぶ）
+  const freeByZone = new Map<string, number[]>();
+  for (const i of all) {
+    const z = SPOT.sites[i].zone;
+    freeByZone.set(z, [...(freeByZone.get(z) ?? []), i]);
+  }
   const d = (i: number, j: number) => Math.hypot(SPOT.sites[i].x - SPOT.sites[j].x, SPOT.sites[i].y - SPOT.sites[j].y);
   return types.map((t) => {
+    const free = freeByZone.get(missionType(t).element) ?? [];
     const mine: number[] = [];
     for (let k = 0; k < missionType(t).spots && free.length > 0; k++) {
       // 離れている場所があればそこ。なければ、いちばん離れている場所

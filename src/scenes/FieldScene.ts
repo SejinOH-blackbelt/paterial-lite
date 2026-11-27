@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { ZONES, BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   createHarvester,
@@ -111,6 +111,7 @@ import { MissionGameView } from './MissionGameView';
 import { DRESSING_TEX, FACILITY_SIZE, FACILITY_TEX, makeFacilityTextures } from './facilityTextures';
 import { ELEMENT_RES_CHIP_COLOR, ELEMENT_RES_EMPTY_TEX, ELEMENT_RES_TEX, makeResourceTextures, RES_SIZE } from './resourceTextures';
 import { makeMissionArt, MISSION_SPOT_TEX as SPOT_TEX } from './missionArt';
+import { ELEMENT_PICTURE, makeElementPictures } from './elementPictures';
 import { ELEMENT_COLOR } from './elementIcons';
 import { drawGround, drawPart, makeTextures, TEX } from './textures';
 
@@ -307,6 +308,8 @@ export class FieldScene extends Phaser.Scene {
     makeSpyTextures(this);
     makeFacilityTextures(this);
     drawGround(this, WORLD.width, WORLD.height);
+    makeElementPictures(this);
+    this.drawZones();
 
     // 音の時計。Phaser が用意した AudioContext を使う（なければ自分で作る）
     const sm = this.sound as Phaser.Sound.BaseSoundManager & { context?: AudioContext };
@@ -481,6 +484,23 @@ export class FieldScene extends Phaser.Scene {
     view.setElement(element); // 火・水・土・風の飾り（見た目だけ）
     const pawn: Pawn = { id, part, element, h, isSpy: false, isPlayer: bot === null, emergencyLeft: MATCH.emergencyPerPawn };
     this.pates.push({ h, view, shadow, bot, pawn, shownElement: element });
+  }
+
+  /**
+   * エレメントのゾーンを地面に描く（エレメントの色のうすい地面・ふち・名前の札）。
+   * そのエレメントのミッションは、スイッチも資源も、このゾーンの中にある
+   */
+  private drawZones(): void {
+    const g = this.add.graphics().setDepth(-500);
+    for (const z of ZONES) {
+      const color = ELEMENT_COLOR[z.element];
+      g.fillStyle(color, 0.16).fillRoundedRect(z.x, z.y, z.w, z.h, 28);
+      g.lineStyle(3, color, 0.7).strokeRoundedRect(z.x, z.y, z.w, z.h, 28);
+      g.lineStyle(1.5, COLORS.ink, 0.35).strokeRoundedRect(z.x - 2, z.y - 2, z.w + 4, z.h + 4, 30);
+      const tag = this.add.image(z.x + z.w / 2, z.y + 2, ELEMENT_PICTURE(z.element)).setScale(0.42).setDepth(z.y + 1);
+      label(this, z.x + z.w / 2, z.y + 24, z.name, 12).setDepth(z.y + 1);
+      void tag;
+    }
   }
 
   /** 画面に貼りつける表示（カメラが動いても、画面の同じ場所に出る） */

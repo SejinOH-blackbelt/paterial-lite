@@ -8,7 +8,8 @@ import { createWalker } from '../src/game/movement';
 import { stepWalker } from '../src/game/movement';
 import { createRng } from '../src/game/random';
 
-const [clay, wood] = RESOURCE_POINTS;
+const clay = RESOURCE_POINTS.find((r) => r.id === 'earth')!;
+const wood = RESOURCE_POINTS.find((r) => r.id === 'fire')!;
 
 /** 土のミッション1つ（スイッチ3つ）を、席0と席1で受け持つ盤 */
 const earthBoard = (): Board => buildBoard({ types: ['earth'], pairs: [[0, 1]], sites: [[0, 1, 2]] });
@@ -72,7 +73,7 @@ describe('住民Bot', () => {
     expect(freePoints(b, createFieldState(), [b.h])[0].id).toBe('earth');
     const { events } = run([b], createFieldState(), 20, 1 / 60, 3, assign(earthBoard(), [b]));
     expect(events.length).toBeGreaterThan(0);
-    expect(b.h.held.earth).toBeGreaterThan(0);
+    expect(events.every((e) => e.pointId.startsWith('earth'))).toBe(true); // 粘土を採る（採った粘土はスイッチで使う）
   });
 
   it('多くの場合、いちばん近いポイントを選ぶ', () => {

@@ -37,7 +37,7 @@ describe('採取の流れ', () => {
   });
 
   it('素材の上のほう（足元より上）をタップしても、その素材を選べる', () => {
-    const bamboo = RESOURCE_POINTS[1];
+    const bamboo = RESOURCE_POINTS.find((r) => r.id === 'fire')!;
     expect(resourceAtTap({ x: bamboo.x, y: bamboo.y - 48 })?.id).toBe('fire');
     expect(resourceAtTap({ x: bamboo.x, y: bamboo.y - RESOURCE.tapCenterUp - RESOURCE.tapRadius - 5 })).toBeNull();
   });

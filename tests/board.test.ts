@@ -51,7 +51,7 @@ describe('共同ミッションの配り方', () => {
           for (const b of sites) {
             if (a === b) continue;
             const d = Math.hypot(SPOT.sites[a].x - SPOT.sites[b].x, SPOT.sites[a].y - SPOT.sites[b].y);
-            expect(d).toBeGreaterThan(150);
+            expect(d).toBeGreaterThan(85); // ゾーンの中で、となりどうしは 88 以上離してある
           }
       });
     }
@@ -65,9 +65,20 @@ describe('共同ミッションの配り方', () => {
     expect(missionIdsOf(board, 0)).toHaveLength(3);
   });
 
-  it('スイッチの候補は、最大の数（9つ×3か所）より多い', () => {
-    const most = Math.max(...MISSIONS.map((m) => m.spots));
-    expect(SPOT.sites.length).toBeGreaterThanOrEqual(9 * most);
+  it('どのゾーンにも、同じ種類のミッションが最大の数出ても足りるだけの場所がある', () => {
+    for (const m of MISSIONS) {
+      const n = SPOT.sites.filter((s) => s.zone === m.element).length;
+      expect(n).toBeGreaterThanOrEqual(m.spots * MISSION_DEAL.maxSameType);
+    }
+  });
+
+  it('ミッションのスイッチは、そのエレメントのゾーンの中にある', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const plan = planBoard(randomElements(seed), createRng(seed));
+      plan.sites.forEach((sites, i) => {
+        for (const k of sites) expect(SPOT.sites[k].zone).toBe(missionType(plan.types[i]).element);
+      });
+    }
   });
 });
 
