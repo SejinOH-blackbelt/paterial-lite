@@ -256,11 +256,11 @@ export const RESOURCE_REACTION = {
   chipRise: 18, // 上に飛ぶ距離（ピクセル）
 } as const;
 
-/** 頭のパーツ（6体を見分けるため。プレイヤーは花） */
-export const HEAD_PARTS = ['flower', 'kasa', 'horn', 'flag', 'sprout', 'feather', 'crown'] as const;
+/** パテを見分ける帽子とスカーフ、王様の冠 */
+export const HEAD_PARTS = ['redKerchief', 'strawHat', 'bowScarf', 'pomCap', 'dotScarf', 'beret', 'stripeScarf', 'headband', 'topHat', 'catCap', 'crown'] as const;
 /** 王様パテがかぶる頭のパーツ */
 export const KING_PART = 'crown';
-export const PLAYER_PART = 'flower';
+export const PLAYER_PART = HEAD_PARTS[0];
 
 /**
  * パテのエレメント（全世界共通の5つ。デザインは docs/concept/element-pates.webp）。
@@ -368,11 +368,11 @@ export const BOT = {
  * part：頭のパーツ、timingError：タイミングのズレの大きさ（秒、小さいほど上手）
  */
 export const BOT_PROFILES = [
-  { id: 'kasa', part: 'kasa', element: 'water', timingError: 0.03 }, // 名人
-  { id: 'horn', part: 'horn', element: 'fire', timingError: 0.05 },
-  { id: 'flag', part: 'flag', element: 'wind', timingError: 0.07 },
-  { id: 'sprout', part: 'sprout', element: 'earth', timingError: 0.09 },
-  { id: 'feather', part: 'feather', element: 'thunder', timingError: 0.12 }, // のんびり屋
+  { id: 'strawHat', part: 'strawHat', element: 'water', timingError: 0.03 }, // 名人
+  { id: 'bowScarf', part: 'bowScarf', element: 'fire', timingError: 0.05 },
+  { id: 'pomCap', part: 'pomCap', element: 'wind', timingError: 0.07 },
+  { id: 'dotScarf', part: 'dotScarf', element: 'earth', timingError: 0.09 },
+  { id: 'beret', part: 'beret', element: 'thunder', timingError: 0.12 }, // のんびり屋
 ] as const;
 
 /** 名物（スパイがスキャンして設計図のカケラを集める、和の国の設備） */
@@ -698,14 +698,18 @@ export const SUSPICION = {
   trustSus: 7,
 } as const;
 
-/** 頭のパーツの呼び名（会議やリザルトで「○○のパテ」と呼ぶ） */
+/** パテの呼び名（会議やリザルトで「○○のパテ」と呼ぶ） */
 export const PART_NAMES = {
-  flower: '花',
-  kasa: '笠',
-  horn: '角',
-  flag: '旗',
-  sprout: '若葉',
-  feather: '羽根',
+  redKerchief: 'ポン',
+  strawHat: 'ムギ',
+  bowScarf: 'ソラ',
+  pomCap: 'モチ',
+  dotScarf: 'タマ',
+  beret: 'クリ',
+  stripeScarf: 'ナナ',
+  headband: 'ユズ',
+  topHat: 'ゴマ',
+  catCap: 'ミケ',
   crown: '王様', // 王冠をかぶったパテは「王様」と呼ぶ
 } as const;
 

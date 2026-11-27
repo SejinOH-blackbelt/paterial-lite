@@ -11,7 +11,7 @@ import { addPoints, matchPoints } from '../src/game/score';
 function finished(reason: OutcomeReason, caughtBy: number | null = null) {
   const pawns: Pawn[] = Array.from({ length: 6 }, (_, i) => ({
     id: `p${i}`,
-    part: 'flower',
+    part: 'redKerchief',
     h: createHarvester(createWalker({ x: 100, y: 300 })),
     isSpy: i === 5,
     isPlayer: i === 0,

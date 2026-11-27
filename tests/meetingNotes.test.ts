@@ -9,7 +9,7 @@ import { createRng } from '../src/game/random';
 function setup() {
   const pawns: Pawn[] = Array.from({ length: 4 }, (_, i) => ({
     id: `p${i}`,
-    part: 'flower',
+    part: 'redKerchief',
     h: createHarvester(createWalker({ x: 300 + i * 20, y: 600 })),
     isSpy: i === 3,
     isPlayer: i === 0,

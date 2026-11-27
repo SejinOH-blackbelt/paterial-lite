@@ -182,9 +182,9 @@ describe('スパイの「本当にやる」「ふりをする」', () => {
     faceTo(watcher.walker, 'left');
     faceTo(away.walker, 'left');
     const pawns: Pawn[] = [
-      { id: 's', part: 'flower', h: spyH, isSpy: true, isPlayer: false, emergencyLeft: 1 },
-      { id: 'w', part: 'flower', h: watcher, isSpy: false, isPlayer: false, emergencyLeft: 1 },
-      { id: 'a', part: 'flower', h: away, isSpy: false, isPlayer: false, emergencyLeft: 1 },
+      { id: 's', part: 'redKerchief', h: spyH, isSpy: true, isPlayer: false, emergencyLeft: 1 },
+      { id: 'w', part: 'redKerchief', h: watcher, isSpy: false, isPlayer: false, emergencyLeft: 1 },
+      { id: 'a', part: 'redKerchief', h: away, isSpy: false, isPlayer: false, emergencyLeft: 1 },
     ];
     const m = createMatch(pawns, 0, createRng(1), board);
     startMission(spyH, board, [spyH], 0, createRng(1), null, { fake: true, spy: true });
@@ -283,7 +283,7 @@ describe('土の祠と、ミッションのまちがいの音', () => {
   function setup() {
     const pawns: Pawn[] = Array.from({ length: 4 }, (_, i) => ({
       id: `p${i}`,
-      part: 'flower',
+      part: 'redKerchief',
       h: createHarvester(createWalker({ x: 300 + i * 20, y: 600 })),
       isSpy: i === 3,
       isPlayer: i === 0,

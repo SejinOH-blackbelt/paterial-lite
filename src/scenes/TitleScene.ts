@@ -1,7 +1,7 @@
 // タイトル画面：ロゴ、跳ねるパテ、「あそぶ」「あそびかた」
 import Phaser from 'phaser';
 import logoUrl from '../assets/logo.jpg';
-import { COLORS, PLAYER_ELEMENT, SCREEN } from '../game/config';
+import { COLORS, PLAYER_ELEMENT, PLAYER_PART, SCREEN } from '../game/config';
 import { roomFromUrl } from '../net/relay';
 import type { LobbyData } from './LobbyScene';
 import { makePartTextures } from './partTextures';
@@ -56,7 +56,7 @@ export class TitleScene extends Phaser.Scene {
     this.add.ellipse(x, 430, 55, 12, COLORS.uiWood, 0.45);
     // 跳ねるパテ
     this.pate = new PateView(this, SCREEN.width / 2, 430);
-    this.pate.setHeadPart('flower');
+    this.pate.setHeadPart(PLAYER_PART);
     this.pate.setElement(PLAYER_ELEMENT);
 
     // 招待の QR から来たら、そのルームへ（最初の1回だけ）

@@ -14,24 +14,15 @@ export const PATE_LAYOUT = {
   bodyBottom: -5.5,
   /** 足の左右の位置 */
   legX: 7.5,
-  /** 軸が刺さる位置は頭頂より少し内側 */
-  headInset: 4,
-  headSideX: 4,
+  /** 帽子のふちは頭頂より少し下 */
+  headInset: 7,
+  headSideX: 1.5,
   /** 肩の位置 */
   armX: 14,
   armY: -29,
   /** 腕の開き具合（ラジアン） */
   armAngle: 0.62,
 } as const;
-
-// 頭の飾りの低い側に、見分け用のパーツを差し込む。
-const badgeOffset = {
-  fire: [-7, -11],
-  water: [7, -11],
-  earth: [-7, -8],
-  wind: [-7, -11],
-  thunder: [-8, -12],
-} as const satisfies Record<Element, readonly [number, number]>;
 
 export class PateView extends Phaser.GameObjects.Container {
   readonly torso: Phaser.GameObjects.Image;
@@ -81,32 +72,32 @@ export class PateView extends Phaser.GameObjects.Container {
     return this.stepBounce;
   }
 
-  /** 頭のパーツ（6体を見分けるため）。胴体と一緒に揺れるように上半身に付ける */
+  /** 帽子とスカーフ。胴体と一緒に揺れるように上半身に付ける */
   private headPart: Phaser.GameObjects.Image | null = null;
 
+  private wearsScarf = false;
+
   setHeadPart(part: HeadPart): void {
+    this.wearsScarf = part === 'redKerchief' || part.endsWith('Scarf');
     this.headPart?.destroy();
-    this.headPart = this.scene.add.image(0, 0, partKey(part)).setOrigin(0.5, PART_ORIGIN_Y);
-    if (this.isStatue) {
-      this.headPart.setPosition(0, -STATUE_SIZE.h + 4);
-      this.add(this.headPart);
-    } else {
-      this.upperBody.add(this.headPart);
-      this.placeHeadPart();
-    }
+    this.headPart = this.scene.add.image(0, 0, partKey(part)).setOrigin(0.5, this.wearsScarf ? 5 / 32 : PART_ORIGIN_Y);
+    (this.isStatue ? this : this.upperBody).add(this.headPart);
+    this.placeHeadPart();
   }
 
   private placeHeadPart(): void {
-    if (this.isStatue) return; // 置物になったら、パーツは置物のてっぺんに固定
-    const x = this.strikeSign ? 0 : this.facing === 'left' ? PATE_LAYOUT.headSideX
-      : this.facing === 'right' ? -PATE_LAYOUT.headSideX : 0;
-    const mirror = !this.strikeSign && this.facing === 'right';
-    const [offsetX, offsetY] = this.element ? badgeOffset[this.element] : [0, 0];
-    // 胴体の伸び縮みに合わせ、差し込み位置を頭の表面に固定する。
-    this.headPart?.setPosition(
-      this.torso.x + (x + offsetX * (mirror ? -1 : 1)) * this.torso.scaleX,
-      this.torso.y + (PATE_LAYOUT.headInset - PATE_SIZE.h + offsetY) * this.torso.scaleY,
-    ).setFlipX(mirror);
+    if (!this.headPart) return;
+    // スカーフは口の下に、帽子は頭にかぶせる。
+    const inset = this.wearsScarf ? 24 : PATE_LAYOUT.headInset;
+    if (this.isStatue) {
+      this.headPart.setPosition(0, inset - STATUE_SIZE.h).setScale(1).setFlipX(false);
+      return;
+    }
+    const { x, y, scaleX, scaleY, flipX } = this.torso;
+    const side = !this.strikeSign && (this.facing === 'left' || this.facing === 'right');
+    const shift = side ? PATE_LAYOUT.headSideX * (flipX ? 1 : -1) : 0;
+    this.headPart.setPosition(x + shift * scaleX, y + (inset - PATE_SIZE.h) * scaleY)
+      .setScale(scaleX * (side ? 0.9 : 1), scaleY).setFlipX(flipX);
   }
 
   /** 見分け用のパーツを残し、胴体・手足と属性の飾りを付け替える。 */
@@ -251,10 +242,10 @@ export class PateView extends Phaser.GameObjects.Container {
     if (on) {
       this.statue = this.scene.add.image(0, 0, STATUE_TEX).setOrigin(0.5, 1);
       this.add(this.statue);
-      // 誰が置物にされたか分かるように、頭のパーツは置物のてっぺんに残す
+      // 誰が置物にされたか分かるように、帽子とスカーフを置物に残す
       if (this.headPart) {
         this.upperBody.remove(this.headPart);
-        this.headPart.setPosition(0, -STATUE_SIZE.h + 4).setFlipX(false);
+        this.placeHeadPart();
         this.add(this.headPart);
       }
     } else {

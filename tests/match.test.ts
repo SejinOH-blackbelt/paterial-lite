@@ -31,7 +31,7 @@ const torii = LANDMARKS.find((l) => l.id === 'torii')!;
 function setup(spyIndex = 5) {
   const pawns: Pawn[] = Array.from({ length: 6 }, (_, i) => ({
     id: `p${i}`,
-    part: 'flower',
+    part: 'redKerchief',
     h: createHarvester(createWalker({ x: 40 + i * 50, y: 500 })),
     isSpy: i === spyIndex,
     isPlayer: i === 0,

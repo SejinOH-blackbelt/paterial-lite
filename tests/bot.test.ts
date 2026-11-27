@@ -167,7 +167,7 @@ describe('住民Bot', () => {
 
   it('拍より早めに叩いても、同じ周を2回叩かない', () => {
     // ズレがとても大きいBotで長く動かしても、同じ採取の中で同じ周の判定が2回出ない
-    const b = createBot({ id: 'test', part: 'flag', timingError: 0.25 }, standSpot(clay));
+    const b = createBot({ id: 'test', part: 'pomCap', timingError: 0.25 }, standSpot(clay));
     const f = createFieldState();
     const rng = createRng(9);
     const all = [b.h];

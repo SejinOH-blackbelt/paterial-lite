@@ -15,7 +15,7 @@ import { alarmChance, botTreasurePlan, createTreasure, nearExit, nearVault } fro
 function setup() {
   const pawns: Pawn[] = Array.from({ length: 6 }, (_, i) => ({
     id: `p${i}`,
-    part: 'flower',
+    part: 'redKerchief',
     h: createHarvester(createWalker({ x: 60 + i * 100, y: 300 })),
     isSpy: i === 5,
     isPlayer: i === 0,

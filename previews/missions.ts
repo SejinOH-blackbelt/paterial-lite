@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
-import { ELEMENT_NAMES, ELEMENTS } from '../src/game/config';
+import { ELEMENT_NAMES, ELEMENTS, HEAD_PARTS, PART_NAMES } from '../src/game/config';
+import { makePartTextures, partKey } from '../src/scenes/partTextures';
+import { DEPART_TEX, makeDepartTextures } from '../src/scenes/departTextures';
 import type { ElementId } from '../src/game/elements';
 import { ELEMENT_COLOR } from '../src/scenes/elementIcons';
 import { ELEMENT_PICTURE, makeElementPictures } from '../src/scenes/elementPictures';
@@ -63,6 +65,8 @@ const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 class MissionPreview extends Phaser.Scene {
   create(): void {
     makeMissionArt(this);
+    makePartTextures(this);
+    makeDepartTextures(this);
     makeElementPictures(this);
     const clips: { keys: readonly string[]; canvas: HTMLCanvasElement }[] = [];
 
@@ -94,6 +98,11 @@ class MissionPreview extends Phaser.Scene {
       parent.append(heading, row);
       return row;
     };
+
+    const pates = document.querySelector<HTMLElement>('#pates')!;
+    const accessories = rack(pates, '帽子とスカーフ');
+    for (const part of HEAD_PARTS) figure(accessories, partKey(part), PART_NAMES[part], 'tile');
+    figure(rack(pates, '旅立ち'), DEPART_TEX, 'プンプン、旅に出る', 'tile wide');
 
     const pictures = rack(document.querySelector<HTMLElement>('#pictures')!, '通常・押したとき');
     for (const element of ELEMENTS) {

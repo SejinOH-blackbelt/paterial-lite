@@ -106,7 +106,7 @@ describe('友達と遊ぶときの、ようすの伝え方', () => {
   it('6人とも人で、親機がスパイでも、王様（人の市民の先頭）を選べる', () => {
     const pawns = Array.from({ length: 6 }, (_, i) => ({
       id: `p${i}`,
-      part: 'flower',
+      part: 'redKerchief',
       h: createHarvester(createWalker({ x: 0, y: 0 })),
       isSpy: i === 0,
       isPlayer: true,
