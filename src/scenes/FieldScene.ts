@@ -72,6 +72,7 @@ import { GameAudio } from './audio';
 import { Stick } from './Stick';
 import { HudButton } from './HudButton';
 import { YorishiroView } from './YorishiroView';
+import { MeetingMap } from './MeetingMap';
 import { finishPossess, kickFromShrine, nearYorishiro, pressCommand, shrineChance, startPossess } from '../game/yorishiro';
 import type { NetGame } from '../net/netGame';
 import { randomElement, type ElementId } from '../game/elements';
@@ -203,6 +204,8 @@ export class FieldScene extends Phaser.Scene {
   private hudPercent = -1;
   private hudSeconds = -1;
   private hudMissionText = '';
+  /** 自分のミッションを確かめる画面（開いているあいだも試合は進む） */
+  private missionInfo: Phaser.GameObjects.GameObject[] | null = null;
   private timeText!: Phaser.GameObjects.Text;
   private missionText!: Phaser.GameObjects.Text;
   /** 王様の支持度（画面の右上・ミッションの下） */
@@ -308,6 +311,7 @@ export class FieldScene extends Phaser.Scene {
     this.spotViews = [];
     // 宝物庫まわり（画面は試合ごとに使い回されるので、前の試合の印を消す）
     this.vaultView = null;
+    this.missionInfo = null;
     this.alarmShown = false;
     this.overSent = false;
     this.netGauge = null;
@@ -424,6 +428,7 @@ export class FieldScene extends Phaser.Scene {
       // スキャンのミニゲームのパネルはスティックの上に重なるので、パネルが先に受けとる
       if (this.scanView?.owns(over)) return;
       if (this.missionView?.owns(over)) return; // 施設のミニゲームのパネル
+      if (this.missionInfo && over.some((o) => this.missionInfo!.includes(o))) return; // ミッションの確認の画面
       if (this.yoriView?.owns(over)) return; // 依代の祠のパネル
       if (this.spyChoice && over.some((o) => this.spyChoice!.includes(o))) return; // スパイの「本当／ふり」の札
       if (this.pad.down(p)) return;
@@ -661,6 +666,7 @@ export class FieldScene extends Phaser.Scene {
     // ミニゲーム中は、スティックと右下のボタンを消す（パネルの操作だけに集中できるように。やめるのはパネルの「やめる」）
     const inGame = this.missionView !== null || this.yoriView !== null;
     if (inGame && this.pad.isVisible) this.pad.reset();
+    if ((inGame || me.frozen) && this.missionInfo) this.closeMissionInfo(); // ミニゲームが始まったら、確認の画面は閉じる
     this.pad.setVisible(!inGame);
     this.quitButton.setVisible(!inGame);
     this.scanButton?.setVisible(playing && !inGame);
@@ -1643,6 +1649,10 @@ export class FieldScene extends Phaser.Scene {
     this.gaugeText = this.hud(label(this, 246, 22, '', 13, INK).setStroke(INK, 0).setDepth(9500));
     this.timeText = this.hud(label(this, 306, 21, '', 17).setDepth(9500));
     this.missionText = this.hud(label(this, 180, 61, '', 13, INK).setStroke(INK, 0).setDepth(9500));
+    // ミッションの段をタップすると、くわしい確認の画面が開く（右はしの「？」が目印）
+    this.hud(this.add.circle(338, 63, 9, COLORS.uiHoney).setStrokeStyle(2, COLORS.ink).setDepth(9501));
+    this.hud(label(this, 338, 62, '？', 11, INK).setStroke(INK, 0).setDepth(9502));
+    this.hud(this.add.zone(180, 63, 336, 30).setInteractive().setDepth(9503)).on('pointerdown', () => this.toggleMissionInfo());
     // 王様の支持度：0 になると市民がストライキ
     this.hudSupport = -1;
     this.hud(panel(this, 290, 95, 128, 22, COLORS.uiPaper).setDepth(9450));
@@ -1654,6 +1664,60 @@ export class FieldScene extends Phaser.Scene {
     this.supportText = this.hud(label(this, 304, 94, '', 10, INK).setStroke(INK, 0).setDepth(9500));
     // 試合をやめてタイトルに戻るボタン（押すと確認が出る）
     this.quitButton = this.hud(textButton(this, 196, 95, 52, 24, 'やめる', COLORS.uiPaper, () => this.askQuit(), 11).setDepth(9500));
+  }
+
+  /** ミッションの確認の画面を開く・閉じる */
+  private toggleMissionInfo(): void {
+    if (this.missionInfo) this.closeMissionInfo();
+    else if (this.match.phase === 'play' && !this.missionView && !this.yoriView) this.openMissionInfo();
+  }
+
+  private closeMissionInfo(): void {
+    for (const o of this.missionInfo ?? []) o.destroy();
+    this.missionInfo = null;
+  }
+
+  /**
+   * 自分のミッションを確かめる画面：3つのミッションの名前・相性・スイッチの進み具合・足りない資源と、
+   * まだ入っていないスイッチの場所（小さな地図）。開いているあいだも試合は進む（イタズラされるかも）
+   */
+  private openMissionInfo(): void {
+    const parts: Phaser.GameObjects.GameObject[] = [];
+    let depth = 9800;
+    const add = <T extends Phaser.GameObjects.GameObject>(o: T): T => {
+      (o as unknown as { setDepth?: (d: number) => void }).setDepth?.(depth++);
+      parts.push(this.hud(o));
+      return o;
+    };
+    const x = SCREEN.width / 2;
+    const me = this.player;
+    add(panel(this, x, 352, 330, 476, COLORS.uiPaper).setInteractive());
+    add(label(this, x, 132, 'きみのミッション', 17, INK).setStroke(INK, 0));
+    add(label(this, x, 152, `いまの体：${ELEMENT_NAMES[me.element]}（相性は 体のエレメントで変わる）`, 11, INK).setStroke(INK, 0));
+    const aff: Record<string, string> = { good: '得意', plain: '普通', weak: '苦手', never: '不可（依代の祠で乗りうつろう）' };
+    const missions = myMissions(me, this.board);
+    missions.forEach((m, i) => {
+      const t = missionType(m.type);
+      const y = 178 + i * 38;
+      const done = missionComplete(m);
+      add(this.add.circle(36, y + 6, 9, ELEMENT_COLOR[t.element]).setStrokeStyle(2, COLORS.ink));
+      add(this.add.text(52, y - 4, `${t.name}（${ELEMENT_NAMES[t.element]}）`, { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: INK }));
+      const short = done ? 0 : materialsShort(me, m);
+      const state = done ? '完了！' : `スイッチ ${spotsOn(m)}/${m.spots.length}・${aff[missionAffinity(me, m)]}${short > 0 ? `・${RESOURCE_NAMES[t.element]}があと${short}個` : ''}`;
+      add(this.add.text(52, y + 13, state, { fontFamily: 'sans-serif', fontSize: '11px', color: done ? '#2b6b2f' : INK }));
+    });
+    // まだ入っていないスイッチの場所（エレメントの色のピン）と、自分の場所（金のピン）
+    const mapW = 130;
+    const map = new MeetingMap(this, x - mapW / 2, 296, mapW, false, []);
+    add(map.container);
+    for (const m of missions) {
+      if (missionComplete(m)) continue;
+      for (const s of m.spots) if (!s.on) map.addMark(s, ELEMENT_COLOR[missionType(m.type).element], '');
+    }
+    map.addMark(me.walker.pos, COLORS.uiHoney, '');
+    add(label(this, x, 296 + map.height + 10, '金のピン：きみ　色のピン：まだのスイッチ', 10, INK).setStroke(INK, 0));
+    add(textButton(this, x, 296 + map.height + 34, 120, 32, 'とじる', COLORS.uiHoney, () => this.closeMissionInfo(), 14));
+    this.missionInfo = parts;
   }
 
   /** 「やめる」：本当にやめるか確かめる。確認のあいだも試合は進む */
@@ -1725,7 +1789,7 @@ export class FieldScene extends Phaser.Scene {
     if (me.frozen) {
       if (this.hudMissionText !== 'frozen') {
         this.hudMissionText = 'frozen';
-        this.missionText.setText('きみは 置物にされた… 土の精になって 見守ろう');
+        this.missionText.setText(me.departed ? 'きみは 旅に出た… 空から 見守ろう' : 'きみは 置物にされた… 土の精になって 見守ろう');
         this.drawFacilityMarks();
       }
       return;
@@ -1784,6 +1848,7 @@ export class FieldScene extends Phaser.Scene {
 
   /** 会議を始める：採取場を止めて、会議の画面を重ねる */
   private beginMeeting(caller: Pawn, reason: 'report' | 'emergency', body: Harvester | null): void {
+    this.closeMissionInfo();
     // 親機：みんなに「会議が始まった」を知らせる（子機は、その知らせでここに来る）
     if (this.net && this.isSim()) {
       this.netSend('all', { k: 'meet', c: this.seatOf(caller.h), r: reason, b: body ? this.seatOf(body) : -1 } satisfies MeetWire);
