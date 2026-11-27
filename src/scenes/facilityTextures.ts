@@ -51,7 +51,15 @@ function paint(ctx: CanvasRenderingContext2D, path: string, fill: number, edge =
   const shape = new Path2D(path);
   ctx.fillStyle = color(fill);
   ctx.fill(shape);
-  if (edge) mark(ctx, shape, PIGMENTS.ink, edge * 1.18);
+  if (fill !== PIGMENTS.ink) {
+    const wash = ctx.createLinearGradient(5, 12, 67, 70);
+    wash.addColorStop(0, '#fff5cf88');
+    wash.addColorStop(0.48, '#fff5cf12');
+    wash.addColorStop(1, '#42304766');
+    ctx.fillStyle = wash;
+    ctx.fill(shape);
+  }
+  if (edge) mark(ctx, shape, PIGMENTS.ink, edge * 0.95);
 }
 
 function drawShadow(ctx: CanvasRenderingContext2D): void {
@@ -74,6 +82,7 @@ function drawKiln(ctx: CanvasRenderingContext2D): void {
   mark(ctx, 'M13 53 Q18 39 30 39 M38 40 L43 43 M11 66 L16 68 M47 49 L49 53', PIGMENTS.clayLight, 2);
   paint(ctx, 'M17 69 L19 56 Q22 47 32 47 Q42 47 45 57 L48 70 Q32 74 17 69 Z', PIGMENTS.clayLight, 2);
   paint(ctx, 'M22 68 L24 57 Q26 51 32 51 Q39 51 41 58 L43 68 Q32 71 22 68 Z', PIGMENTS.ink);
+  mark(ctx, 'M13 56 Q15 54 16 52 M16 60 L18 61 M47 64 L50 65 M50 69 L54 68 M30 39 L32 38', PIGMENTS.clayLight, 0.65);
   mark(ctx, 'M17 49 Q21 46 23 46 M35 40 L36 42 M47 55 L49 59 M11 62 L14 63', PIGMENTS.terracottaDark, 0.8);
   paint(ctx, 'M25 67 Q22 62 28 58 L29 62 Q33 57 32 54 Q39 58 37 62 L40 60 Q43 65 39 68 Z', PIGMENTS.landmarkVermilionLight);
   paint(ctx, 'M29 68 Q27 65 32 63 L34 60 Q35 64 38 66 L37 68 Z', PIGMENTS.uiHoney);
@@ -101,6 +110,7 @@ function drawFoundry(ctx: CanvasRenderingContext2D): void {
 function drawWorkshop(ctx: CanvasRenderingContext2D): void {
   paint(ctx, 'M11 28 L57 25 L59 70 L11 70 Z', PIGMENTS.landmarkWoodShade, 2.5);
   paint(ctx, 'M13 33 H21 L20 70 H11 Z M48 30 H57 L59 69 H50 Z', PIGMENTS.landmarkWood, 2.2);
+  mark(ctx, 'M15 38 Q17 44 15 51 M18 43 L17 55 M51 39 Q54 47 53 51', PIGMENTS.clayLight, 0.65);
   mark(ctx, 'M24 37 L46 35 M24 46 L46 44', PIGMENTS.landmarkWood, 2);
   paint(ctx, 'M5 32 L23 15 L53 15 L66 27 L64 34 L6 38 Z', PIGMENTS.partStrawShade, 2.6);
   paint(ctx, 'M5 32 L23 15 L53 15 L63 27 Z', PIGMENTS.partStraw, 2.3);
@@ -115,6 +125,7 @@ function drawWorkshop(ctx: CanvasRenderingContext2D): void {
   paint(ctx, 'M11 59 H18 L16 75 H10 Z M44 58 H51 L53 75 H46 Z', PIGMENTS.landmarkWoodShade, 2.2);
   paint(ctx, 'M8 55 L17 49 L47 49 L55 54 L54 61 L8 63 Z', PIGMENTS.landmarkWood, 2.4);
   paint(ctx, 'M8 55 L17 49 L47 49 L55 54 L8 57 Z', PIGMENTS.clayLight, 1.8);
+  mark(ctx, 'M13 57 Q24 55 32 56 T52 55 M11 60 Q17 60 23 58 M35 59 Q43 57 49 58', PIGMENTS.landmarkWoodShade, 0.65);
   mark(ctx, 'M18 24 L22 20 M28 22 L31 19 M44 24 L45 19 M51 56 L46 57 M12 59 L23 59', PIGMENTS.partIvoryShade, 0.8);
   // のこぎりの歯と、かんなの鉄刃。
   paint(ctx, 'M19 46 L39 43 L38 48 L35 47 L34 49 L31 48 L30 50 L27 49 L26 51 L21 51 Z', PIGMENTS.stoneLight, 1.5);
@@ -137,6 +148,9 @@ function drawShrine(ctx: CanvasRenderingContext2D): void {
   paint(ctx, 'M10 60 H24 V68 H10 Z M53 60 H67 V68 H53 Z', PIGMENTS.landmarkIron, 2);
   paint(ctx, 'M8 19 L68 19 L67 28 L9 28 Z', PIGMENTS.landmarkVermilion, 2.6);
   mark(ctx, 'M13 23 H29 M50 23 H63 M16 33 V51 M59 34 V49', PIGMENTS.landmarkVermilionLight, 1.7);
+
+  mark(ctx, 'M17 26 Q24 24 34 25 M41 22 Q47 24 53 22 M18 42 Q20 47 17 54 M61 35 Q59 44 62 53', PIGMENTS.landmarkVermilionLight, 0.7);
+  mark(ctx, 'M16 72 L22 73 L26 72 M48 73 L52 72 L57 73', PIGMENTS.stoneDark, 0.75);
 
   // 紅白の綱を手前に下ろし、奥の祠が右側から見えるようにする。
   mark(ctx, 'M34 26 V33', PIGMENTS.ink, 3);

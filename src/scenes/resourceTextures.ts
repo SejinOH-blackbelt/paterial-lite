@@ -68,13 +68,24 @@ function piece(
   ctx.fill(shape);
   ctx.save();
   ctx.clip(shape);
-  ctx.fillStyle = color(dark);
+  const shadow = ctx.createLinearGradient(6, 13, 38, 53);
+  shadow.addColorStop(0, color(dark) + '12');
+  shadow.addColorStop(1, color(dark));
+  ctx.fillStyle = shadow;
+  ctx.fill(shape);
+  ctx.globalAlpha = 0.48;
   ctx.fill(new Path2D(shade));
-  ctx.fillStyle = color(light);
+  ctx.globalAlpha = 1;
+  const sheen = ctx.createRadialGradient(15, 18, 0, 21, 27, 27);
+  sheen.addColorStop(0, color(light));
+  sheen.addColorStop(1, color(light) + '16');
+  ctx.fillStyle = sheen;
+  ctx.fill(shape);
+  ctx.fillStyle = color(light) + 'ac';
   ctx.fill(new Path2D(highlight));
   ctx.restore();
   ctx.strokeStyle = '#252621';
-  ctx.lineWidth = 2.3;
+  ctx.lineWidth = 1.7;
   ctx.stroke(shape);
 }
 
@@ -95,6 +106,10 @@ export function makeResourceTextures(scene: Phaser.Scene): void {
       'M 10 45 Q 13 38 19 41 Q 14 41 10 45 Z');
     ctx.strokeStyle = color(clay[1]);
     ctx.lineWidth = 0.8;
+    for (let i = 0; i < 15; i++) {
+      ctx.fillStyle = i % 2 ? '#f4c69a85' : '#743d375e';
+      ctx.fillRect(14 + i * 11 % 28, 41 + i * 7 % 5, 0.6 + i % 3 * 0.25, 0.55);
+    }
     ctx.stroke(new Path2D('M 30 29 L 29 33 L 32 35 L 31 38 M 29 33 L 26 34 M 40 40 Q 44 39 47 42'));
   });
 
@@ -188,6 +203,9 @@ export function makeResourceTextures(scene: Phaser.Scene): void {
         clay, 'M 5 35 Q 28 46 51 35 L 51 52 H 5 Z', 'M 7 33 Q 15 23 31 25 L 17 32 Z');
       piece(ctx, 'M 11 33 Q 16 27 28 27 Q 42 27 45 34 Q 41 40 28 40 Q 16 40 11 33 Z',
         [0x34333e, 0x252621, 0x63575a], 'M 10 26 H 46 V 34 Q 26 29 10 36 Z', 'M 17 37 Q 28 40 40 35 L 35 40 H 20 Z');
+      ctx.strokeStyle = '#f1bc8c9a';
+      ctx.lineWidth = 0.9;
+      ctx.stroke(new Path2D('M8 31 Q12 26 21 25 M11 41 Q19 46 27 46 M32 47 Q38 47 44 44'));
       if (empty) {
         piece(ctx, 'M 15 35 L 20 31 L 24 32 L 28 29 L 34 32 L 38 31 L 42 35 Q 28 41 15 35 Z',
           [0x9b9290, 0x67616a, 0xd2c6b8], 'M 16 35 Q 30 37 42 32 V 41 H 15 Z', 'M 22 33 L 28 30 L 34 33 L 27 34 Z');
@@ -196,6 +214,12 @@ export function makeResourceTextures(scene: Phaser.Scene): void {
           [0xed6331, 0xb83d32, 0xffca57], 'M 32 12 Q 45 29 28 35 H 46 V 12 Z', 'M 22 33 Q 20 28 26 24 Q 29 21 28 17 Q 38 28 32 34 Z');
         piece(ctx, 'M 14 34 L 19 29 L 26 31 L 31 29 L 39 30 L 43 35 Q 30 41 14 34 Z',
           [0xc34832, 0x533239, 0xff9144], 'M 13 34 L 27 36 L 35 33 L 44 34 V 41 H 13 Z', 'M 18 34 L 20 31 L 25 33 L 29 32 L 27 35 Z M 33 32 H 38 L 40 34 L 35 35 Z');
+        ctx.fillStyle = '#ffe08b';
+        for (const [x, y, r] of [[14, 17, 0.8], [36, 11, 0.85], [44, 14, 0.65]]) {
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, 2 * Math.PI);
+          ctx.fill();
+        }
       }
     });
 

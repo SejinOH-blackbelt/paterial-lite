@@ -29,13 +29,16 @@ export function makeElementPictures(scene: Phaser.Scene): void {
         c.fill();
         c.beginPath();
         c.arc(32, pressed ? 33 : 31, 27, 0, Math.PI * 2);
-        c.fillStyle = `#${ELEMENT_COLOR[element].toString(16).padStart(6, '0')}`;
+        const pigment = `#${ELEMENT_COLOR[element].toString(16).padStart(6, '0')}`;
+        const glaze = c.createRadialGradient(22, 18, 2, 32, 32, 31);
+        glaze.addColorStop(0, pressed ? '#fff1c5' : pigment + 'b0');
+        glaze.addColorStop(0.52, pigment);
+        glaze.addColorStop(1, '#35314e');
+        c.fillStyle = '#f9dfb0';
         c.fill();
-        if (pressed) {
-          c.fillStyle = '#fff4ce55';
-          c.fill();
-        }
-        c.lineWidth = 2.5;
+        c.fillStyle = glaze;
+        c.fill();
+        c.lineWidth = 1.85;
         c.strokeStyle = ink;
         c.stroke();
         c.beginPath();
@@ -43,17 +46,26 @@ export function makeElementPictures(scene: Phaser.Scene): void {
         c.strokeStyle = '#fff3cfaa';
         c.lineWidth = 1.5;
         c.stroke();
-        const [outline, pigment, highlight] = motifs[element];
+        const [outline, glyphColor, highlight] = motifs[element];
         const shape = new Path2D(outline);
         c.translate(0, pressed ? 2 : 0);
         c.lineJoin = 'round';
-        c.fillStyle = pigment;
+        c.fillStyle = glyphColor;
+        c.fill(shape);
+        const relief = c.createLinearGradient(18, 12, 48, 53);
+        relief.addColorStop(0, '#fff7d8d0');
+        relief.addColorStop(0.55, '#fff7d800');
+        relief.addColorStop(1, '#8b533673');
+        c.fillStyle = relief;
         c.fill(shape);
         c.strokeStyle = ink;
-        c.lineWidth = 2.5;
+        c.lineWidth = 1.95;
         c.stroke(shape);
         c.fillStyle = '#fff4d4';
         c.fill(new Path2D(highlight));
+        c.strokeStyle = '#fff1c982';
+        c.lineWidth = 0.75;
+        c.stroke(new Path2D('M15 44 Q18 50 24 52 M27 54 L30 54 M43 52 Q48 49 51 44'));
       });
     }
   }

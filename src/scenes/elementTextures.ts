@@ -40,16 +40,16 @@ function partPainter(scene: Phaser.Scene) {
         const shape = new Path2D(path);
         ctx.fillStyle = color(tint);
         ctx.fill(shape);
-        const wash = ctx.createLinearGradient(0, 0, w * 0.66, h);
-        wash.addColorStop(0, '#fff6dc77');
+        const wash = ctx.createRadialGradient(w * 0.31, h * 0.2, 0, w * 0.42, h * 0.4, Math.max(w, h) * 0.7);
+        wash.addColorStop(0, '#fff6dca0');
         wash.addColorStop(0.65, '#fff6dc0c');
-        wash.addColorStop(1, '#654c354f');
+        wash.addColorStop(1, '#4f355665');
         ctx.fillStyle = wash;
         ctx.fill(shape);
         if (edge) {
           ctx.save();
           ctx.globalAlpha = 0.94;
-          line(path, C.pateOutline, edge);
+          line(path, C.pateOutline, edge * 0.86);
           ctx.restore();
         }
       }, line);
@@ -76,7 +76,7 @@ export function makeStrikeTexture(scene: Phaser.Scene): void {
 
 function paintBody(ctx: CanvasRenderingContext2D, element: Element): void {
   const [light, middle, dark] = palettes[element];
-  const gradient = ctx.createLinearGradient(9, 3, 30, 42);
+  const gradient = ctx.createRadialGradient(11, 6, 1, 16, 14, 32);
   gradient.addColorStop(0, color(light));
   gradient.addColorStop(0.57, color(middle));
   if (element !== 'fire') gradient.addColorStop(1, color(dark));
@@ -95,15 +95,18 @@ function paintBody(ctx: CanvasRenderingContext2D, element: Element): void {
     ctx.strokeStyle = '#ffbc50';
     ctx.lineWidth = 1.2;
     ctx.stroke(lava);
+    ctx.strokeStyle = '#fff0acaa';
+    ctx.lineWidth = 0.75;
+    ctx.stroke(new Path2D('M9 10 Q15 8 20 10 M24 14 Q29 16 31 20 M18 29 Q17 31 16 32'));
     return;
   }
 
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, PATE_SIZE.w, PATE_SIZE.h);
   const marks = {
-    water: ['#ddffff', 1.4, 'M11 8 Q13 5 17 4 M20 4 H21 M29 8 Q34 13 34 20 M6 27 Q5 31 7 33'],
+    water: ['#ddffff', 1.4, 'M11 8 Q13 5 17 4 M20 4 H21 M29 8 Q34 13 34 20 M6 27 Q5 31 7 33 M12 31 Q18 34 23 31 M16 36 Q19 37 21 36'],
     earth: ['#775137', 0.8, 'M14 3 L13 6 L15 9 M13 6 L9 8 M7 25 L10 28 L9 32 L13 35 L14 39 M9 32 L6 33 M32 25 L29 29 L30 32 M29 29 L26 28'],
-    wind: ['#ffffff', 2, 'M9 12 Q11 6 18 5 M25 6 Q28 7 30 10'],
+    wind: ['#ffffff', 2, 'M9 12 Q11 6 18 5 M25 6 Q28 7 30 10 M9 30 Q16 26 23 29 Q28 31 30 28 M15 34 Q20 32 25 34'],
     thunder: ['#ffde65', 1.4, 'M3 16 L8 21 L6 25 L12 29 L10 34 L15 39 M34 17 L29 25 L33 26 L25 33 L27 36 L20 43 M32 6 L28 9 L30 12'],
   } as const;
   const [ink, width, path] = marks[element];

@@ -56,27 +56,26 @@ function clayColor(color: number): string {
 }
 
 function fillClay(ctx: CanvasRenderingContext2D, shape: Path2D, color: number, w: number, h: number): void {
-  const wash = ctx.createLinearGradient(0, 0, w, h);
+  const wash = ctx.createRadialGradient(w * 0.32, h * 0.24, 0, w * 0.4, h * 0.36, h * 0.76);
   const base = clayColor(color);
   const lighten = (shift: number) => Math.round(((color >> shift) & 0xff) * 0.72 + 0xff * 0.28);
   const light = color === COLORS.terracotta ? COLORS.clayLight : (lighten(16) << 16) | (lighten(8) << 8) | lighten(0);
   wash.addColorStop(0, clayColor(light));
-  wash.addColorStop(0.72, base);
-  wash.addColorStop(1, base);
+  const darken = (shift: number) => Math.round(((color >> shift) & 0xff) * 0.69);
+  const dark = (darken(16) << 16) | (darken(8) << 8) | darken(0);
+  wash.addColorStop(0.54, base);
+  wash.addColorStop(1, clayColor(dark));
   ctx.fillStyle = wash;
   ctx.fill(shape);
 }
 
 function outlineClay(ctx: CanvasRenderingContext2D, shape: Path2D): void {
-  ctx.strokeStyle = clayColor(COLORS.pateOutline);
-  ctx.lineWidth = 1.45;
-  ctx.save();
-  ctx.globalAlpha = 0.9;
+  const ink = ctx.createLinearGradient(4, 1, 31, 39);
+  ink.addColorStop(0, '#614235');
+  ink.addColorStop(1, clayColor(COLORS.pateOutline));
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 1.25;
   ctx.stroke(shape);
-  ctx.lineWidth = 0.55;
-  ctx.globalAlpha = 0.55;
-  ctx.stroke(shape);
-  ctx.restore();
 }
 
 export function drawPateBody(
@@ -101,15 +100,6 @@ export function drawPateBody(
     if (paint) paint(ctx);
     else {
       fillClay(ctx, body, COLORS.terracotta, PATE_SIZE.w, PATE_SIZE.h);
-      // 右側から下腹へ回り込む影。
-      ctx.fillStyle = clayColor(COLORS.terracottaDark);
-      ctx.globalAlpha = 0.42;
-      ctx.fill(new Path2D(
-        'M 26 1 C 36 8 37 24 33 31 C 29.6 39 14 42 4 33 ' +
-        'L 2 44 L 39 44 L 39 1 Z',
-      ));
-
-      ctx.globalAlpha = 0.92;
       ctx.strokeStyle = clayColor(COLORS.pateCrack);
       ctx.lineWidth = 0.55;
       ctx.stroke(new Path2D(view === 'up'
@@ -130,11 +120,22 @@ export function drawPateBody(
         'M 8.2 27.8 L 8.6 28.5 M 9.4 31 L 9.8 31.4 M 32.6 21.8 L 32.3 22.5',
       ));
     }
-    // 色違いにも同じ紙の肌理を重ね、顔の穴はその上から描く。
+    // 窯で焼いた丸みに光を入れ、顔の穴の周りは読みやすく空ける。
+    const sheen = ctx.createLinearGradient(7, 4, 22, 24);
+    sheen.addColorStop(0, '#fff4d798');
+    sheen.addColorStop(1, '#fff4d700');
+    ctx.strokeStyle = sheen;
+    ctx.lineWidth = 1.35;
+    ctx.stroke(new Path2D('M8 11 Q11 4 16 3 M19 3 L21 3.2 M6 25 Q5 29 6.6 33'));
+    ctx.strokeStyle = '#ffd1a950';
+    ctx.lineWidth = 0.65;
+    ctx.stroke(new Path2D('M15 40 Q25 42 32 35'));
+
+    // 素焼きの細かい粒を、明暗を変えて散らす。
     const rand = seeded(19);
-    for (let i = 0; i < 150; i++) {
-      ctx.fillStyle = i % 2 ? '#fff3d638' : '#4e35282b';
-      ctx.fillRect(rand() * PATE_SIZE.w, rand() * PATE_SIZE.h, 0.45 + rand() * 0.75, 0.55);
+    for (let i = 0; i < 110; i++) {
+      ctx.fillStyle = i % 2 ? '#fff3d64a' : '#4e35283b';
+      ctx.fillRect(rand() * PATE_SIZE.w, rand() * PATE_SIZE.h, 0.35 + rand() * 0.7, 0.43);
     }
     ctx.restore();
     outlineClay(ctx, body);
@@ -186,6 +187,9 @@ export function drawPateLimbs(
     ctx.globalAlpha = color === COLORS.terracotta ? 0.48 : 0.18;
     ctx.fill(new Path2D('M 2 2 C 0.6 7.2 2.4 16.3 5.2 15.7 Q 7 15.2 7.7 12.8 C 5.1 16.4 3.2 8 2 2 Z'));
     ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#fff2d780';
+    ctx.lineWidth = 0.75;
+    ctx.stroke(new Path2D('M3.5 3.5 Q5.7 3 6.4 6.2 M6.6 7.8 L6.7 9'));
     outlineClay(ctx, arm);
   });
 
@@ -196,6 +200,9 @@ export function drawPateLimbs(
     ctx.globalAlpha = color === COLORS.terracotta ? 0.48 : 0.18;
     ctx.fill(new Path2D('M 1.2 2 Q 6 -0.3 10.8 2 L 10.4 6.9 Q 6 9 1.6 6.9 Z'));
     ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#fff2d780';
+    ctx.lineWidth = 0.75;
+    ctx.stroke(new Path2D('M3.4 8.2 Q5.6 10.7 8.3 8.7'));
     outlineClay(ctx, leg);
   });
 }
@@ -238,7 +245,7 @@ function printLine(ctx: CanvasRenderingContext2D, path: string, ink: string, wid
   ctx.stroke(new Path2D(path));
 }
 
-function printShape(ctx: CanvasRenderingContext2D, path: string, fill: string, edge = 0): void {
+function printShape(ctx: CanvasRenderingContext2D, path: string, fill: string | CanvasGradient, edge = 0): void {
   const shape = new Path2D(path);
   ctx.fillStyle = fill;
   ctx.fill(shape);
@@ -262,7 +269,11 @@ export function drawGround(scene: Phaser.Scene, width: number, height: number): 
 
   bake('ground-base', -1000, (ctx) => {
     const rand = seeded(7);
-    ctx.fillStyle = '#cf9d52';
+    const sand = ctx.createLinearGradient(0, FIELD.top, width, height);
+    sand.addColorStop(0, '#daa969');
+    sand.addColorStop(0.47, '#ebc588');
+    sand.addColorStop(1, '#b9784d');
+    ctx.fillStyle = sand;
     ctx.fillRect(0, 0, width, height);
 
     // 砂の山吹色に、ぼかした黄土や茶のにじみを刷り重ねる。
@@ -295,8 +306,15 @@ export function drawGround(scene: Phaser.Scene, width: number, height: number): 
     sky.addColorStop(1, '#cf9d52');
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, 720, FIELD.top);
-    printShape(ctx, 'M0 53 L60 38 L91 19 L113 26 L154 7 L169 15 L181 12 L225 38 L279 53 L332 46 L377 26 L404 36 L464 50 L520 37 L551 15 L569 22 L597 9 L619 21 L650 46 L720 46 V58 H0 Z', '#3f6176');
-    printShape(ctx, 'M0 49 L42 42 L65 29 L84 35 L94 32 L131 46 L184 55 L220 55 L264 37 L283 29 L329 48 L377 54 L432 52 L477 32 L496 21 L511 26 L521 23 L558 45 L590 51 L631 43 L653 28 L678 35 L720 48 V64 L655 59 L570 65 L520 58 L459 64 L400 60 L303 60 L260 65 L209 60 L148 64 L83 57 L0 65 Z', '#28475f');
+    const haze = ctx.createLinearGradient(0, 8, 0, 60);
+    haze.addColorStop(0, '#757591');
+    haze.addColorStop(1, '#a2a6ae');
+    const ridge = ctx.createLinearGradient(0, 20, 0, 65);
+    ridge.addColorStop(0, '#2e516c');
+    ridge.addColorStop(1, '#63848e');
+    printLine(ctx, 'M240 20 Q274 17 304 20 H351 M421 16 H467 Q480 14 492 16', '#ffe1aa8c', 1.3);
+    printShape(ctx, 'M0 53 L60 38 L91 19 L113 26 L154 7 L169 15 L181 12 L225 38 L279 53 L332 46 L377 26 L404 36 L464 50 L520 37 L551 15 L569 22 L597 9 L619 21 L650 46 L720 46 V58 H0 Z', haze);
+    printShape(ctx, 'M0 49 L42 42 L65 29 L84 35 L94 32 L131 46 L184 55 L220 55 L264 37 L283 29 L329 48 L377 54 L432 52 L477 32 L496 21 L511 26 L521 23 L558 45 L590 51 L631 43 L653 28 L678 35 L720 48 V64 L655 59 L570 65 L520 58 L459 64 L400 60 L303 60 L260 65 L209 60 L148 64 L83 57 L0 65 Z', ridge);
     printShape(ctx, 'M0 58 L52 50 L68 37 L64 49 L80 51 L115 57 L148 64 L83 57 L0 65 Z M218 59 L268 40 L283 29 L272 45 L291 53 L313 60 L260 65 Z M445 61 L470 48 L496 21 L490 40 L481 50 L513 58 L459 64 Z M605 58 L641 44 L653 28 L650 45 L675 55 L690 61 L655 59 Z', '#527786');
     ctx.restore();
 
@@ -315,10 +333,17 @@ export function drawGround(scene: Phaser.Scene, width: number, height: number): 
         ctx.scale(0.87 + rand() * 0.14, 0.92 + rand() * 0.15);
         ctx.fillStyle = stoneColors[Math.floor(rand() * stoneColors.length)];
         ctx.fill(stone);
-        ctx.fillStyle = '#e9dcc16e';
+        const relief = ctx.createLinearGradient(-8, -8, 5, 8);
+        relief.addColorStop(0, '#fff4d898');
+        relief.addColorStop(0.46, '#fff4d810');
+        relief.addColorStop(1, '#594a4669');
+        ctx.fillStyle = relief;
+        ctx.fill(stone);
+        ctx.fillStyle = '#fff4d866';
         ctx.fill(stoneFace);
+        printLine(ctx, 'M-12 2 L-8 1 L-5 2 M3 -2 L6 -1 L11 -2', '#635b524b', 0.65);
         ctx.strokeStyle = '#494034';
-        ctx.lineWidth = 1.55;
+        ctx.lineWidth = 1.15;
         ctx.stroke(stone);
         ctx.restore();
       }

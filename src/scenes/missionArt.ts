@@ -68,22 +68,50 @@ function line(c: Brush, d: string, pigment = ink, width = 2): void {
   c.stroke(new Path2D(d));
 }
 
-function paint(c: Brush, d: string, pigment: string, edge = 2.5): void {
-  const path = new Path2D(d);
+function wash(c: Brush, path: Path2D, pigment: string, light: CanvasGradient): void {
   c.fillStyle = pigment;
   c.fill(path);
-  if (edge) line(c, d, ink, edge);
+  c.fillStyle = light;
+  c.fill(path);
+}
+
+function lighting(c: Brush, x: number, y: number, w: number, h: number): CanvasGradient {
+  const light = c.createLinearGradient(x, y, x + w, y + h);
+  light.addColorStop(0, '#fff6d994');
+  light.addColorStop(0.36, '#fff6d926');
+  light.addColorStop(0.58, '#fff6d900');
+  light.addColorStop(1, '#372c5266');
+  return light;
+}
+
+function paint(c: Brush, d: string, pigment: string | CanvasGradient, edge = 2.5): void {
+  const path = new Path2D(d);
+  if (typeof pigment === 'string' && pigment !== ink && edge) {
+    wash(c, path, pigment, lighting(c, 3, 4, 64, 64));
+  } else {
+    c.fillStyle = pigment;
+    c.fill(path);
+  }
+  if (edge) {
+    c.strokeStyle = ink;
+    c.lineWidth = edge * 0.86;
+    c.stroke(path);
+  }
 }
 
 function oval(c: Brush, x: number, y: number, rx: number, ry: number, pigment: string, edge = 2): void {
-  c.beginPath();
-  c.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-  c.fillStyle = pigment;
-  c.fill();
+  const path = new Path2D();
+  path.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  if (edge && pigment !== ink) {
+    wash(c, path, pigment, lighting(c, x - rx, y - ry, rx * 1.6, ry * 1.8));
+  } else {
+    c.fillStyle = pigment;
+    c.fill(path);
+  }
   if (edge) {
     c.strokeStyle = ink;
-    c.lineWidth = edge;
-    c.stroke();
+    c.lineWidth = edge * 0.86;
+    c.stroke(path);
   }
 }
 
@@ -105,6 +133,7 @@ function waves(c: Brush, pigment: string, foam: string): void {
 
 function stove(c: Brush): void {
   paint(c, 'M9 71 Q11 31 24 23 Q40 14 57 24 Q68 32 72 71Z', '#a84f37', 4);
+  line(c, 'M13 61 Q18 35 26 29 M28 27 L33 25 M61 59 L63 65', '#f7be8d', 0.9);
   paint(c, 'M14 55 Q20 22 38 23 Q24 32 21 61Z', '#e39365', 0);
   paint(c, 'M23 71 V53 Q23 37 40 37 Q57 37 57 53 V71Z', '#332724', 3);
   line(c, 'M17 50 L24 52 M23 35 L30 41 M39 25 V36 M57 32 L52 41 M58 53 L66 49 M59 63 H69', '#743b31', 2);
@@ -124,6 +153,7 @@ function flame(c: Brush, phase: number): void {
 function dial(c: Brush): void {
   oval(c, 40, 40, 34, 34, '#b27b49', 4);
   oval(c, 40, 40, 28, 28, paper);
+  line(c, 'M13 36 Q17 15 37 10 M44 10 L48 11 M59 61 L63 56', '#fff0bc', 1.35);
   c.save();
   c.translate(40, 40);
   c.beginPath();
@@ -171,7 +201,9 @@ function fish(c: Brush, kind: keyof typeof MISSION_PART_TEX.water.fish, phase: n
     : 'M20 30 Q31 13 51 20 Q68 26 58 34 Q36 45 20 30Z', pigment);
   paint(c, 'M39 28 L33 37 Q42 37 44 31Z', paper, 1.4);
   line(c, 'M28 27 Q32 29 28 32 M33 23 Q36 25 34 27 M48 24 Q45 30 49 34', '#986047', 1.4);
+  line(c, 'M30 23 Q36 19 43 20 M31 32 Q34 34 31 36 M36 26 Q39 27 37 29', '#fff0ce9f', 0.85);
   oval(c, 53, 27, 2, 2, ink, 0);
+  oval(c, 52.5, 26.4, 0.65, 0.65, paper, 0);
 }
 
 function splash(c: Brush): void {
@@ -186,6 +218,7 @@ function wheel(c: Brush): void {
   paint(c, 'M22 46 H36 V62 L20 58Z', '#bc875f', 0);
   oval(c, 40, 34, 35, 14, '#c69a6b', 3.5);
   oval(c, 40, 33, 26, 8, '#e5be86', 1.5);
+  line(c, 'M14 33 Q22 23 37 23 M45 26 Q57 27 62 32 M22 38 Q34 42 49 39', '#ffedbd', 0.9);
   line(c, 'M14 42 Q40 54 66 42 M20 57 L29 60 M54 56 L62 53', '#603f33', 2);
 }
 
@@ -200,6 +233,9 @@ function clay(c: Brush, stage: number): void {
   if (stage >= 2) {
     oval(c, 40, stage === 3 ? 22 : 44, stage === 3 ? 13 : 28, stage === 3 ? 5 : 10, '#6c453a', 2.5);
   }
+  line(c, stage === 3
+    ? 'M19 49 Q24 43 30 42 M18 55 L18 57 M30 65 Q40 68 50 65'
+    : 'M18 54 Q24 47 31 47 M35 47 L38 47 M36 67 Q45 68 53 65', '#ffddb398', 0.95);
   line(c, stage === 3
     ? 'M14 52 Q22 45 30 52 T47 52 T65 51 M20 60 Q40 68 61 60'
     : 'M19 56 Q28 51 37 54 M43 61 Q55 61 61 56', '#e3b38a', 2.6);
@@ -230,6 +266,7 @@ function lantern(c: Brush, lit: boolean): void {
   paint(c, 'M30 41 H50 L53 69 L66 73 L69 78 H11 L14 73 L27 69Z', '#708597', 3);
   paint(c, 'M18 28 H62 L59 53 H21Z', lit ? gold : color('thunder'), 3);
   if (lit) paint(c, 'M32 47 Q28 42 40 32 Q51 44 45 48Z', paper, 0);
+  if (lit) line(c, 'M22 33 Q29 29 37 31 M44 31 L55 32', '#fff8d6', 0.85);
   line(c, 'M29 30 L31 51 M51 30 L49 51 M40 31 V52', '#403e37', 2.4);
   paint(c, 'M10 25 Q30 21 40 11 Q50 21 70 25 L65 30 H15Z', '#839dad', 3.5);
   line(c, 'M21 25 Q34 22 39 16 M31 73 L34 58 M11 54 H69', '#bbcbca', 2);
@@ -237,8 +274,12 @@ function lantern(c: Brush, lit: boolean): void {
 }
 
 function glow(c: Brush): void {
-  oval(c, 40, 40, 37, 37, 'rgba(255,213,117,0.24)', 0);
-  oval(c, 40, 40, 28, 28, 'rgba(255,213,117,0.28)', 0);
+  const halo = c.createRadialGradient(40, 40, 4, 40, 40, 37);
+  halo.addColorStop(0, '#fff1b9c0');
+  halo.addColorStop(0.5, '#ffce7255');
+  halo.addColorStop(1, '#ffce7200');
+  c.fillStyle = halo;
+  c.fillRect(3, 3, 74, 74);
   paint(c, 'M40 14 Q43 34 64 40 Q43 42 40 66 Q36 44 16 40 Q37 36 40 14Z', gold, 0);
   oval(c, 40, 40, 8, 8, paper, 0);
 }
@@ -313,7 +354,11 @@ const sky: Record<ElementId, string> = {
 };
 
 function landscape(c: Brush, element: ElementId): void {
-  c.fillStyle = sky[element];
+  const daylight = c.createLinearGradient(0, 0, 0, 235);
+  daylight.addColorStop(0, element === 'thunder' ? '#1a213b' : sky[element]);
+  daylight.addColorStop(0.54, sky[element]);
+  daylight.addColorStop(1, element === 'thunder' ? '#565776' : '#ffedca');
+  c.fillStyle = daylight;
   c.fillRect(0, 0, 336, 378);
   oval(c, element === 'wind' ? 240 : 76, 101, 34, 34, element === 'fire' ? '#d46c4e' : '#f6dfaa', 0);
   if (element === 'thunder') {
@@ -329,6 +374,8 @@ function landscape(c: Brush, element: ElementId): void {
     night ? '#687992' : '#f5e8ca', 0);
   paint(c, 'M0 228 Q41 214 75 192 Q119 198 157 215 Q208 224 247 188 Q277 170 336 185 V336 H0Z',
     night ? '#293951' : '#657f78', 0);
+  line(c, 'M1 195 Q40 174 72 176 M192 166 Q216 181 239 171 M263 183 Q295 169 332 176',
+    night ? '#9cacca60' : '#fff0cb70', 1.15);
   cloud(c, 212, 75, 0.88, night ? '#414f72' : paper);
   cloud(c, 16, 139, 0.83, night ? '#414f72' : paper);
   cloud(c, 195, 132, 1.12, night ? '#414f72' : paper);
@@ -384,15 +431,17 @@ function background(c: Brush, element: ElementId): void {
       placed(c, 249, 181, 0.49, (b) => lantern(b, false));
       break;
   }
-  // 版木のかすれを思わせる短い線。毎回同じ絵になる配置。
-  c.globalAlpha = 0.17;
-  for (let i = 0; i < 180; i++) {
-    const x = 8 + (i * 113 % 319);
-    const y = 8 + (i * 71 % 363);
-    c.fillStyle = i % 3 ? paper : ink;
-    c.fillRect(x, y, 1 + i % 5, 0.8);
+  // 短い和紙の繊維を、色と長さを変えて散らす。
+  for (let i = 0; i < 410; i++) {
+    const x = 8 + i * 113 % 319;
+    const y = 8 + i * 71 % 363;
+    c.strokeStyle = i % 3 ? '#fff0ce40' : '#27252125';
+    c.lineWidth = 0.55;
+    c.beginPath();
+    c.moveTo(x, y);
+    c.quadraticCurveTo(x + 1.5, y - 0.8, x + 1.5 + i % 4, y - 0.15);
+    c.stroke();
   }
-  c.globalAlpha = 1;
   line(c, 'M4 4 H332 V374 H4Z', ink, 4);
   line(c, 'M9 9 H327 V369 H9Z', element === 'thunder' ? '#708198' : paper, 1.5);
 }
@@ -402,7 +451,13 @@ function pond(c: Brush): void {
   c.fillStyle = '#427f89';
   c.fillRect(0, 0, 336, 378);
   paint(c, 'M0 91 Q83 55 146 89 T336 75 V290 Q274 321 218 299 T0 307Z', '#56969a', 0);
-  paint(c, 'M0 124 Q71 99 136 118 T336 103 V255 Q272 279 196 259 T0 274Z', '#67a5a3', 0);
+  const shallows = c.createRadialGradient(106, 150, 8, 136, 177, 235);
+  shallows.addColorStop(0, '#92c2b2');
+  shallows.addColorStop(0.48, '#67a5a3');
+  shallows.addColorStop(1, '#4d858f');
+  paint(c, 'M0 124 Q71 99 136 118 T336 103 V255 Q272 279 196 259 T0 274Z', shallows, 0);
+  line(c, 'M0 66 Q55 82 126 54 T241 44 Q288 56 336 37 M0 339 Q61 319 130 351 T249 345 Q297 317 336 319',
+    '#bee4cdad', 1.35);
   paint(c, 'M0 0 H336 V29 Q285 49 239 36 T125 48 Q55 77 0 59Z', '#d0b688', 0);
   paint(c, 'M0 345 Q61 325 126 357 T249 352 Q297 323 336 326 V378 H0Z', '#cfb58a', 0);
   line(c, 'M0 59 Q55 77 125 48 T239 36 Q285 49 336 29 M0 345 Q61 325 126 357 T249 352 Q297 323 336 326', '#304e50', 3);
@@ -546,8 +601,7 @@ function brushRing(c: Brush, blue: boolean, target: boolean): void {
   c.strokeStyle = blue ? '#23445d' : '#5d3d29';
   c.lineWidth = 2;
   c.stroke(rim);
-  c.fillStyle = pigment;
-  c.fill(rim);
+  wash(c, rim, pigment, lighting(c, 16, 16, 96, 96));
   line(c, 'M19 36 Q29 16 51 12 M77 116 Q94 111 105 99', '#fff5d9bb', 1.4);
 }
 
@@ -563,6 +617,7 @@ function bellows(c: Brush, pressed: boolean): void {
   paint(c, 'M10 69 Q49 76 96 62 L98 70 Q55 91 10 78Z', '#bd8250', 3);
   paint(c, `M9 ${top - 6} Q37 ${top - 20} 99 48 L96 56 Q46 ${top - 2} 9 ${top + 3}Z`, '#e0a66a', 3);
   line(c, `M19 ${top - 7} Q37 ${top - 12} 69 ${(top + 38) / 2}`, '#ffe0a4', 2);
+  line(c, `M17 ${top - 3} Q37 ${top - 7} 60 ${(top + 35) / 2} M24 74 Q42 77 57 74 M63 75 L73 73`, '#6f422c', 0.75);
   if (pressed) line(c, 'M119 44 L128 39 M121 52 H132 M118 60 L127 65', '#f8d477', 2.7);
 }
 
