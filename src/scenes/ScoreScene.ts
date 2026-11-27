@@ -9,6 +9,8 @@ import { INK, cssColor, fitCamera, label, panel, textButton } from './ui';
 export interface ScoreData {
   match: MatchState;
   player: Pawn;
+  /** 友達と遊んだ試合か。友達ともう一度遊ぶ仕組みはまだないので、そのときは「タイトルへ」だけを出す */
+  online?: boolean;
 }
 
 /** 続けて遊んだ合計を覚えておく場所（タイトルに戻ると 0 点から） */
@@ -65,8 +67,15 @@ export class ScoreScene extends Phaser.Scene {
       label(this, 296, y + 4, `${totals[i] ?? 0}`, 20, INK).setStroke('#fff8e8', 3);
     });
 
-    textButton(this, x - 80, 590, 140, 48, 'もう1試合', COLORS.uiHoney, () => this.scene.start('Role'), 19);
-    textButton(this, x + 80, 590, 140, 48, 'タイトルへ', COLORS.uiPaper, () => this.scene.start('Title'), 16);
+    if (data.online) {
+      // 友達との通信は試合のあとに閉じるので、もう一度遊ぶときはタイトルから部屋を作り直す
+      label(this, x, 556, '友達と もう一度遊ぶときは、タイトルから', 12, INK).setStroke(INK, 0);
+      textButton(this, x, 594, 180, 48, 'タイトルへ', COLORS.uiHoney, () => this.scene.start('Title'), 17);
+    } else {
+      // 前の試合の通信の情報を引き継がないように、空のデータで始める
+      textButton(this, x - 80, 590, 140, 48, 'もう1試合', COLORS.uiHoney, () => this.scene.start('Role', {}), 19);
+      textButton(this, x + 80, 590, 140, 48, 'タイトルへ', COLORS.uiPaper, () => this.scene.start('Title'), 16);
+    }
   }
 
   update(_time: number, deltaMs: number): void {

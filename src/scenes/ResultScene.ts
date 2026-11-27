@@ -13,6 +13,8 @@ export interface ResultData {
   player: Pawn;
   /** 勝ち負けのジングルを鳴らすため */
   audio?: GameAudio;
+  /** 友達と遊んだ試合か（スコアのあとの「もう1試合」を出し分けるため） */
+  online?: boolean;
 }
 
 const REASON: Record<OutcomeReason, string> = {
@@ -42,9 +44,11 @@ export class ResultScene extends Phaser.Scene {
     const o = match.outcome!;
     const spy = match.pawns.find((p) => p.isSpy)!;
     const playerWon = (o.winner === 'spy') === player.isSpy;
+    // 宝を盗まれて逃げられたのは「王様の一人負け」：王様でない市民は勝ちでも負けでもない（スコアは 0 点）
+    const neutral = o.reason === 'escaped' && !player.isSpy && !player.isKing;
     // 勝ち負けのジングルを1回だけ
     this.bgm = data.audio?.createBgm() ?? null;
-    this.bgm?.jingle(playerWon ? 'win' : 'lose');
+    if (!neutral) this.bgm?.jingle(playerWon ? 'win' : 'lose');
     this.events.once('shutdown', () => this.bgm?.stop());
     const x = SCREEN.width / 2;
     this.cameras.main.setBackgroundColor(o.winner === 'spy' ? COLORS.uiStone : COLORS.background);
@@ -52,7 +56,7 @@ export class ResultScene extends Phaser.Scene {
     panel(this, x, 83, 326, 124, o.winner === 'spy' ? COLORS.landmarkIron : COLORS.uiWood);
     label(this, x, 48, o.winner === 'spy' ? 'スパイの勝ち' : '市民の勝ち', 34, o.winner === 'spy' ? cssColor(COLORS.uiHoney) : cssColor(COLORS.uiCream));
     label(this, SCREEN.width / 2, 90, REASON[o.reason], 15);
-    label(this, SCREEN.width / 2, 124, playerWon ? 'きみの勝ち！' : 'きみの負け…', 20, playerWon ? cssColor(COLORS.uiHoney) : cssColor(COLORS.uiCream));
+    label(this, SCREEN.width / 2, 124, neutral ? '王様の一人負け（きみは 0点）' : playerWon ? 'きみの勝ち！' : 'きみの負け…', neutral ? 16 : 20, playerWon && !neutral ? cssColor(COLORS.uiHoney) : cssColor(COLORS.uiCream));
 
     // スパイの正体
     panel(this, x, 218, 326, 121, COLORS.uiPaper);
@@ -99,7 +103,7 @@ export class ResultScene extends Phaser.Scene {
     if (timeline.height > 207) timeline.setScale(1, 207 / timeline.height);
 
     // 毎試合のあとにスコアを出し、そこで「もう1試合」かを選ぶ
-    textButton(this, SCREEN.width / 2 - 80, 600, 140, 48, 'スコアへ', COLORS.uiHoney, () => this.scene.start('Score', { match, player } satisfies ScoreData), 20);
+    textButton(this, SCREEN.width / 2 - 80, 600, 140, 48, 'スコアへ', COLORS.uiHoney, () => this.scene.start('Score', { match, player, online: !!data.online } satisfies ScoreData), 20);
     textButton(this, SCREEN.width / 2 + 80, 600, 140, 48, 'タイトルへ', COLORS.uiPaper, () => this.scene.start('Title'), 16);
   }
 

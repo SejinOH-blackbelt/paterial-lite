@@ -10,6 +10,8 @@ import { ELEMENT_PICTURE as ELEMENT_ICON, makeElementPictures as makeElementIcon
 import { randomElement, type ElementId } from '../game/elements';
 import type { NetGame } from '../net/netGame';
 import type { GoWire, NetMessage, ReadyWire } from '../net/sync';
+import { openTreasurePicker } from './TreasurePicker';
+import { planToIds } from '../game/treasure';
 
 export interface RoleData {
   /** スパイになるパテの番号（ひとりで遊ぶときは 0 がプレイヤー。友達と遊ぶときは席の番号） */
@@ -21,6 +23,8 @@ export interface RoleData {
   /** 友達と遊ぶとき：親機が決めた、席ごとのエレメントと、共同ミッションの配り方 */
   elements?: ElementId[];
   plan?: BoardPlan;
+  /** 王様（プレイヤー）が選んだ宝物庫と出口の場所（ひとりで遊ぶときだけ。なければ王様 Bot の決め方） */
+  treasure?: { v: string; e: [string, string] };
 }
 
 export class RoleScene extends Phaser.Scene {
@@ -106,6 +110,13 @@ export class RoleScene extends Phaser.Scene {
       if (gone) return;
       gone = true;
       if (!net) {
+        // ひとりで遊ぶとき、プレイヤーが市民側なら王様：宝物庫と出口の場所を選んでから始める
+        if (!isSpy) {
+          openTreasurePicker(this, createRng(Date.now()), (plan) =>
+            this.scene.start('Field', { spyIndex, net, element: e, treasure: planToIds(plan) } satisfies RoleData),
+          );
+          return;
+        }
         this.scene.start('Field', { spyIndex, net, element: e } satisfies RoleData);
         return;
       }

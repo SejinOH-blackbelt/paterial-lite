@@ -117,7 +117,7 @@ import { PAD_TONES, ScanGameView } from './ScanGameView';
 import { MissionGameView } from './MissionGameView';
 import { DRESSING_TEX, FACILITY_SIZE, FACILITY_TEX, makeFacilityTextures } from './facilityTextures';
 import { EXIT_SIZE, EXIT_TEX, VAULT_SIZE, VAULT_TEX, makeTreasureTextures } from './treasureTextures';
-import { botTreasurePlan, nearExit } from '../game/treasure';
+import { botTreasurePlan, nearExit, planFromIds } from '../game/treasure';
 import { ELEMENT_RES_CHIP_COLOR, ELEMENT_RES_EMPTY_TEX, ELEMENT_RES_TEX, makeResourceTextures, RES_SIZE } from './resourceTextures';
 import { makeMissionArt, MISSION_SPOT_TEX as SPOT_TEX } from './missionArt';
 import { ELEMENT_PICTURE, makeElementPictures } from './elementPictures';
@@ -249,6 +249,8 @@ export class FieldScene extends Phaser.Scene {
   private spotViews: Phaser.GameObjects.Image[][] = [];
   /** 宝物庫の絵（盗まれたら、扉があいた絵に差し替える） */
   private vaultView: Phaser.GameObjects.Image | null = null;
+  /** 王様（プレイヤー）が選んだ宝物庫と出口（ひとりのときだけ） */
+  private treasureIds: { v: string; e: [string, string] } | null = null;
   /** アラートの演出（赤い点滅・サイレン）をもう出したか */
   private alarmShown = false;
   /** 勝ち負けを知らせて、リザルトへ進み始めたか（2回送らないように） */
@@ -310,6 +312,7 @@ export class FieldScene extends Phaser.Scene {
     this.overSent = false;
     this.netGauge = null;
     this.plan = data?.plan ?? null;
+    this.treasureIds = data?.treasure ?? null;
     this.planElements = data?.elements ?? null;
     this.quitDialog = false;
     this.scanButton = null;
@@ -1131,6 +1134,8 @@ export class FieldScene extends Phaser.Scene {
           const target = this.pates[msg.t ?? -1]?.pawn;
           if (by && target) {
             if (by === this.playerPawn && msg.caught !== 1) this.match.stopReady.set(by, heard + TREASURE.stopCooldown);
+            // 捕まえた人を覚える（スコア表で、押した人だけ +2・王様なら +3 にするため。親機と同じ表にする）
+            if (msg.caught === 1) this.match.treasure.caughtBy = msg.by ?? null;
             this.onStopped(by, target, msg.caught === 1, msg.lost ?? 0);
           }
         }
@@ -1600,9 +1605,10 @@ export class FieldScene extends Phaser.Scene {
     this.spyEntity = this.pates[index];
     this.isPlayerSpy = index === this.me;
     this.playerPawn = this.pates[this.me].pawn;
-    // 宝物庫と出口の場所：いまは王様 Bot の決め方で選ぶ（王様が自分で選ぶ画面は、このあと作る）。
+    // 宝物庫と出口の場所：ひとりで王様のときは、役の発表のあとにプレイヤーが選んだ場所。それ以外は王様 Bot の決め方。
     // 友達と遊ぶときは、同じ乱数のたねから選ぶので、みんなのスマホで同じ場所になる（試合の乱数とは別にして、並びを変えない）
-    const plan = botTreasurePlan(createRng(((this.net ? this.net.seed : Date.now()) ^ TREASURE_SEED_SALT) >>> 0));
+    const picked = !this.net && this.treasureIds ? planFromIds(this.treasureIds) : null; // ひとりのとき：王様（プレイヤー）が選んだ場所
+    const plan = picked ?? botTreasurePlan(createRng(((this.net ? this.net.seed : Date.now()) ^ TREASURE_SEED_SALT) >>> 0));
     this.match = createMatch(
       this.pates.map((e) => e.pawn),
       this.audio.heardTime(),
@@ -1867,7 +1873,7 @@ export class FieldScene extends Phaser.Scene {
   private endMatch(): void {
     this.cleanupSounds();
     this.leaveNet(); // 親機は「終わった」を送ったあとに閉じる
-    this.scene.start('Result', { match: this.match, player: this.playerPawn, audio: this.audio } satisfies ResultData);
+    this.scene.start('Result', { match: this.match, player: this.playerPawn, audio: this.audio, online: !!this.net } satisfies ResultData);
   }
 
   /** 置物にされたプレイヤーは「土の精」になって、ふわふわ動き回れる（ほかのパテからは見えない） */
