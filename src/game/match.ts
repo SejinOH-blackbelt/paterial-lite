@@ -6,9 +6,10 @@ import { boardGauge, type Board } from './board';
 import { createFieldState, giveHeld, takeHeld, totalHeld, type FieldState, type Harvester } from './harvest';
 import { facilityById, facilityNear, facilityStand, type MissionEvent } from './missions';
 import { faceTo, type Point } from './movement';
-import type { Rng } from './random';
+import { createRng, type Rng } from './random';
 import { canSee } from './vision';
 import { allScanned, createSpyState, patchSize, type SpyEvent, type SpyState } from './spy';
+import { botTreasurePlan, createTreasure, type TreasurePlan, type TreasureState } from './treasure';
 
 /** 試合に出ているパテ1体 */
 export interface Pawn {
@@ -96,6 +97,8 @@ export interface MatchState {
   sightings: Map<Pawn, Map<Pawn, { at: Point; amount: number }>>;
   /** 王様の支持度（0 になると市民がストライキを起こして、スパイの勝ち） */
   support: number;
+  /** 宝物庫と出口（M10）。場所は試合の最初に王様が決める */
+  treasure: TreasureState;
 }
 
 /**
@@ -109,7 +112,10 @@ export function chooseKing(pawns: Pawn[]): Pawn {
   return king;
 }
 
-export function createMatch(pawns: Pawn[], now: number, rng: Rng, board: Board): MatchState {
+/**
+ * 試合を作る。treasure は王様が決めた宝物庫と出口の場所（省くと、決まった並びで王様 Bot が選ぶ。テスト用）
+ */
+export function createMatch(pawns: Pawn[], now: number, rng: Rng, board: Board, treasure?: TreasurePlan): MatchState {
   const spyPawn = pawns.find((p) => p.isSpy)!;
   return {
     pawns,
@@ -127,6 +133,8 @@ export function createMatch(pawns: Pawn[], now: number, rng: Rng, board: Board):
     spotted: new Map(),
     sightings: new Map(),
     support: SUPPORT.start,
+    // 省いたときに試合の乱数（rng）を使わないのは、ほかの決まり（塗りムラの位置など）の並びを変えないため
+    treasure: createTreasure(treasure ?? botTreasurePlan(createRng(1))),
   };
 }
 

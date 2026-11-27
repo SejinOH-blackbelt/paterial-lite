@@ -109,6 +109,8 @@ import { LANDMARK_TEX, makeSpyTextures } from './spyTextures';
 import { PAD_TONES, ScanGameView } from './ScanGameView';
 import { MissionGameView } from './MissionGameView';
 import { DRESSING_TEX, FACILITY_SIZE, FACILITY_TEX, makeFacilityTextures } from './facilityTextures';
+import { EXIT_SIZE, EXIT_TEX, VAULT_SIZE, VAULT_TEX, makeTreasureTextures } from './treasureTextures';
+import { botTreasurePlan } from '../game/treasure';
 import { ELEMENT_RES_CHIP_COLOR, ELEMENT_RES_EMPTY_TEX, ELEMENT_RES_TEX, makeResourceTextures, RES_SIZE } from './resourceTextures';
 import { makeMissionArt, MISSION_SPOT_TEX as SPOT_TEX } from './missionArt';
 import { ELEMENT_PICTURE, makeElementPictures } from './elementPictures';
@@ -152,6 +154,8 @@ const BOT_STARTS = [
   { x: 250, y: 900 },
   { x: 600, y: 1100 },
 ] as const;
+/** 宝物庫と出口を選ぶ乱数のたねに混ぜる数（試合の乱数と別の並びにするため） */
+const TREASURE_SEED_SALT = 0x7e45a5;
 /** プレイヤーの最初の位置（鳥居の少し下） */
 const PLAYER_START = { x: 350, y: 720 } as const;
 
@@ -236,6 +240,8 @@ export class FieldScene extends Phaser.Scene {
   private board!: Board;
   /** スイッチの絵（盤のミッション順・スイッチ順） */
   private spotViews: Phaser.GameObjects.Image[][] = [];
+  /** 宝物庫の絵（盗まれたら、扉があいた絵に差し替える） */
+  private vaultView: Phaser.GameObjects.Image | null = null;
   /** 子機：親機から届いた国の仕事ゲージ */
   private netGauge: number | null = null;
   /** スティック（倒した方向へ進む） */
@@ -307,6 +313,7 @@ export class FieldScene extends Phaser.Scene {
     makePartTextures(this);
     makeSpyTextures(this);
     makeFacilityTextures(this);
+    makeTreasureTextures(this);
     drawGround(this, WORLD.width, WORLD.height);
     makeElementPictures(this);
     this.drawZones();
@@ -359,6 +366,7 @@ export class FieldScene extends Phaser.Scene {
     this.all = this.pates.map((e) => e.h);
     this.setupMatch();
     this.makeSpotViews();
+    this.makeTreasureViews();
 
     // 採取中は、画面を暗くして、メーターとボタンを真ん中に大きく出す（まわりが見えにくくなる）
     this.focusCover = this.hud(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, 0x1a120c, 0.82).setOrigin(0).setDepth(9040).setVisible(false));
@@ -1306,6 +1314,23 @@ export class FieldScene extends Phaser.Scene {
     );
   }
 
+  /** 宝物庫と出口の絵を置く（場所は試合の最初に王様が決めたところ） */
+  private makeTreasureViews(): void {
+    const t = this.match.treasure;
+    this.vaultView = this.add.image(t.vault.x, t.vault.y, t.stolen ? VAULT_TEX.open : VAULT_TEX.closed).setOrigin(0.5, 1).setDepth(t.vault.y);
+    label(this, t.vault.x, t.vault.y - VAULT_SIZE.h - 8, '宝物庫', 12).setDepth(8700);
+    for (const e of t.exits) {
+      this.add.image(e.x, e.y, EXIT_TEX).setOrigin(0.5, 1).setDepth(e.y);
+      label(this, e.x, e.y - EXIT_SIZE.h - 6, '出口', 12).setDepth(8700);
+    }
+  }
+
+  /** 毎コマ：盗まれたら、宝物庫を扉があいた絵にする（音は鳴らさない。気をつけて見ていないと見落とすくらい） */
+  private syncVaultView(): void {
+    const key = this.match.treasure.stolen ? VAULT_TEX.open : VAULT_TEX.closed;
+    if (this.vaultView && this.vaultView.texture.key !== key) this.vaultView.setTexture(key);
+  }
+
   /** 毎コマ：入ったスイッチの絵を変える */
   private syncSpotViews(): void {
     this.board.missions.forEach((m, i) =>
@@ -1327,11 +1352,15 @@ export class FieldScene extends Phaser.Scene {
     this.spyEntity = this.pates[index];
     this.isPlayerSpy = index === this.me;
     this.playerPawn = this.pates[this.me].pawn;
+    // 宝物庫と出口の場所：いまは王様 Bot の決め方で選ぶ（王様が自分で選ぶ画面は、このあと作る）。
+    // 友達と遊ぶときは、同じ乱数のたねから選ぶので、みんなのスマホで同じ場所になる（試合の乱数とは別にして、並びを変えない）
+    const plan = botTreasurePlan(createRng(((this.net ? this.net.seed : Date.now()) ^ TREASURE_SEED_SALT) >>> 0));
     this.match = createMatch(
       this.pates.map((e) => e.pawn),
       this.audio.heardTime(),
       this.rng,
       this.board,
+      plan,
     );
     this.field = this.match.field;
     this.spy = this.match.spy;
@@ -1870,6 +1899,7 @@ export class FieldScene extends Phaser.Scene {
   private updatePlayerMission(heard: number): void {
     if (this.spyChoice && (this.player.frozen || !missionChance(this.player, this.board, this.all, true)?.canFake)) this.closeSpyChoice();
     this.syncSpotViews();
+    this.syncVaultView();
     this.syncMissionView();
     void heard;
   }
