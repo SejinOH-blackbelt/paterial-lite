@@ -243,18 +243,18 @@ function polygonCuts(a: MapPoint, b: MapPoint, polygon: readonly MapPoint[]): nu
 }
 
 function canJoin(a: MapPoint, b: MapPoint, element: ElementId | undefined, roadsOnly: boolean): boolean {
-  const cuts = [0, ...polygonCuts(a, b, MAP_OUTLINE), 1].sort((x, y) => x - y);
-  if (cuts.slice(1).some((t, i) => !inPolygon(pointAt(a, b, (cuts[i] + t) / 2), MAP_OUTLINE))) return false;
   // 広場の円と道の丸い区間は凸形なので、両端が同じ区間なら途中も通れる。
-  if (distance(a, MAP_CENTER) <= PLAZA_RADIUS && distance(b, MAP_CENTER) <= PLAZA_RADIUS) return true;
-  if (roadSegments.some(({ a: p, b: q, radius }) =>
-    distanceToSegment(a, p, q) <= radius + EPSILON && distanceToSegment(b, p, q) <= radius + EPSILON)) return true;
-  if (roadsOnly) return false;
-  return ELEMENT_ZONES.some(({ element: owner, polygon }) => {
+  const publicPath = (distance(a, MAP_CENTER) <= PLAZA_RADIUS && distance(b, MAP_CENTER) <= PLAZA_RADIUS) ||
+    roadSegments.some(({ a: p, b: q, radius }) =>
+      distanceToSegment(a, p, q) <= radius + EPSILON && distanceToSegment(b, p, q) <= radius + EPSILON);
+  const allowed = publicPath || (!roadsOnly && ELEMENT_ZONES.some(({ element: owner, polygon }) => {
     if (owner !== element || !inPolygon(a, polygon) || !inPolygon(b, polygon)) return false;
     const zoneCuts = [0, ...polygonCuts(a, b, polygon), 1].sort((x, y) => x - y);
     return zoneCuts.slice(1).every((t, i) => inPolygon(pointAt(a, b, (zoneCuts[i] + t) / 2), polygon));
-  });
+  }));
+  if (!allowed) return false;
+  const cuts = [0, ...polygonCuts(a, b, MAP_OUTLINE), 1].sort((x, y) => x - y);
+  return cuts.slice(1).every((t, i) => inPolygon(pointAt(a, b, (cuts[i] + t) / 2), MAP_OUTLINE));
 }
 
 export interface MapRoute { readonly points: readonly MapPoint[]; readonly distance: number }

@@ -1,7 +1,7 @@
 // パテの「動き」のルール。画面表示（Phaser）には依存しません。
 // こうしておくと、あとでBotやオンライン対戦にも同じルールを使えます。
 
-import { PATE } from './config';
+import { BOT, PATE } from './config';
 import type { ElementId } from './elements';
 import { gameMap } from './maps';
 
@@ -64,13 +64,37 @@ export function clampToField(p: Point): Point {
  * 新しい目的地を決める。地図に道すじ（route）があれば、その体（element）で通れる道にそって歩く
  * 道のある地図で行けない場所を指したら、その場で止まる。
  */
+interface TrackedRoute {
+  goal: Point;
+  element?: ElementId;
+  moving: boolean;
+  refreshAt: number;
+}
+const trackedRoutes = new WeakMap<Walker, TrackedRoute>();
+
 export function setTarget(w: Walker, p: Point, element?: ElementId): void {
+  trackedRoutes.delete(w);
   const goal = clampToField(p);
   const route = gameMap().route;
   const points = route ? route(w.pos, goal, w.royal ? undefined : element) : [goal];
   w.target = points?.[0] ?? null;
   w.path = points?.slice(1) ?? [];
   if (w.target) turnToward(w, w.target.x - w.pos.x, w.target.y - w.pos.y);
+}
+
+/** 追跡中は直近の道を使い、見張り先が同じなら着くまで選び直さない */
+export function trackTarget(w: Walker, p: Point, element: ElementId, now: number, moving: boolean): void {
+  if (!gameMap().route) {
+    setTarget(w, p, element);
+    return;
+  }
+  const previous = trackedRoutes.get(w);
+  if (previous?.element === element && previous.moving === moving) {
+    const sameGoal = previous.goal.x === p.x && previous.goal.y === p.y;
+    if (now < previous.refreshAt || (w.target && sameGoal)) return;
+  }
+  setTarget(w, p, element);
+  trackedRoutes.set(w, { goal: { ...p }, element, moving, refreshAt: now + BOT.chaseRouteSeconds });
 }
 
 /** その体（element）で、その場所を歩けるか（地図に決まりがなければ、どこでも） */

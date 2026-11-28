@@ -3,7 +3,8 @@ import { botTreasurePlan, planFromIds, planToIds } from './treasure';
 import { CLASSIC_MAP, gameMap, ISLAND_MAP, setGameMap } from './maps';
 import { createRng } from './random';
 import { standSpot, waitSpot } from './harvest';
-import { createWalker, publicStand, setTarget, steerWalker } from './movement';
+import { createWalker, publicStand, setTarget, steerWalker, trackTarget } from './movement';
+import { BOT } from './config';
 import { ELEMENT_ZONES } from './mapLayout';
 
 afterEach(() => setGameMap('classic'));
@@ -48,5 +49,18 @@ describe('五つ浜の試合設定', () => {
     const before = royal.pos;
     steerWalker(royal, 0, -1, 1, 100, 'fire');
     expect(royal.pos).toEqual(before);
+  });
+
+  it('追跡は短い間だけ道を使い回し、間隔後に新しい目的地へ向かう', () => {
+    const m = setGameMap('island');
+    const w = createWalker(m.playerStart);
+    const [first, next] = m.botStarts;
+    trackTarget(w, first, 'fire', 0, true);
+    const path = w.path;
+    trackTarget(w, next, 'fire', BOT.chaseRouteSeconds / 2, true);
+    expect(w.path).toBe(path);
+    trackTarget(w, next, 'fire', BOT.chaseRouteSeconds, true);
+    expect(w.path).not.toBe(path);
+    expect(w.path?.at(-1) ?? w.target).toEqual(next);
   });
 });

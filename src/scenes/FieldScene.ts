@@ -55,7 +55,7 @@ import {
 } from '../game/missions';
 import { buildBoard, isRite, missionComplete, missionIdsOf, missionType, planBoard, spotsOn, type Board, type BoardPlan, type MissionInst, type Spot } from '../game/board';
 import type { Step } from '../game/missionGames';
-import { createWalker, isWalking, setTarget, steerWalker, stepWalker, type Walker } from '../game/movement';
+import { createWalker, isWalking, steerWalker, stepWalker, trackTarget, type Walker } from '../game/movement';
 import { botWantsToGreet, bowOf, greetKing, greetTarget, pickKingVoice } from '../game/greet';
 import { botChaseTarget, botGuardSpot, canAlarm, raiseAlarm, canSteal, carrierPawn, steal, stopAndSearch, stopTarget, stopWait, updateAwareness, walkSpeed } from '../game/heist';
 import { createRng, type Rng } from '../game/random';
@@ -1761,7 +1761,7 @@ export class FieldScene extends Phaser.Scene {
         return true;
       }
       const far = Math.hypot(guard.x - h.walker.pos.x, guard.y - h.walker.pos.y) > 6;
-      if (far) setTarget(h.walker, guard, h.element);
+      if (far) trackTarget(h.walker, guard, h.element, heard, false);
       else if (!h.walker.target) {
         const v = this.match.treasure.vault;
         h.walker.heading = Math.atan2(v.y - h.walker.pos.y, v.x - h.walker.pos.x);
@@ -1776,7 +1776,7 @@ export class FieldScene extends Phaser.Scene {
       this.doStop(e.pawn, target, heard);
       return true;
     }
-    setTarget(h.walker, target.h.walker.pos, h.element);
+    trackTarget(h.walker, target.h.walker.pos, h.element, heard, true);
     return true;
   }
 

@@ -351,6 +351,8 @@ export const PLAYER_ELEMENT = 'earth';
 
 /** 住民Bot（和の国の住民）の動き */
 export const BOT = {
+  /** 道のある地図で、動く相手の道すじを選び直す間隔（秒） */
+  chaseRouteSeconds: 0.25,
   /** 1か所で何回採取したら、別の場所へ移るか（この範囲でランダム） */
   tapsMin: 4,
   tapsMax: 9,
