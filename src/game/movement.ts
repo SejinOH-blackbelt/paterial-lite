@@ -1,7 +1,7 @@
 // パテの「動き」のルール。画面表示（Phaser）には依存しません。
 // こうしておくと、あとでBotやオンライン対戦にも同じルールを使えます。
 
-import { BOT, PATE } from './config';
+import { BOT, PATE, ELEMENTS } from './config';
 import type { ElementId } from './elements';
 import { gameMap } from './maps';
 
@@ -137,9 +137,29 @@ export function steerWalker(w: Walker, dx: number, dy: number, dtSeconds: number
   const next = clampToField({ x: w.pos.x + (dx / len) * move, y: w.pos.y + (dy / len) * move });
   // 歩けない場所（道とゾーンの外）には入らない。斜めに当たったときは、壁にそってすべる
   const body = w.royal ? undefined : element;
+  // いま立っている場所に、この体では入れない（ゾーンの中で別の体に乗りうつった など）ときは、
+  // 閉じこめられないように、いちばん近い歩ける場所に近づく向きにだけ歩ける（奥へは進めない）
+  if (!walkable(w.pos, body)) {
+    const out = nearestWalkable(w.pos, body);
+    if (out && Math.hypot(out.x - next.x, out.y - next.y) < Math.hypot(out.x - w.pos.x, out.y - w.pos.y) && ELEMENTS.some((e) => walkable(next, e))) w.pos = next;
+    return;
+  }
   if (walkable(next, body)) w.pos = next;
   else if (walkable({ x: next.x, y: w.pos.y }, body)) w.pos = { x: next.x, y: w.pos.y };
   else if (walkable({ x: w.pos.x, y: next.y }, body)) w.pos = { x: w.pos.x, y: next.y };
+}
+
+/** p からいちばん近い、その体で歩ける場所（まわりを少しずつ広げてさがす。400 以内になければ null） */
+export function nearestWalkable(p: Point, element?: ElementId): Point | null {
+  for (let r = 8; r <= 400; r += 8) {
+    const n = Math.max(12, Math.round(r / 4));
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const q = { x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r };
+      if (walkable(q, element)) return q;
+    }
+  }
+  return null;
 }
 
 /**

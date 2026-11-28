@@ -3,7 +3,7 @@ import { botTreasurePlan, planFromIds, planToIds } from './treasure';
 import { CLASSIC_MAP, gameMap, ISLAND_MAP, setGameMap } from './maps';
 import { createRng } from './random';
 import { standSpot, waitSpot } from './harvest';
-import { createWalker, publicStand, setTarget, steerWalker, trackTarget } from './movement';
+import { createWalker, nearestWalkable, publicStand, setTarget, steerWalker, trackTarget } from './movement';
 import { BOT } from './config';
 import { ELEMENT_ZONES } from './mapLayout';
 
@@ -62,5 +62,25 @@ describe('五つ浜の試合設定', () => {
     trackTarget(w, next, 'fire', BOT.chaseRouteSeconds, true);
     expect(w.path).not.toBe(path);
     expect(w.path?.at(-1) ?? w.target).toEqual(next);
+  });
+});
+
+describe('五つ浜で閉じこめられない（乗りうつりのあと など）', () => {
+  it('入れないゾーンの中に立ってしまっても、外に近づく向きなら歩いて出られる（奥へは進めない）', () => {
+    const m = setGameMap('island');
+    const fire = ELEMENT_ZONES.find((z) => z.element === 'fire')!.label;
+    // 水の体で、火のゾーンの中にいる（火の体から乗りうつったところ）
+    const w = createWalker({ ...fire });
+    expect(m.walk!(w.pos, 'water')).toBe(false);
+    const out = nearestWalkable(w.pos, 'water')!;
+    const dx = out.x - w.pos.x;
+    const dy = out.y - w.pos.y;
+    const len = Math.hypot(dx, dy);
+    for (let i = 0; i < 40 && !m.walk!(w.pos, 'water'); i++) steerWalker(w, dx / len, dy / len, 0.1, undefined, 'water');
+    expect(m.walk!(w.pos, 'water')).toBe(true);
+    // 奥（外とは逆の向き）へは進めない
+    const back = createWalker({ ...fire });
+    steerWalker(back, -dx / len, -dy / len, 0.5, undefined, 'water');
+    expect(back.pos).toEqual(fire);
   });
 });
