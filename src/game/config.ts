@@ -174,7 +174,7 @@ export const NET = {
    * ゲームのルールの版。友達と遊ぶとき、親機と子機でちがったら、読みこみ直してもらう
    * （ルールや通信の中身を変えたら、1 つ上げる）
    */
-  version: 11,
+  version: 12,
   /** ようすを送る間隔（秒）。短いほど動きがなめらかだが、通信が増える */
   sendInterval: 0.1,
   /** 親機が、みんながエレメントを選び終えるのを待つ最長の秒数（抜けた人がいても始められるように） */
@@ -448,17 +448,10 @@ export const SPY_BOT = {
 export const VISION = {
   /** 見える半径 */
   radius: 130,
-  /** 見えない場所の暗さ（0〜1）。地面や建物はうっすら見える */
-  fogAlpha: 0.78,
   /** ほかのパテが、見える範囲のふちの内側でふわっと消えていく幅（ふちより外では完全に見えない） */
   pateFade: 24,
-  /** 視界は前だけ：向いている方向から左右にこの角度（ラジアン）まで見える */
-  coneHalf: Math.PI / 3,
-  /** 扇のふちで、ふわっと消えていく角度の幅（ラジアン） */
-  coneFade: 0.18,
-  /** 足元のまわりは、後ろでもこの半径まで見える */
-  nearRadius: 46,
-  /** 雷のミッションを終えると、この秒数だけ視界がまるくなる（暗闇が晴れる） */
+  /** 雷のミッション後にパテが見える半径と、その効果の秒数 */
+  lightRadius: 180,
   lightSeconds: 25,
 } as const;
 
@@ -548,7 +541,7 @@ export const MISSIONS = [
 export const RITE = {
   id: 'rite',
   name: '王様の儀式',
-  game: 'prayer',
+  game: 'offerings',
   needPerSpot: 0,
   affinity: 'weak',
   /** 祭壇1つでたまるゲージの量（ふつうのスイッチは MISSION_WEIGHT.spot） */
@@ -721,7 +714,7 @@ export const MISSION_GAME = {
 /** Botが施設でミッションをするときの時間と、まちがえる確率 */
 export const MISSION_BOT = {
   /** ミニゲームにかかる秒数 */
-  workSeconds: { drum: 8, jigsaw: 9, pegs: 8, prayer: 8, heat: 9, net: 11, shape: 9, wind: 11, dark: 11 },
+  workSeconds: { drum: 8, jigsaw: 9, pegs: 8, prayer: 8, offerings: 8, heat: 9, net: 11, shape: 9, wind: 11, dark: 11 },
   /** まちがえる確率（まちがえると音が鳴って、やり直す） */
   failChance: 0.2,
   /** まちがえたあと、やり直しにかかる秒数 */

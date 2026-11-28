@@ -34,6 +34,8 @@ import {
   isLinked,
   pickPeg,
   pickPiece,
+  placeOffering,
+  selectOffering,
   placePiece,
   pressHands,
   releaseHands,
@@ -45,6 +47,7 @@ import {
   type DrumGame,
   type JigsawGame,
   type MissionGame,
+  type OfferingsGame,
   type PegGame,
   type PrayerGame,
   type Step,
@@ -54,6 +57,7 @@ import type { GameAudio } from './audio';
 import { drawPart } from './textures';
 import { FONT, INK, pinToScreen, screenPoint, textButton } from './ui';
 import { makeMissionArt, MISSION_BG_TEX, MISSION_PART_TEX } from './missionArt';
+import { drawOfferingAltar } from './offeringArt';
 
 /** パネルの位置と大きさ（上の表示と、下のスティックのあいだ） */
 const PANEL = { x: 12, y: 116, w: SCREEN.width - 24, h: 378 } as const;
@@ -133,6 +137,7 @@ export class MissionGameView {
     else if (game.kind === 'net') this.buildNet(game);
     else if (game.kind === 'wind') this.buildWind(game);
     else if (isPhrase(game)) this.buildPhrase(game);
+    else if (game.kind === 'offerings') this.buildOfferings(game);
     else this.buildPrayer(game);
     pinToScreen(this.root);
     this.update();
@@ -181,6 +186,20 @@ export class MissionGameView {
     }
     this.deps.onStep(s);
     if (!this.destroyed) this.update(); // できあがると、onStep の中でパネルが片付けられる
+  }
+
+  private buildOfferings(g: OfferingsGame): void {
+    this.title.setText('お供えを選び、同じ絵のお皿を押そう');
+    g.bowls.forEach((item, i) => {
+      this.hotspot(84 + i * 96, 288, 38, () => {
+        const result = placeOffering(g, item);
+        if (result === 'ok') this.deps.audio.pon();
+        this.step(result);
+      });
+    });
+    g.tray.forEach((item, i) => {
+      this.hotspot(84 + i * 96, 411, 38, () => selectOffering(g, item));
+    });
   }
 
   // ---------- まねっこ太鼓 ----------
@@ -541,6 +560,7 @@ export class MissionGameView {
     else if (g.kind === 'net') this.drawNet(g, now);
     else if (g.kind === 'wind') this.drawWind(g, now);
     else if (isPhrase(g)) this.drawPhrase(g, now);
+    else if (g.kind === 'offerings') drawOfferingAltar(this.art, g);
     else this.drawPrayer(g, now);
     for (let i = this.ringIdx; i < this.rings.length; i++) this.rings[i].setVisible(false);
   }

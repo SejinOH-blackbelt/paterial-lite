@@ -612,7 +612,7 @@ export function botWantsToReport(m: MatchState, now: number, visionRadius: numbe
   if (m.phase !== 'play') return null;
   for (const p of m.pawns) {
     if (p.isPlayer || p.isSpy || p.h.frozen) continue;
-    // 置物が視界（前の扇形）に入ったら気づく
+    // 近くの置物が見えるようになったら気づく
     const body = m.pawns.find(
       (o) => o.h.frozen && !m.known.has(o.h) && dist(o.h.walker.pos, p.h.walker.pos) <= visionRadius * 0.8 && canSee(p.h, o.h.walker.pos, now),
     );

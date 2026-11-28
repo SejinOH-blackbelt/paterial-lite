@@ -82,7 +82,7 @@ import { MeetingMap } from './MeetingMap';
 import { finishPossess, kickFromShrine, nearYorishiro, pressCommand, shrineChance, startPossess } from '../game/yorishiro';
 import type { NetGame } from '../net/netGame';
 import { randomElement, type ElementId, type MissionId } from '../game/elements';
-import { isLit, seeAmount } from '../game/vision';
+import { seeAmount } from '../game/vision';
 import {
   applyBoardWire,
   applyFieldWire,
@@ -134,7 +134,7 @@ import { keepRematch } from './rematch';
 import { greetCall, kingVoice } from './voices';
 import { ELEMENT_PICTURE, makeElementPictures } from './elementPictures';
 import { ELEMENT_COLOR } from './elementIcons';
-import { drawGround, drawPart, makeTextures, TEX } from './textures';
+import { drawGround, makeTextures, TEX } from './textures';
 import { characterOf, pawnName, sanitizeName } from '../game/names';
 import { loadPlayerName } from './playerName';
 
@@ -240,7 +240,6 @@ export class FieldScene extends Phaser.Scene {
   private isPlayerSpy = false;
   private landmarks = new Map<string, Phaser.GameObjects.Image>();
   /** 見える範囲の外を暗くする霧 */
-  private fog!: Phaser.GameObjects.Image;
   /** スパイ用のボタン（プレイヤーがスパイのときだけ） */
   private scanButton: HudButton | null = null;
   private prankButton: HudButton | null = null;
@@ -432,7 +431,6 @@ export class FieldScene extends Phaser.Scene {
     // 採取場は画面より広いので、カメラが自分のパテを追いかける（採取場の端より外は映さない）
     this.camTarget = this.add.zone(gameMap().playerStart.x, gameMap().playerStart.y, 1, 1);
     this.followCamera(1); // 最初は、すぐに自分のパテのところへ
-    this.setupFog();
     this.setupHud();
     this.spyUi = this.add.graphics().setDepth(9150);
     if (this.isPlayerSpy) this.setupSpyButtons();
@@ -863,7 +861,7 @@ export class FieldScene extends Phaser.Scene {
         fn();
       }
       for (const e of this.pates) this.syncPate(e, 0);
-      this.updateFog();
+      this.updateCameraFollow();
       return;
     }
     if (this.match.phase !== 'play') return;
@@ -935,7 +933,7 @@ export class FieldScene extends Phaser.Scene {
     this.drawStock(heard);
     for (const e of this.pates) this.syncPate(e, dt);
     this.spyEntity.view.setPatch(this.spy.patch.u, this.spy.patch.v, this.isSim() ? patchSize(this.spy, heard) : this.netPatch);
-    this.updateFog();
+    this.updateCameraFollow();
     this.drawSpyUi(heard);
     this.drawHud(heard);
     this.updateButtons();
@@ -1949,7 +1947,7 @@ export class FieldScene extends Phaser.Scene {
         this.introAdd(this.add.text(cx - 86, y - 30, t.name, { fontFamily: 'sans-serif', fontSize: '18px', fontStyle: 'bold', color: INK }).setResolution(2));
         this.introAdd(
           this.add
-            .text(cx - 86, y - 2, `5つのゾーンの 祭壇を\nぜんぶ回って お参り\n（鈴 → 礼 → 拍手）。どの順でもよい\n\n全部回ると ゲージがたまり\n支持度も 戻る`, {
+            .text(cx - 86, y - 2, `5つのゾーンの 祭壇を回ろう\n花・葉・月を 同じ絵のお皿に置く\n祭壇は どの順でもよい\n\n全部回ると ゲージがたまり\n支持度も 戻る`, {
               fontFamily: 'sans-serif',
               fontSize: '11px',
               color: INK,
@@ -2349,7 +2347,7 @@ export class FieldScene extends Phaser.Scene {
   /** 支持度が 0 に：市民パテたちが座り込んでプラカードを掲げる。少し見せてからリザルトへ */
   private showStrike(): void {
     this.scene.resume();
-    // 採取や見回りの表示を消して、鳥居の前に集まった全員を見せる（視界の外でも見えるように霧も外す）
+    // 採取や見回りの表示を消して、集まった全員を見せる
     this.meter.clear();
     this.button.setVisible(false);
     this.focusCover.setVisible(false);
@@ -2357,7 +2355,6 @@ export class FieldScene extends Phaser.Scene {
     this.scanView = null;
     this.missionView?.destroy();
     this.missionView = null;
-    this.fog.setVisible(false);
     this.spirit?.view.setVisible(false);
     this.spirit?.glow.setVisible(false);
     this.scanButton?.setVisible(false);
@@ -2421,76 +2418,8 @@ export class FieldScene extends Phaser.Scene {
     this.spirit.view.update(dt, isWalking(this.spirit.walker) || this.driving);
   }
 
-  /** 見える範囲の外を暗くする（自分のまわりだけ穴をあけた霧） */
-  private setupFog(): void {
-    const key = 'field-vision-fog';
-    if (!this.textures.exists(key)) {
-      // 画面の端まで届く霧を一度だけ描く。毎コマ行うのは画像の移動だけ。
-      // 採取場の端ではカメラが止まり、パテが画面の端に寄るので、そのぶん大きめに描く
-      const width = SCREEN.width * 2 + 120;
-      const height = SCREEN.height * 2 + 120;
-      drawPart(this, key, width, height, (ctx) => {
-        const x = width / 2;
-        const y = height / 2;
-        const tint = Phaser.Display.Color.IntegerToColor(COLORS.spyFog);
-        const rgba = (alpha: number) => `rgba(${tint.red}, ${tint.green}, ${tint.blue}, ${alpha})`;
-        const gradient = ctx.createRadialGradient(x, y, VISION.radius, x, y, VISION.radius + 22);
-        gradient.addColorStop(0, rgba(0));
-        gradient.addColorStop(0.5, rgba(VISION.fogAlpha * 0.5));
-        gradient.addColorStop(1, rgba(VISION.fogAlpha));
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, width, height);
-      }, 1); // 霧はなめらかなぼかしだけなので、細かく描かなくてよい（大きすぎる絵にしない）
-    }
-    // 視界は前だけ：前の扇形と足元の円だけ穴をあけた霧（右向きに描いて、向きに合わせて回す）
-    const cone = 'field-vision-cone';
-    if (!this.textures.exists(cone)) {
-      // 向きに合わせて回すので、どの向きでも画面全体（マップの端でカメラが止まり、パテが画面の角に寄ったときも）を覆える正方形にする
-      const side = Math.ceil(Math.hypot(SCREEN.width, SCREEN.height)) * 2 + 120;
-      const width = side;
-      const height = side;
-      drawPart(this, cone, width, height, (ctx) => {
-        const x = width / 2;
-        const y = height / 2;
-        const tint = Phaser.Display.Color.IntegerToColor(COLORS.spyFog);
-        const rgba = (alpha: number) => `rgba(${tint.red}, ${tint.green}, ${tint.blue}, ${alpha})`;
-        ctx.fillStyle = rgba(VISION.fogAlpha);
-        ctx.fillRect(0, 0, width, height);
-        ctx.globalCompositeOperation = 'destination-out';
-        // 足元のまわりの円
-        const near = ctx.createRadialGradient(x, y, VISION.nearRadius, x, y, VISION.nearRadius + 16);
-        near.addColorStop(0, 'rgba(0,0,0,1)');
-        near.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = near;
-        ctx.fillRect(x - 100, y - 100, 200, 200);
-        // 前の扇形（外のふちはぼかし、横のふちは少しずつ広げて重ね、ぼかす）
-        const sector = (half: number, alpha: number) => {
-          const g = ctx.createRadialGradient(x, y, VISION.radius, x, y, VISION.radius + 22);
-          g.addColorStop(0, `rgba(0,0,0,${alpha})`);
-          g.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.fillStyle = g;
-          ctx.beginPath();
-          ctx.moveTo(x, y);
-          ctx.arc(x, y, VISION.radius + 22, -half, half);
-          ctx.closePath();
-          ctx.fill();
-        };
-        sector(VISION.coneHalf - VISION.coneFade, 1);
-        for (let k = 1; k <= 4; k++) sector(VISION.coneHalf - VISION.coneFade + (VISION.coneFade * k) / 4, 0.35);
-      }, 1); // 霧は細かく描かなくてよい
-    }
-    this.fog = this.add.image(0, 0, cone).setDepth(8800);
-    this.updateFog();
-  }
-
-  private updateFog(): void {
-    // 土の精になったら、土の精のまわりが見える（土の精はまるく見える）
+  private updateCameraFollow(): void {
     const { x, y } = this.listenerPos();
-    const round = !!this.spirit || isLit(this.player, this.audio.heardTime());
-    const key = round ? 'field-vision-fog' : 'field-vision-cone';
-    if (this.fog.texture.key !== key) this.fog.setTexture(key);
-    this.fog.setRotation(round ? 0 : this.player.walker.heading); // 向いている方向に扇を向ける
-    this.fog.setPosition(x, y - 20); // パテの体の真ん中あたりを中心に見る
     this.camTarget.setPosition(x, y - 20);
     this.followCamera(0.2);
   }
@@ -2807,7 +2736,7 @@ export class FieldScene extends Phaser.Scene {
 
   /** その場所が、いま見える範囲にどれだけ入っているか（1 = はっきり見える、0 = 見えない） */
   private visibility(x: number, y: number): number {
-    // 土の精はまるく見える。ふつうは前の扇形と足元だけ（雷のミッションのあとは、しばらくまるい）
+    // 土の精は漂っている位置から、近くのパテが見える
     if (this.spirit) {
       const me = this.listenerPos();
       const d = Math.hypot(x - me.x, y - me.y);

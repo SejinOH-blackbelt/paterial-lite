@@ -8,32 +8,30 @@ import { canSee, isLit, seeAmount } from '../src/game/vision';
 
 const at = (x: number, y: number) => createHarvester(createWalker({ x, y }));
 
-describe('視界は前だけ', () => {
-  it('前の扇形は見えるが、後ろは見えない', () => {
+describe('パテが見える範囲', () => {
+  it('近いパテはどの方向でも見える', () => {
     const h = at(300, 300);
     faceTo(h.walker, 'right');
     expect(canSee(h, { x: 380, y: 300 }, 0)).toBe(true); // 前
-    expect(canSee(h, { x: 220, y: 300 }, 0)).toBe(false); // 後ろ
-    expect(canSee(h, { x: 300, y: 380 }, 0)).toBe(false); // 真横は扇の外
+    expect(canSee(h, { x: 220, y: 300 }, 0)).toBe(true); // 後ろ
+    expect(canSee(h, { x: 300, y: 380 }, 0)).toBe(true); // 真横
   });
 
-  it('足元のまわり（nearRadius）は後ろでも見える。見える半径より遠くは見えない', () => {
+  it('見える半径より遠くは見えない', () => {
     const h = at(300, 300);
     faceTo(h.walker, 'right');
-    expect(canSee(h, { x: 300 - VISION.nearRadius + 5, y: 300 }, 0)).toBe(true);
     expect(canSee(h, { x: 300 + VISION.radius + 5, y: 300 }, 0)).toBe(false);
   });
 
-  it('扇のふちでは、ふわっと見えにくくなる', () => {
+  it('距離の境目でふわっと消える', () => {
     const h = at(300, 300);
     faceTo(h.walker, 'right');
-    const a = VISION.coneHalf - VISION.coneFade / 2;
-    const edge = seeAmount(h, { x: 300 + Math.cos(a) * 80, y: 300 + Math.sin(a) * 80 }, 0);
+    const edge = seeAmount(h, { x: 300 + VISION.radius - VISION.pateFade / 2, y: 300 }, 0);
     expect(edge).toBeGreaterThan(0);
     expect(edge).toBeLessThan(1);
   });
 
-  it('雷のスイッチを入れると、しばらく視界がまるくなる（後ろも見える）', () => {
+  it('雷のスイッチを入れると、しばらく遠くのパテが見える', () => {
     const board = buildBoard({ types: ['thunder'], pairs: [[0, 1]], sites: [[0, 1, 2]] });
     const s = board.missions[0].spots[0];
     const h = createHarvester(createWalker({ x: s.x, y: s.y + 20 }), 'thunder', [0]);
@@ -41,7 +39,9 @@ describe('視界は前だけ', () => {
     finishMission(h, board, 100);
     expect(isLit(h, 100 + VISION.lightSeconds - 1)).toBe(true);
     faceTo(h.walker, 'right');
-    expect(canSee(h, { x: h.walker.pos.x - 80, y: h.walker.pos.y }, 110)).toBe(true);
+    const farther = { x: h.walker.pos.x - VISION.radius - 5, y: h.walker.pos.y };
+    expect(canSee(h, farther, 110)).toBe(true);
+    expect(canSee(h, farther, 100 + VISION.lightSeconds + 1)).toBe(false);
     expect(isLit(h, 100 + VISION.lightSeconds + 1)).toBe(false);
   });
 });

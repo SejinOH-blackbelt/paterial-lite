@@ -174,7 +174,7 @@ describe('スパイの「本当にやる」「ふりをする」', () => {
     expect(boardGauge(spied)).toBeCloseTo(boardGauge(citizen) * MATCH.spyCredit, 6);
   });
 
-  it('ふりを見ていたBotは少し怪しむ（後ろ向きなら気づかない）', () => {
+  it('近くのBotは向きに関係なくふりに気づき、少し怪しむ', () => {
     const board = testBoard();
     const spyH = atSpot(board, 0, 0, 0);
     const watcher = createHarvester(createWalker({ x: spyH.walker.pos.x + 60, y: spyH.walker.pos.y }));
@@ -191,7 +191,7 @@ describe('スパイの「本当にやる」「ふりをする」', () => {
     const ev = finishAsBot(spyH, board, 100)!;
     observeFake(m, ev);
     expect(suspicionOf(m, pawns[1], pawns[0])).toBe(SUSPICION.sawFake);
-    expect(suspicionOf(m, pawns[2], pawns[0])).toBe(0);
+    expect(suspicionOf(m, pawns[2], pawns[0])).toBe(SUSPICION.sawFake);
   });
 });
 

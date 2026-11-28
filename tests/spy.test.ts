@@ -73,7 +73,7 @@ describe('スパイ', () => {
     expect(allScanned(s)).toBe(true);
   });
 
-  it('スキャンの瞬間に、近くでこちらを向いていたパテは目撃者になる。遠くのパテ・後ろを向いていたパテはならない（視界は前だけ）', () => {
+  it('スキャンの瞬間に近くにいたパテは向きに関係なく目撃し、遠くのパテは目撃しない', () => {
     const spy = at(torii.x, torii.y + 20);
     const near = at(torii.x + 60, torii.y + 20);
     faceTo(near.walker, 'left'); // スパイのほうを向いている
@@ -84,7 +84,7 @@ describe('スパイ', () => {
     startScan(s, 0);
     const ev = updateScan(s, [spy, near, back, far], SPY.scanSeconds)!;
     expect(ev.witnesses).toContain(near);
-    expect(ev.witnesses).not.toContain(back);
+    expect(ev.witnesses).toContain(back);
     expect(ev.witnesses).not.toContain(far);
   });
 

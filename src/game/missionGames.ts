@@ -790,7 +790,35 @@ export function updatePhrase(g: PhraseGame, now: number): Step {
   return 'ignored';
 }
 
-export type MissionGame = HeatGame | NetGame | WindPathGame | PhraseGame | DrumGame | PegGame | JigsawGame | PrayerGame;
+export type Offering = 'flower' | 'leaf' | 'moon';
+
+export interface OfferingsGame {
+  kind: 'offerings';
+  tray: Offering[];
+  bowls: Offering[];
+  placed: Offering[];
+  selected: Offering | null;
+}
+
+export function createOfferingsGame(rng: Rng): OfferingsGame {
+  const tray = shuffle<Offering>(rng, ['flower', 'leaf', 'moon']);
+  const bowls = [tray[1], tray[2], tray[0]];
+  return { kind: 'offerings', tray, bowls, placed: [], selected: null };
+}
+
+export function selectOffering(game: OfferingsGame, item: Offering): void {
+  if (!game.placed.includes(item)) game.selected = item;
+}
+
+export function placeOffering(game: OfferingsGame, bowl: Offering): Step {
+  if (!game.selected || game.placed.includes(bowl)) return 'ignored';
+  if (game.selected !== bowl) return 'miss';
+  game.placed.push(bowl);
+  game.selected = null;
+  return game.placed.length === game.bowls.length ? 'done' : 'ok';
+}
+
+export type MissionGame = HeatGame | NetGame | WindPathGame | PhraseGame | DrumGame | PegGame | JigsawGame | PrayerGame | OfferingsGame;
 export type MissionGameKind = MissionGame['kind'];
 
 /**
@@ -808,6 +836,8 @@ export function createMissionGame(kind: MissionGameKind, now: number, origin: nu
       return createJigsawGame(rng, AFFINITY.jigsawPreplaced[a], AFFINITY.jigsawPenalty[a]);
     case 'prayer':
       return createPrayerGame(origin, AFFINITY.claps[a], AFFINITY.clapWindow[a]);
+    case 'offerings':
+      return createOfferingsGame(rng);
     case 'heat':
       return createHeatGame(now, origin, rng, AFFINITY.heatNotes[a], AFFINITY.heatWindow[a]);
     case 'net':

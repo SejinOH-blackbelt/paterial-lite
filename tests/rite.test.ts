@@ -4,7 +4,8 @@ import { boardGauge, buildBoard, dealBoard, isRite, missionIdsOf, missionType, p
 import { affinity, type ElementId } from '../src/game/elements';
 import { createHarvester } from '../src/game/harvest';
 import { createMatch, grantRiteReward, type Pawn } from '../src/game/match';
-import { missionAffinity, missionChance } from '../src/game/missions';
+import { missionAffinity, missionChance, startMission } from '../src/game/missions';
+import { placeOffering, selectOffering } from '../src/game/missionGames';
 import { createWalker } from '../src/game/movement';
 import { createRng } from '../src/game/random';
 
@@ -14,6 +15,25 @@ const elementsOf = (n: number, seed: number): ElementId[] => {
 };
 
 describe('王様の儀式（王様だけのミッション）', () => {
+  it('祭壇ではお供え3つを時間判定なしで置く。置き間違えても進み具合を保つ', () => {
+    const rng = createRng(15);
+    const board = dealBoard(elementsOf(6, 2), rng, 0);
+    const rite = board.missions.find(isRite)!;
+    const h = createHarvester(createWalker(rite.spots[0]), 'fire', [rite.id]);
+    startMission(h, board, [h], 0, rng, { origin: 0 });
+    const game = h.task?.game;
+    expect(game?.kind).toBe('offerings');
+    if (game?.kind !== 'offerings') throw new Error('お供えが始まらなかった');
+    const [a, b, c] = game.tray;
+    selectOffering(game, a);
+    expect(placeOffering(game, a)).toBe('ok');
+    selectOffering(game, b);
+    expect(placeOffering(game, c)).toBe('miss');
+    expect(game.placed).toEqual([a]);
+    expect(placeOffering(game, b)).toBe('ok');
+    selectOffering(game, c);
+    expect(placeOffering(game, c)).toBe('done');
+  });
   for (const n of [6, 7, 8, 9, 10]) {
     it(`${n}人：王様は儀式だけ。祭壇は5つのゾーンに1つずつ。ほかの人は王様と組まない`, () => {
       for (let seed = 1; seed <= 40; seed++) {
