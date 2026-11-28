@@ -45,3 +45,4 @@ export function matchPoints(m: MatchState): number[] {
 export function addPoints(totals: readonly number[], points: readonly number[]): number[] {
   return points.map((pt, i) => (totals[i] ?? 0) + pt);
 }
+export const SCORE_TOTALS_KEY = 'scoreTotals';

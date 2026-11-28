@@ -2,6 +2,7 @@
 import Phaser from 'phaser';
 import { COLORS, PLAYERS, ELEMENT_NAMES, ELEMENTS, KING_PART, MISSIONS, NET, PLAYER_ELEMENT, PLAYER_PART, SCREEN } from '../game/config';
 import { gameMap, setGameMap } from '../game/maps';
+import { SCORE_TOTALS_KEY } from '../game/score';
 import { planBoard, type BoardPlan } from '../game/board';
 import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
@@ -49,6 +50,7 @@ export class RoleScene extends Phaser.Scene {
     fitCamera(this); // 内部の細かさに合わせてカメラを拡大する（座標は 360×640 のまま）
     const net = data?.net;
     setGameMap(net?.mapId ?? this.registry.get('mapId'));
+    if (net?.totals) this.registry.set(SCORE_TOTALS_KEY, net.totals);
     // URL の最後が #spy なら必ずスパイ、#citizen なら必ず市民（テスト用。友達と遊ぶときは親機が決める）
     const rng = createRng(Date.now());
     const hash = typeof location !== 'undefined' ? location.hash : '';

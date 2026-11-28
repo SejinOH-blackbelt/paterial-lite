@@ -46,6 +46,9 @@ export class RelayClient {
   onClosed: () => void = () => {};
   /** 試合が始まった（サーバーが人数を確かめて、みんなに知らせたとき） */
   onStarted: () => void = () => {};
+  /** 親機が試合の合間に開け直したルーム */
+  roomReopened = false;
+  onReopened: () => void = () => {};
   onStatus: (s: RelayStatus) => void = () => {};
 
   constructor(private readonly url: string = relayUrl()) {}
@@ -94,6 +97,10 @@ export class RelayClient {
   /** 親機だけ：試合を始める（2人以上いれば、サーバーが onStarted でみんなに知らせる） */
   start(): void {
     this.raw({ t: 'start' });
+  }
+
+  reopen(seats: number): void {
+    this.raw({ t: 'reopen', seats });
   }
 
   /** 同じルームの人へ伝言を送る（to：'all' みんな、'host' 親機、数字 その人） */
@@ -148,7 +155,12 @@ export class RelayClient {
         this.onError((msg.code as JoinError) ?? 'bad');
         return;
       case 'started':
+        this.roomReopened = false;
         this.onStarted();
+        return;
+      case 'reopened':
+        this.roomReopened = true;
+        this.onReopened();
         return;
       case 'closed':
         // ルームがなくなったので、接続も閉じる（古い接続が残らないように）

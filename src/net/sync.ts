@@ -318,6 +318,8 @@ export interface StartWire {
   len?: number;
   /** 親機が選んだマップ */
   map: import('../game/maps').MapId;
+  /** 再戦を始める前の席ごとの合計。新しく人が入った席は 0 */
+  totals?: number[];
 }
 
 /** 子機 → 親機：最初のエレメントを選び終えた（選んだエレメント：ELEMENTS の番号） */

@@ -7,11 +7,13 @@
 //     { t: 'join', room: 'ABCD' }             合言葉でルームに入る
 //     { t: 'send', to: 'all'|'host'|id, data } 同じルームの人へ伝言（data の中身は見ない）
 //     { t: 'start' }                          親機だけ：2人以上いれば試合を始める（もう人を入れない）
+//     { t: 'reopen', seats }                   親機だけ：試合の合間に、席の数まで参加を受けつける
 //   サーバー → スマホ
 //     { t: 'joined', room, you, host }        入れた（you：自分の番号、host：親機の番号）
 //     { t: 'members', members: [{ id, host }] } ルームの顔ぶれが変わった
 //     { t: 'msg', from, data }                だれかからの伝言
 //     { t: 'started' }                        試合が始まった（親機の start が通ったとき、みんなに）
+//     { t: 'reopened' }                       再募集できる（親機にだけ）
 //     { t: 'error', code }                    できなかった（no-room / full / started / few / bad）
 //     { t: 'closed' }                         親機が抜けたので、ルームがなくなった
 
@@ -24,7 +26,7 @@ export const MIN_MEMBERS = 2;
 const CODE_CHARS = 'ACDEFGHJKLMNPQRTUVWXY34679';
 
 export function createRooms(random = Math.random) {
-  /** @type {Map<string, { code: string, host: number, members: Map<number, (msg: object) => void>, locked: boolean }>} */
+  /** @type {Map<string, { code: string, host: number, members: Map<number, (msg: object) => void>, locked: boolean, capacity: number }>} */
   const rooms = new Map();
   /** だれがどのルームにいるか */
   const where = new Map();
@@ -61,7 +63,7 @@ export function createRooms(random = Math.random) {
       switch (msg.t) {
         case 'create': {
           if (current) return client.send({ t: 'error', code: 'bad' });
-          const room = { code: newCode(), host: client.id, members: new Map([[client.id, client.send]]), locked: false };
+          const room = { code: newCode(), host: client.id, members: new Map([[client.id, client.send]]), locked: false, capacity: MAX_MEMBERS };
           rooms.set(room.code, room);
           where.set(client.id, room);
           client.send({ t: 'joined', room: room.code, you: client.id, host: room.host });
@@ -74,7 +76,7 @@ export function createRooms(random = Math.random) {
           const room = rooms.get(code);
           if (!room) return client.send({ t: 'error', code: 'no-room' });
           if (room.locked) return client.send({ t: 'error', code: 'started' });
-          if (room.members.size >= MAX_MEMBERS) return client.send({ t: 'error', code: 'full' });
+          if (room.members.size >= room.capacity) return client.send({ t: 'error', code: 'full' });
           room.members.set(client.id, client.send);
           where.set(client.id, room);
           client.send({ t: 'joined', room: room.code, you: client.id, host: room.host });
@@ -87,6 +89,16 @@ export function createRooms(random = Math.random) {
           if (current.members.size < MIN_MEMBERS) return client.send({ t: 'error', code: 'few' });
           current.locked = true;
           for (const send of current.members.values()) send({ t: 'started' });
+          return;
+        }
+        case 'reopen': {
+          if (!current || current.host !== client.id || !current.locked ||
+              !Number.isInteger(msg.seats) || msg.seats < current.members.size || msg.seats > MAX_MEMBERS) {
+            return client.send({ t: 'error', code: 'bad' });
+          }
+          current.capacity = msg.seats;
+          current.locked = false;
+          client.send({ t: 'reopened' });
           return;
         }
         case 'send': {

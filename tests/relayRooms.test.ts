@@ -16,6 +16,30 @@ function setup() {
 }
 
 describe('中継サーバーのルーム', () => {
+  it('親機が再募集した試合間だけ新しく入れ、次の試合でまた締め切る', () => {
+    const { rooms, people } = setup();
+    const [a, b, c, d] = people;
+    rooms.handle(a.client, { t: 'create' });
+    const room = a.last('joined')!.room;
+    rooms.handle(b.client, { t: 'join', room });
+    rooms.handle(a.client, { t: 'start' });
+    rooms.handle(b.client, { t: 'reopen', seats: 3 });
+    expect(b.last('error')?.code).toBe('bad');
+    rooms.handle(c.client, { t: 'join', room });
+    expect(c.last('error')?.code).toBe('started');
+    rooms.handle(a.client, { t: 'reopen', seats: 3 });
+    expect(a.last('reopened')).toBeTruthy();
+    rooms.handle(c.client, { t: 'join', room });
+    expect(c.last('joined')).toBeTruthy();
+    rooms.handle(d.client, { t: 'join', room });
+    expect(d.last('error')?.code).toBe('full');
+    rooms.handle(a.client, { t: 'start' });
+    expect(c.last('started')).toBeTruthy();
+    rooms.disconnect(c.client);
+    rooms.handle(d.client, { t: 'join', room });
+    expect(d.last('error')?.code).toBe('started');
+  });
+
   it('はじめるのは親機だけ。2人以上いるときだけ始まり、みんなに知らせる', () => {
     const { rooms, people } = setup();
     const [a, b] = people;

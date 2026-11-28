@@ -2,7 +2,7 @@
 import Phaser from 'phaser';
 import { COLORS, SCREEN } from '../game/config';
 import type { MatchState, Pawn } from '../game/match';
-import { addPoints, matchPoints } from '../game/score';
+import { addPoints, matchPoints, SCORE_TOTALS_KEY } from '../game/score';
 import { PateView } from './PateView';
 import { INK, cssColor, fitCamera, label, panel, textButton } from './ui';
 import { pawnName } from '../game/names';
@@ -19,8 +19,6 @@ export interface ScoreData {
   net?: NetGame;
 }
 
-/** 続けて遊んだ合計を覚えておく場所（タイトルに戻ると 0 点から） */
-export const SCORE_TOTALS_KEY = 'scoreTotals';
 /** もう点を足した試合（同じ試合を2回足さないように） */
 const counted = new WeakSet<MatchState>();
 
@@ -96,12 +94,44 @@ export class ScoreScene extends Phaser.Scene {
         this.scene.start('Title');
       };
       if (net && isHostGame(net)) {
-        // 親機：同じメンバーで、もう1試合（友達がみんな抜けていたら、始められない）
-        const note = label(this, x, 552, '', 12, INK).setStroke(INK, 0);
+        const { relay } = net;
+        const note = label(this, x, 628, '', 12, INK).setStroke(INK, 0);
+        let reopening = false;
+        let starting = false;
+        const invite = textButton(this, x, 548, 200, 34, '友達を追加で招待', COLORS.uiPaper, () => {
+          if (starting || reopening || relay.roomReopened || relay.members.length >= net.seats.length) return;
+          reopening = true;
+          relay.onError = () => {
+            reopening = false;
+            note.setText('ルームを開けませんでした');
+          };
+          relay.reopen(net.seats.length);
+        }, 14);
+        const showInvite = () => {
+          invite.setVisible(!relay.roomReopened && relay.members.length < net.seats.length);
+          if (relay.roomReopened) note.setText(`合言葉 ${relay.room}　${relay.members.length} / ${net.seats.length}人`);
+        };
+        relay.onReopened = () => {
+          reopening = false;
+          showInvite();
+        };
+        relay.onMembers = showInvite;
+        showInvite();
         textButton(this, x - 80, 590, 140, 48, 'もう1試合', COLORS.uiHoney, () => {
-          if (!startRematch(this, net)) note.setText('友達が みんな ぬけてしまいました');
+          if (reopening || starting) return;
+          starting = startRematch(this, net, () => {
+            starting = false;
+            note.setText('友達が入ってから はじめてね');
+          });
+          if (!starting) note.setText('友達が入ってから はじめてね');
         }, 19);
         textButton(this, x + 80, 590, 140, 48, 'タイトルへ', COLORS.uiPaper, toTitle, 16);
+        this.events.once('shutdown', () => {
+          relay.onReopened = () => {};
+          relay.onMembers = () => {};
+          relay.onStarted = () => {};
+          relay.onError = () => {};
+        });
       } else {
         // 子機：親機が「もう1試合」を押すのを待つ
         label(this, x, 552, net ? 'ルームを作った人が「もう1試合」を 押すのを待っています' : '友達と もう一度遊ぶときは、タイトルから', 11, INK).setStroke(INK, 0);

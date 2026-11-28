@@ -3,13 +3,13 @@
 // ・親機がスコアの画面で「もう1試合」を押すと、同じメンバー・同じ席のまま、新しいスパイと乱数のたねで次の試合を始める
 //   （ロビーの「はじめる」と同じ「match」の知らせを送る）。合計の点は席ごとに続く。
 // ・抜けた人の席は Bot にする（席の番号はずらさない。合計の点がほかの人とずれないように）。
-// ・途中から新しい人が入るのは、中継サーバーの変更がいるので、まだ（ルームは試合が始まると締め切られる）。
+// ・試合のあいだに来た人は、席をあけている Bot と交代する。
 import type Phaser from 'phaser';
 import { NET } from '../game/config';
-import { mapIdFrom } from '../game/maps';
+import { SCORE_TOTALS_KEY } from '../game/score';
 import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
-import { netGameFromStart, type NetGame } from '../net/netGame';
+import { netGameFromStart, validStart, type NetGame } from '../net/netGame';
 import type { RelayClient } from '../net/relay';
 import type { NetMessage, StartWire } from '../net/sync';
 import type { RoleData } from './RoleScene';
@@ -19,15 +19,23 @@ export function seatsAfterLeave(seats: number[], present: Set<number>): number[]
   return seats.map((id, i) => (i === 0 || id === 0 || present.has(id) ? id : 0));
 }
 
+export function assignRematchSeats(previous: number[], present: Set<number>, totals: readonly number[]) {
+  const remaining = seatsAfterLeave(previous, present);
+  const newPeople = [...present].filter((id) => !previous.includes(id));
+  const seats = remaining.map((id) => id || newPeople.shift() || 0);
+  return {
+    seats,
+    totals: seats.map((id, i) => id !== 0 && id !== previous[i] ? 0 : totals[i] ?? 0),
+  };
+}
+
 /**
  * 親機から届いた「もう1試合」の知らせが、こわれていないか：席の数と並びが前の試合と同じ（抜けた人の席が Bot になるのはよい）、
  * 親機の席は同じ、スパイの席が席の中にある、自分の席がある
  */
 export function validRematch(prev: number[], m: StartWire, you: number): boolean {
-  if (!Array.isArray(m.seats) || m.seats.length !== prev.length) return false;
-  if (!m.seats.every((id, i) => Number.isInteger(id) && (id === prev[i] || (id === 0 && i !== 0)))) return false;
-  if (!Number.isInteger(m.spy) || m.spy < 0 || m.spy >= m.seats.length || !Number.isInteger(m.seed)) return false;
-  return m.seats.indexOf(you) >= 0 && mapIdFrom(m.map) === m.map;
+  return validStart(m, prev[0], you) && m.seats.length === prev.length &&
+    m.seats.every((id, i) => id === prev[i] || id === 0 || !prev.includes(id));
 }
 
 /** 試合のあいだに届いた「もう1試合」の知らせ（画面の切りかえのすきまで、受けとり損ねないように取っておく） */
@@ -77,14 +85,22 @@ export function listenRematch(scene: Phaser.Scene, net: NetGame, onClosed: () =>
 /**
  * 親機：同じ席のまま、次の試合を始める。友達がみんな抜けていたら false（始めない）
  */
-export function startRematch(scene: Phaser.Scene, net: NetGame): boolean {
-  const present = new Set(net.relay.members.map((m) => m.id));
-  const seats = seatsAfterLeave(net.seats, present);
-  if (seats.filter((id) => id !== 0).length < 2) return false;
-  const seed = Math.floor(Math.random() * 2 ** 31);
-  const spy = chooseSpy(seats.length, createRng(seed ^ 0x5eed));
-  const msg: StartWire = { k: 'match', v: NET.version, seats, spy, seed, len: net.seconds, map: net.mapId };
-  net.relay.send('all', msg);
-  scene.scene.start('Role', { spyIndex: spy, net: netGameFromStart(net.relay, msg) } satisfies RoleData);
+export function startRematch(scene: Phaser.Scene, net: NetGame, onError: () => void): boolean {
+  const { relay } = net;
+  if (relay.members.length < 2) return false;
+  const go = () => {
+    const present = new Set(relay.members.map((m) => m.id));
+    const { seats, totals } = assignRematchSeats(net.seats, present, scene.registry.get(SCORE_TOTALS_KEY) ?? []);
+    const seed = Math.floor(Math.random() * 2 ** 31);
+    const spy = chooseSpy(seats.length, createRng(seed ^ 0x5eed));
+    const msg: StartWire = { k: 'match', v: NET.version, seats, spy, seed, len: net.seconds, map: net.mapId, totals };
+    relay.send('all', msg);
+    scene.scene.start('Role', { spyIndex: spy, net: netGameFromStart(relay, msg) } satisfies RoleData);
+  };
+  if (relay.roomReopened) {
+    relay.onStarted = go;
+    relay.onError = onError;
+    relay.start();
+  } else go();
   return true;
 }

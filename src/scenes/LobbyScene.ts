@@ -5,7 +5,7 @@ import { BOT_PROFILES, COLORS, MATCH, NET, PLAYERS, PLAYER_PART, SCREEN } from '
 import { matchSecondsFrom, nextMatchSeconds } from '../game/match';
 import { mapIdFrom, mapList, type MapId } from '../game/maps';
 import { inviteUrl, RelayClient, type JoinError } from '../net/relay';
-import { netGameFromStart } from '../net/netGame';
+import { netGameFromStart, validStart } from '../net/netGame';
 import { assignSeats, type StartWire } from '../net/sync';
 import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
@@ -176,7 +176,7 @@ export class LobbyScene extends Phaser.Scene {
           this.showMenu('ゲームが新しくなっています。\nページを読みこみ直してから、もう一度入ってね');
           return;
         }
-        if (mapIdFrom(m.map) !== m.map) {
+        if (!validStart(m, relay.host, relay.you)) {
           relay.close();
           this.showMenu('地図の情報を 受け取れませんでした。\nもう一度 入ってね');
           return;
@@ -328,6 +328,8 @@ export class LobbyScene extends Phaser.Scene {
   private goRole(m: StartWire): void {
     const relay = this.relay!;
     const net = netGameFromStart(relay, m);
+    relay.onStarted = () => {};
+    relay.onError = () => {};
     this.relay = null; // この画面を閉じても、接続は切らない
     this.scene.start('Role', { spyIndex: m.spy, net } satisfies RoleData);
   }

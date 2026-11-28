@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { NET } from '../src/game/config';
 import type { StartWire } from '../src/net/sync';
-import { seatsAfterLeave, validRematch } from '../src/scenes/rematch';
+import { assignRematchSeats, seatsAfterLeave, validRematch } from '../src/scenes/rematch';
 
 const msg = (seats: unknown, spy = 1, seed = 5): StartWire => ({ k: 'match', v: NET.version, seats: seats as number[], spy, seed, map: 'island' });
 
@@ -22,5 +22,14 @@ describe('友達と遊ぶときの「もう1試合」', () => {
     expect(validRematch(prev, msg(null), 8)).toBe(false);
     expect(validRematch(prev, msg([7, 8, 9, 0, 0, 0], 6), 8)).toBe(false); // スパイの席が外
     expect(validRematch(prev, msg([7, 0, 9, 0, 0, 0]), 8)).toBe(false); // 自分の席がない
+  });
+
+  it('残った人の席と合計を保ち、新しく人が入った席を0点にする', () => {
+    const prev = [7, 8, 9, 0, 0, 0];
+    const rematch = assignRematchSeats(prev, new Set([7, 9, 10, 11]), [2, -1, 4, 6, -3, 8]);
+    expect(rematch).toEqual({ seats: [7, 10, 9, 11, 0, 0], totals: [2, 0, 4, 0, -3, 8] });
+    expect(validRematch(prev, { ...msg(rematch.seats), totals: rematch.totals }, 9)).toBe(true);
+    expect(validRematch(prev, msg([7, 10, 9, 10, 0, 0]), 9)).toBe(false);
+    expect(validRematch(prev, { ...msg(rematch.seats), totals: [2] }, 9)).toBe(false);
   });
 });

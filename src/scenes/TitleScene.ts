@@ -10,7 +10,7 @@ import { makePartTextures } from './partTextures';
 import { PateView } from './PateView';
 import { makeSpyTextures } from './spyTextures';
 import { makeTextures } from './textures';
-import { SCORE_TOTALS_KEY } from './ScoreScene';
+import { SCORE_TOTALS_KEY } from '../game/score';
 import { askPlayerName, loadPlayerName, savePlayerName } from './playerName';
 import { FONT, INK, cssColor, label, panel, textButton, fitCamera } from './ui';
 
