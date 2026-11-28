@@ -553,11 +553,14 @@ export class FieldScene extends Phaser.Scene {
    */
   private drawZones(): void {
     const g = this.add.graphics().setDepth(-500);
-    for (const z of gameMap().zones) {
+    const map = gameMap();
+    for (const z of map.zones) {
       const color = ELEMENT_COLOR[z.element];
-      const pts = z.polygon.map((p) => new Phaser.Math.Vector2(p.x, p.y));
-      g.fillStyle(color, 0.16).fillPoints(pts, true);
-      g.lineStyle(3, color, 0.7).strokePoints(pts, true);
+      if (map.id === 'classic') {
+        const pts = z.polygon.map((p) => new Phaser.Math.Vector2(p.x, p.y));
+        g.fillStyle(color, 0.16).fillPoints(pts, true);
+        g.lineStyle(3, color, 0.7).strokePoints(pts, true);
+      }
       const tag = this.add.image(z.label.x, z.label.y - 16, ELEMENT_PICTURE(z.element)).setScale(0.42).setDepth(z.label.y + 1);
       label(this, z.label.x, z.label.y + 6, z.name, 12).setDepth(z.label.y + 1);
       void tag;

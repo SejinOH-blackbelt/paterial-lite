@@ -8,6 +8,7 @@ import { FACILITY_TEX } from './facilityTextures';
 import { ELEMENT_RES_TEX } from './resourceTextures';
 import { LANDMARK_TEX } from './spyTextures';
 import { INK, label } from './ui';
+import { islandGroundImage } from './islandGround';
 
 export class MeetingMap {
   private readonly map = gameMap();
@@ -44,6 +45,7 @@ export class MeetingMap {
     g.fillStyle(0x2f4a6b).fillRoundedRect(0, 0, this.width, this.height, 5); // ふちは浮世絵の藍
     g.fillStyle(0xe6bb6a).fillRect(field.left * s, field.top * s, (field.right - field.left) * s, (field.bottom - field.top) * s);
     const parts: Phaser.GameObjects.GameObject[] = [g];
+    if (this.map.id === 'island') parts.push(islandGroundImage(scene, this.map).setScale(s));
     // 小さな地図は絵が小さすぎて見えないので、絵を少し大きめに描く
     const icon = big ? s * 1.25 : s * 2.4;
     for (const r of resourcePoints) {
@@ -93,6 +95,7 @@ export class MeetingMap {
     const y = (screenY - this.container.y) / this.scale;
     const { field } = this.map;
     if (x < field.left || x > field.right || y < field.top || y > field.bottom) return null;
+    if (this.map.walk && !this.map.walk({ x, y }) && !this.map.zones.some(({ element }) => this.map.walk!({ x, y }, element))) return null;
     return { x, y };
   }
 
