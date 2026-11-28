@@ -174,7 +174,7 @@ export const NET = {
    * ゲームのルールの版。友達と遊ぶとき、親機と子機でちがったら、読みこみ直してもらう
    * （ルールや通信の中身を変えたら、1 つ上げる）
    */
-  version: 12,
+  version: 13,
   /** ようすを送る間隔（秒）。短いほど動きがなめらかだが、通信が増える */
   sendInterval: 0.1,
   /** 親機が、みんながエレメントを選び終えるのを待つ最長の秒数（抜けた人がいても始められるように） */
@@ -263,6 +263,7 @@ export const HEAD_PARTS = ['redKerchief', 'strawHat', 'bowScarf', 'pomCap', 'dot
 /** 王様パテがかぶる頭のパーツ */
 export const KING_PART = 'crown';
 export const PLAYER_PART = HEAD_PARTS[0];
+export const MOTIF_PICK_SECONDS = 10;
 
 /**
  * パテのエレメント（全世界共通の5つ。デザインは docs/concept/element-pates.webp）。

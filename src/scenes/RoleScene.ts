@@ -1,6 +1,6 @@
 // 役の発表：「きみは 王様」「きみは 市民」（友達と遊ぶとき、王様でない人）か「きみは スパイ」。スパイをここで決めて、採取場に渡す
 import Phaser from 'phaser';
-import { COLORS, PLAYERS, ELEMENT_NAMES, ELEMENTS, KING_PART, MISSIONS, NET, PLAYER_ELEMENT, PLAYER_PART, SCREEN } from '../game/config';
+import { COLORS, PLAYERS, ELEMENT_NAMES, ELEMENTS, MISSIONS, MOTIF_PICK_SECONDS, NET, PLAYER_ELEMENT, PLAYER_PART, SCREEN } from '../game/config';
 import { gameMap, setGameMap } from '../game/maps';
 import { SCORE_TOTALS_KEY } from '../game/score';
 import { planBoard, type BoardPlan } from '../game/board';
@@ -10,7 +10,8 @@ import { PateView } from './PateView';
 import { INK, cssColor, label, panel, textButton, fitCamera } from './ui';
 import { ELEMENT_PICTURE as ELEMENT_ICON, makeElementPictures as makeElementIcons } from './elementPictures';
 import { randomElement, type ElementId } from '../game/elements';
-import { sanitizeName } from '../game/names';
+import { assignMotifs, MOTIFS, motifFrom, partName, sanitizeName, type Motif } from '../game/names';
+import { partKey } from './partTextures';
 import { loadPlayerName } from './playerName';
 import type { NetGame } from '../net/netGame';
 import type { GoWire, NetMessage, ReadyWire } from '../net/sync';
@@ -32,6 +33,7 @@ export interface RoleData {
   pawnCount?: number;
   /** 友達と遊ぶとき：席ごとの名前（Bot の席と、入れていない人は ''）。ひとりのときは、自分の名前を Field が読みこむ */
   names?: string[];
+  motifs?: Motif[];
   /** 王様（プレイヤー）が選んだ宝物庫と出口の場所（ひとりで遊ぶときだけ。なければ王様 Bot の決め方） */
   treasure?: { v: string; e: [string, string]; s?: string };
 }
@@ -39,7 +41,8 @@ export interface RoleData {
 export class RoleScene extends Phaser.Scene {
   /** この試合の人数 */
   private pawnCount: number = PLAYERS.default;
-  private pate!: PateView;
+  private pate?: PateView;
+  private motif: Motif = PLAYER_PART;
   private t = 0;
 
   constructor() {
@@ -63,7 +66,50 @@ export class RoleScene extends Phaser.Scene {
     const humans = net ? net.seats.map((id) => id !== 0) : Array.from({ length: count }, (_, i) => i === 0);
     const isKing = !isSpy && kingSeat(humans, spyIndex) === mySeat;
     if (net) this.listenNet(net);
+    this.pate = undefined;
+    this.pickMotif(() => this.revealRole(spyIndex, net, isSpy, isKing));
+  }
 
+  private pickMotif(done: () => void): void {
+    const x = SCREEN.width / 2;
+    let chosen = motifFrom(this.registry.get('motif')) ?? PLAYER_PART;
+    const card = panel(this, x, 318, 332, 350, COLORS.uiPaper);
+    const title = label(this, x, 174, '帽子・スカーフを えらぼう', 21, INK).setStroke(INK, 0);
+    const choices = MOTIFS.map((part, i) => {
+      const px = 52 + (i % 5) * 64;
+      const py = 244 + Math.floor(i / 5) * 86;
+      const tile = this.add.rectangle(px, py, 56, 74, COLORS.uiCream).setInteractive({ useHandCursor: true });
+      const art = this.add.image(px, py - 10, partKey(part)).setDisplaySize(39, 33);
+      const name = label(this, px, py + 19, partName(part), 11, INK).setStroke(INK, 0);
+      tile.on('pointerdown', () => {
+        chosen = part;
+        refresh();
+      });
+      return { tile, art, name, part };
+    });
+    const refresh = () => choices.forEach(({ tile, part }) => tile.setStrokeStyle(part === chosen ? 3 : 1, part === chosen ? COLORS.uiWood : COLORS.uiPaperEdge));
+    const note = label(this, x, 378, `${MOTIF_PICK_SECONDS}秒で 選んだ飾りに決定`, 12, INK).setStroke(INK, 0);
+    let picked = false;
+    const finish = () => {
+      if (picked) return;
+      picked = true;
+      timer.remove();
+      this.motif = chosen;
+      this.registry.set('motif', chosen);
+      for (const { tile, art, name } of choices) {
+        tile.destroy();
+        art.destroy();
+        name.destroy();
+      }
+      [card, title, note, button].forEach((o) => o.destroy());
+      this.time.delayedCall(0, done);
+    };
+    const button = textButton(this, x, 432, 140, 44, 'これにする', COLORS.uiHoney, finish, 17);
+    const timer = this.time.delayedCall(MOTIF_PICK_SECONDS * 1000, finish);
+    refresh();
+  }
+
+  private revealRole(spyIndex: number, net: NetGame | undefined, isSpy: boolean, isKing: boolean): void {
     const x = SCREEN.width / 2;
     this.cameras.main.setBackgroundColor(isSpy ? COLORS.uiStone : COLORS.background);
     panel(this, x, 319, 318, 476, isSpy ? COLORS.landmarkIron : COLORS.uiPaper, isSpy ? COLORS.stoneDark : COLORS.uiWood);
@@ -76,10 +122,11 @@ export class RoleScene extends Phaser.Scene {
     }
     this.add.ellipse(x, 371, 118, 24, isSpy ? COLORS.uiStone : COLORS.uiPaperEdge).setStrokeStyle(2, trim);
     panel(this, x, 460, 292, 112, isSpy ? COLORS.uiStone : COLORS.scanPaper);
-    label(this, x, 150, 'きみは', 26);
+    const name = label(this, x, 150, `${loadPlayerName() || partName(this.motif)} は`, 26);
+    if (name.width > 270) name.setScale(270 / name.width);
     label(this, x, 205, isSpy ? 'スパイ' : isKing ? '王様' : '市民', 56, cssColor(COLORS.uiHoney));
     this.pate = new PateView(this, SCREEN.width / 2, 370);
-    this.pate.setHeadPart(isKing ? KING_PART : PLAYER_PART);
+    this.pate.setHeadPart(this.motif);
     this.pate.setElement(PLAYER_ELEMENT);
     if (isKing) this.pate.setRoyal(true); // 王様はエレメントなし（王家の体）
     this.pate.setScale(1.6);
@@ -122,7 +169,7 @@ export class RoleScene extends Phaser.Scene {
       const img = this.add.image(ix, 430, ELEMENT_ICON(e)).setScale(0.82).setInteractive({ useHandCursor: true });
       img.on('pointerdown', () => {
         chosen = e;
-        this.pate.setElement(e);
+        this.pate?.setElement(e);
         icons.forEach((o, j) => o.setScale(j === i ? 0.98 : 0.74).setAlpha(j === i ? 1 : 0.6));
         info.setText(`${ELEMENT_NAMES[e]}の体にやどる`);
       });
@@ -157,11 +204,11 @@ export class RoleScene extends Phaser.Scene {
       // ひとりで遊ぶとき、プレイヤーが市民側なら王様：宝物庫と出口の場所を選んでから始める
       if (!isSpy) {
         openTreasurePicker(this, createRng(Date.now()), (plan) =>
-          this.scene.start('Field', { spyIndex, net, element: e, treasure: planToIds(plan), pawnCount: this.pawnCount } satisfies RoleData),
+          this.scene.start('Field', { spyIndex, net, element: e, treasure: planToIds(plan), pawnCount: this.pawnCount, motifs: this.soloMotifs() } satisfies RoleData),
         );
         return;
       }
-      this.scene.start('Field', { spyIndex, net, element: e, pawnCount: this.pawnCount } satisfies RoleData);
+      this.scene.start('Field', { spyIndex, net, element: e, pawnCount: this.pawnCount, motifs: this.soloMotifs() } satisfies RoleData);
       return;
     }
     // 友達と遊ぶとき：王様（人）は、宝物庫と出口の場所を選んでから待つ（選んだ場所は親機へ送り、親機がみんなに配る）
@@ -171,6 +218,10 @@ export class RoleScene extends Phaser.Scene {
     }
     // 全員が選び終えてから、いっせいに始める（親機だけ先に動けないように）
     this.waitForEveryone(spyIndex, net, e, royal);
+  }
+
+  private soloMotifs(): Motif[] {
+    return assignMotifs(Array.from({ length: this.pawnCount }, (_, seat) => seat === 0 ? this.motif : undefined));
   }
 
   /**
@@ -183,10 +234,10 @@ export class RoleScene extends Phaser.Scene {
     label(this, x, 300, royal ? '王様は 王家の体（エレメントなし）' : `${ELEMENT_NAMES[element]}の体にやどった！`, 20, cssColor(COLORS.uiHoney));
     label(this, x, 340, 'みんなが選ぶのを 待っています…', 14);
     let started = false;
-    const start = (elements: ElementId[], plan: BoardPlan, names: string[], tr?: { v: string; e: [string, string]; s?: string }) => {
+    const start = (elements: ElementId[], plan: BoardPlan, names: string[], motifs: Motif[], tr?: { v: string; e: [string, string]; s?: string }) => {
       if (started) return;
       started = true;
-      this.scene.start('Field', { spyIndex, net, element: elements[net.mySeat] ?? element, elements, plan, names, treasure: tr } satisfies RoleData);
+      this.scene.start('Field', { spyIndex, net, element: elements[net.mySeat] ?? element, elements, plan, names, motifs, treasure: tr } satisfies RoleData);
     };
     const host = net.mySeat === 0;
     const humans = net.seats.map((id, seat) => (id !== 0 ? seat : -1)).filter((seat) => seat >= 0);
@@ -198,12 +249,13 @@ export class RoleScene extends Phaser.Scene {
       // 王様（人が座る市民の先頭）は共同ミッションを持たず、王様の儀式を受け持つ
       const plan = planBoard(elements, rng, kingSeat(net.seats.map((id) => id !== 0), net.spy));
       const names = net.seats.map((id, seat) => (seat === 0 ? loadPlayerName() : id !== 0 ? this.readyNames.get(seat) ?? '' : ''));
+      const motifs = assignMotifs(net.seats.map((id, seat) => seat === 0 ? this.motif : id !== 0 ? this.readyMotifs.get(seat) : undefined));
       // 王様（人）が選んだ宝物庫と出口：親機が王様なら自分の、子機が王様ならその人から届いたもの（決まりに合うものだけ）
       const kingAt = kingSeat(net.seats.map((id) => id !== 0), net.spy);
       const chosen = kingAt === 0 ? treasure : this.readyTreasure.get(kingAt);
       const tr = chosen && planFromIds(chosen) ? chosen : undefined;
-      net.relay.send('all', { k: 'go', els: elements.map((e) => ELEMENTS.indexOf(e)), plan, names, tr } satisfies GoWire);
-      start(elements, plan, names, tr);
+      net.relay.send('all', { k: 'go', els: elements.map((e) => ELEMENTS.indexOf(e)), plan, names, motifs, tr } satisfies GoWire);
+      start(elements, plan, names, motifs, tr);
     };
     // 選んでいるあいだに届いた知らせ（create で受けとり始めている）も使う
     this.onReady = () => {
@@ -212,7 +264,7 @@ export class RoleScene extends Phaser.Scene {
     this.onGo = (msg) => {
       const elements = msg.els.map((i) => ELEMENTS[i] ?? 'earth');
       const names = net.seats.map((_, seat) => sanitizeName(msg.names?.[seat]));
-      start(elements, msg.plan, names, msg.tr && planFromIds(msg.tr) ? msg.tr : undefined);
+      start(elements, msg.plan, names, assignMotifs(msg.motifs), msg.tr && planFromIds(msg.tr) ? msg.tr : undefined);
     };
     if (this.goReceived) this.onGo(this.goReceived);
     if (host) {
@@ -220,10 +272,10 @@ export class RoleScene extends Phaser.Scene {
       this.onReady();
       // 抜けた人がいても、待ちすぎたら始める（王様が子機の人なら、場所を選ぶ時間のぶん長く待つ）
       const kingAt = kingSeat(net.seats.map((id) => id !== 0), net.spy);
-      const wait = NET.readyTimeout + (kingAt > 0 ? PICK_SECONDS : 0);
+      const wait = NET.readyTimeout + MOTIF_PICK_SECONDS + (kingAt > 0 ? PICK_SECONDS : 0);
       this.time.delayedCall(wait * 1000, goAll);
     } else {
-      net.relay.send('host', { k: 'ready', e: ELEMENTS.indexOf(element), n: loadPlayerName(), tr: treasure } satisfies ReadyWire);
+      net.relay.send('host', { k: 'ready', e: ELEMENTS.indexOf(element), n: loadPlayerName(), motif: this.motif, tr: treasure } satisfies ReadyWire);
     }
   }
 
@@ -231,6 +283,7 @@ export class RoleScene extends Phaser.Scene {
   private listenNet(net: NetGame): void {
     this.readySeats = new Map();
     this.readyNames = new Map();
+    this.readyMotifs = new Map();
     this.readyTreasure = new Map();
     this.goReceived = null;
     this.onReady = () => {};
@@ -245,6 +298,7 @@ export class RoleScene extends Phaser.Scene {
       if (msg?.k === 'ready' && seat > 0) {
         this.readySeats.set(seat, ELEMENTS[msg.e] ?? 'earth');
         this.readyNames.set(seat, sanitizeName(msg.n));
+        this.readyMotifs.set(seat, motifFrom(msg.motif));
         if (msg.tr) this.readyTreasure.set(seat, msg.tr);
         this.onReady();
       }
@@ -263,6 +317,7 @@ export class RoleScene extends Phaser.Scene {
   private readySeats = new Map<number, ElementId>();
   /** 親機：選び終えた席の名前 */
   private readyNames = new Map<number, string>();
+  private readyMotifs = new Map<number, Motif | undefined>();
   /** 王様の席の子機から届いた、宝物庫と出口の場所 */
   private readyTreasure = new Map<number, { v: string; e: [string, string]; s?: string }>();
   /** 子機：届いた「始める」の知らせ（選んでいるあいだに届いたら、選び終えたらすぐ始める） */
@@ -272,6 +327,7 @@ export class RoleScene extends Phaser.Scene {
 
   /** パテが ぴょこぴょこ 跳ねる */
   update(_time: number, deltaMs: number): void {
+    if (!this.pate) return;
     this.t += deltaMs / 1000;
     this.pate.update(deltaMs / 1000, false);
     this.pate.y = 370 - Math.abs(Math.sin(this.t * 3)) * 8;
@@ -285,6 +341,7 @@ function validGo(msg: GoWire, seats: number): boolean {
   return (
     Array.isArray(msg.els) &&
     msg.els.length === seats &&
+    Array.isArray(msg.motifs) && msg.motifs.length === seats &&
     !!p &&
     Array.isArray(p.types) &&
     Array.isArray(p.pairs) &&

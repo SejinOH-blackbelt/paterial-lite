@@ -328,6 +328,7 @@ export interface ReadyWire {
   e: number;
   /** その人が入れた名前（入れていなければ ''） */
   n?: string;
+  motif?: string;
   /** 王様の席の人だけ：選んだ宝物庫と出口の場所（id） */
   tr?: { v: string; e: [string, string]; s?: string };
 }
@@ -339,6 +340,7 @@ export interface GoWire {
   plan: BoardPlan;
   /** 席ごとの名前（Bot の席と、入れていない人は ''） */
   names?: string[];
+  motifs: string[];
   /** 王様（人）が選んだ宝物庫と出口の場所（id）。王様が Bot のときや選ばなかったときは無し（王様 Bot の決め方） */
   tr?: { v: string; e: [string, string]; s?: string };
 }

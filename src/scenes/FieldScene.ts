@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { PLAYERS, TREASURE, SPOT as SPOT_RULE, BOT, BOT_PROFILES, COLORS, KING_PART, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, GREET, RESOURCE_NAMES, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION } from '../game/config';
+import { PLAYERS, TREASURE, SPOT as SPOT_RULE, BOT, BOT_PROFILES, COLORS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, GREET, RESOURCE_NAMES, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION } from '../game/config';
 import { gameMap } from '../game/maps';
 import { YORISHIRO as YORISHIRO_RULE } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
@@ -198,6 +198,7 @@ export class FieldScene extends Phaser.Scene {
   private myElement: ElementId = PLAYER_ELEMENT;
   /** 友達と遊ぶとき：席ごとの名前（ひとりのときは null。自分の名前はスマホに保存したもの） */
   private seatNames: string[] | null = null;
+  private seatMotifs: RoleData['motifs'];
   /** 友達と遊ぶとき：親機が決めた共同ミッションの配り方と、席ごとのエレメント */
   private plan: BoardPlan | null = null;
   private planElements: ElementId[] | null = null;
@@ -337,6 +338,7 @@ export class FieldScene extends Phaser.Scene {
     this.pawnCount = Math.max(PLAYERS.min, Math.min(PLAYERS.max, data?.pawnCount ?? PLAYERS.default));
     this.planElements = data?.elements ?? null;
     this.seatNames = data?.names ?? null;
+    this.seatMotifs = data?.motifs;
     this.quitDialog = false;
     this.scanButton = null;
     this.prankButton = null;
@@ -398,14 +400,14 @@ export class FieldScene extends Phaser.Scene {
     // 友達と遊ぶときは、みんなで同じ乱数のたねを使い、最初のようす（塗りムラの位置など）をそろえる
     this.rng = createRng(this.net ? this.net.seed : Date.now());
     this.pates = [];
-    this.addPate(createHarvester(createWalker({ ...gameMap().playerStart })), PLAYER_PART, PLAYER_ELEMENT, null, 'player');
+    this.addPate(createHarvester(createWalker({ ...gameMap().playerStart })), this.seatMotifs?.[0] ?? PLAYER_PART, PLAYER_ELEMENT, null, 'player');
     // 人数：友達と遊ぶときは席の数、ひとりのときは選んだ数（6〜10）
     const count = this.net ? this.net.seats.length : this.pawnCount;
     BOT_PROFILES.slice(0, count - 1).forEach((profile, i) => {
       // 友達が座った席は Bot にしない（その人のスマホが動かす）
       const human = !!this.net && this.net.seats[i + 1] !== 0;
       const bot = human ? null : createBot(profile, gameMap().botStarts[i % gameMap().botStarts.length]);
-      this.addPate(bot ? bot.h : createHarvester(createWalker({ ...gameMap().botStarts[i % gameMap().botStarts.length] })), profile.part, profile.element, bot, profile.id);
+      this.addPate(bot ? bot.h : createHarvester(createWalker({ ...gameMap().botStarts[i % gameMap().botStarts.length] })), this.seatMotifs?.[i + 1] ?? profile.part, profile.element, bot, profile.id);
     });
     this.player = this.pates[this.me].h;
     this.pateSprite = this.pates[this.me].view;
@@ -1868,7 +1870,7 @@ export class FieldScene extends Phaser.Scene {
     if (!this.net) hit.once('pointerdown', go);
   }
 
-  /** ① きょうのメンバー：名前・色・ひとこと（自分は「きみ」の印） */
+  /** ① きょうのメンバー：名前・色・ひとこと（自分の欄は金の枠） */
   private showMembers(): void {
     this.clearIntro();
     const cx = SCREEN.width / 2;
@@ -1884,7 +1886,7 @@ export class FieldScene extends Phaser.Scene {
       const x = cx - 84 + col * 168;
       const y = 108 + row * cellH + cellH / 2;
       const char = characterOf(e.pawn.part);
-      this.introAdd(this.add.rectangle(x, y, 160, cellH - 8, char.color, 0.16).setStrokeStyle(2, char.color, 0.9));
+      this.introAdd(this.add.rectangle(x, y, 160, cellH - 8, char.color, 0.16).setStrokeStyle(i === this.me ? 4 : 2, i === this.me ? COLORS.uiHoney : char.color, 0.9));
       const v = new PateView(this, x - 52, y + cellH * 0.22);
       v.setHeadPart(e.pawn.part as HeadPart);
       v.setElement(e.h.element as Element);
@@ -1901,16 +1903,6 @@ export class FieldScene extends Phaser.Scene {
       // 長い名前は、欄の中に収まるように縮める（右の端は x + 78）
       const room = 98;
       if (tag.width > room) tag.setScale(room / tag.width);
-      if (i === this.me) {
-        // 自分の印は、名前とは別に、パテの上に出す
-        this.introAdd(
-          this.add
-            .text(x - 52, y - cellH / 2 + 6, 'きみ', { fontFamily: 'sans-serif', fontSize: '11px', fontStyle: 'bold', color: '#fff8e8', backgroundColor: cssColor(COLORS.ink) })
-            .setOrigin(0.5, 0)
-            .setPadding(4, 1, 4, 1)
-            .setResolution(2),
-        );
-      }
       this.introAdd(
         this.add
           .text(x - 22, y - cellH / 2 + 32, char.profile, { fontFamily: 'sans-serif', fontSize: '10px', color: INK, wordWrap: { width: 96, useAdvancedWrap: true } })
@@ -1929,7 +1921,8 @@ export class FieldScene extends Phaser.Scene {
     this.introAdd(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.78).setOrigin(0));
     this.introAdd(panel(this, cx, 320, 344, 520, COLORS.uiPaper));
     const role = this.isPlayerSpy ? 'スパイ' : this.playerPawn.isKing ? '王様' : '市民';
-    this.introAdd(label(this, cx, 86, `きみは ${role}`, 22, INK).setStroke(INK, 0));
+    const roleLabel = this.introAdd(label(this, cx, 86, `${pawnName(this.playerPawn)} は ${role}`, 22, INK).setStroke(INK, 0));
+    if (roleLabel.width > 310) roleLabel.setScale(310 / roleLabel.width);
     this.introAdd(label(this, cx, 116, `${this.bodyName()}の体で、この ミッションを受け持つ`, 13, INK).setStroke(INK, 0));
     const AFF: Record<string, { text: string; color: number }> = {
       good: { text: '得意', color: 0x2f7a4a },
@@ -2057,14 +2050,11 @@ export class FieldScene extends Phaser.Scene {
     );
     this.field = this.match.field;
     this.spy = this.match.spy;
+    chooseKing(this.match.pawns);
     // 土の祠：王様が選んだ場所（王様 Bot と、選ばなかったときは、いつもの場所）
     const shrine = this.match.treasure.shrine;
     this.add.image(shrine.x, shrine.y, FACILITY_TEX.shrine).setOrigin(0.5, 1).setDepth(shrine.y);
     label(this, shrine.x, shrine.y - FACILITY_SIZE.h - 8, '土の祠', 12).setDepth(8700);
-    // 王様パテ（プレイヤーが市民側なら自分）は王冠をかぶる
-    const king = chooseKing(this.match.pawns);
-    king.part = KING_PART;
-    this.pates.find((e) => e.pawn === king)!.view.setHeadPart(KING_PART);
     // スパイが Bot の席なら、スパイBotの頭脳（動かすのは、ひとりのときと親機だけ）
     this.spyMind = this.spyEntity.bot ? createSpyBotMind() : null;
     if (this.spyEntity.bot) this.spyEntity.bot.isSpy = true;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NAME_MAX, pawnName, sanitizeName } from '../src/game/names';
+import { assignMotifs, MOTIFS, NAME_MAX, pawnName, sanitizeName } from '../src/game/names';
 
 describe('パテの名前', () => {
   it('前後の空白・改行・見えない文字を消し、決まった長さまでにする', () => {
@@ -16,4 +16,10 @@ describe('パテの名前', () => {
     expect(pawnName({ part: 'crown' })).toBe('王様');
     expect(pawnName({ part: 'strawHat', name: 'せじん' })).toBe('せじん');
   });
+});
+it('モチーフの希望を優先し、10席でもかぶらない飾りを配る', () => {
+  const parts = assignMotifs(['catCap', 'catCap', 'beret', 'crown', ...Array(6).fill(undefined)]);
+  expect(parts[0]).toBe('catCap');
+  expect(parts[2]).toBe('beret');
+  expect(new Set(parts)).toEqual(new Set(MOTIFS));
 });

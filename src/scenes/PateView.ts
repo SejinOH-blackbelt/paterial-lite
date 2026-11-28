@@ -1,7 +1,7 @@
 // パテ1体の「見た目」。胴体・腕・足を別々の部品にして、動き（アニメーション）を付けやすくしています。
 // 位置の計算はしません。src/game 側で決めた位置をもらって表示するだけです。
 import Phaser from 'phaser';
-import { PATE } from '../game/config';
+import { KING_PART, PATE } from '../game/config';
 import type { Facing } from '../game/movement';
 import { elementKey, makeElementTextures, makeStrikeTexture, STRIKE_TEX, type Element } from './elementTextures';
 import { PART_ORIGIN_Y, partKey, type HeadPart } from './partTextures';
@@ -102,6 +102,7 @@ export class PateView extends Phaser.GameObjects.Container {
 
   /** 王家の体（王様。エレメントなし） */
   private royal = false;
+  private royalBadge?: Phaser.GameObjects.Image;
 
   /**
    * 王様の体にする（使い手の決定 Nov 28：王様はエレメントなし）。エレメントの飾りのない、素のハニワの体。
@@ -110,6 +111,11 @@ export class PateView extends Phaser.GameObjects.Container {
   setRoyal(on: boolean): void {
     if (on) this.setElement(null);
     this.royal = on;
+    if (on && !this.royalBadge) {
+      this.royalBadge = this.scene.add.image(24, -48, partKey(KING_PART)).setScale(0.48);
+      this.add(this.royalBadge);
+    }
+    this.royalBadge?.setVisible(on);
   }
 
   /** 見分け用のパーツを残し、胴体・手足と属性の飾りを付け替える。 */
