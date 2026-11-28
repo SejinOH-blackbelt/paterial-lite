@@ -1,7 +1,8 @@
 // 会議の画面の地図。採取場の全体を小さく描き、「どこで見かけたか」の印を置く。
 // 真ん中の小さな地図（見るだけ・タップで大きく）と、大きな地図（印を置く）の両方に使う。
 import Phaser from 'phaser';
-import { COLORS, FACILITIES, FIELD, LANDMARKS, RESOURCE_POINTS, WORLD } from '../game/config';
+import { COLORS } from '../game/config';
+import { gameMap } from '../game/maps';
 import type { Point } from '../game/movement';
 import { FACILITY_TEX } from './facilityTextures';
 import { ELEMENT_RES_TEX } from './resourceTextures';
@@ -9,6 +10,7 @@ import { LANDMARK_TEX } from './spyTextures';
 import { INK, label } from './ui';
 
 export class MeetingMap {
+  private readonly map = gameMap();
   readonly container: Phaser.GameObjects.Container;
   private readonly marks: Phaser.GameObjects.Container;
   /** 採取場の1ピクセルが、地図の何ピクセルか */
@@ -31,25 +33,26 @@ export class MeetingMap {
     /** 土の祠の場所（王様が選んだ場所。省くといつもの場所、null なら描かない） */
     shrineAt?: Point | null,
   ) {
-    this.scale = width / WORLD.width;
+    const { world, field, resourcePoints, landmarks, facilities } = this.map;
+    this.scale = width / world.width;
     this.width = width;
-    this.height = WORLD.height * this.scale;
+    this.height = world.height * this.scale;
     const s = this.scale;
     const g = scene.add.graphics();
     // 地面（和紙の色）と、外周の植え込み
     g.fillStyle(COLORS.ink).fillRoundedRect(-2, -2, this.width + 4, this.height + 4, 6);
     g.fillStyle(0x2f4a6b).fillRoundedRect(0, 0, this.width, this.height, 5); // ふちは浮世絵の藍
-    g.fillStyle(0xe6bb6a).fillRect(FIELD.left * s, FIELD.top * s, (FIELD.right - FIELD.left) * s, (FIELD.bottom - FIELD.top) * s);
+    g.fillStyle(0xe6bb6a).fillRect(field.left * s, field.top * s, (field.right - field.left) * s, (field.bottom - field.top) * s);
     const parts: Phaser.GameObjects.GameObject[] = [g];
     // 小さな地図は絵が小さすぎて見えないので、絵を少し大きめに描く
     const icon = big ? s * 1.25 : s * 2.4;
-    for (const r of RESOURCE_POINTS) {
+    for (const r of resourcePoints) {
       parts.push(scene.add.image(r.x * s, r.y * s, ELEMENT_RES_TEX[r.kind]).setOrigin(0.5, 1).setScale(icon * 0.8));
     }
-    for (const l of LANDMARKS) {
+    for (const l of landmarks) {
       parts.push(scene.add.image(l.x * s, l.y * s, LANDMARK_TEX[l.id]).setOrigin(0.5, 1).setScale(icon * 0.7));
     }
-    for (const f0 of FACILITIES) {
+    for (const f0 of facilities) {
       if (f0.id === 'shrine' && shrineAt === null) continue;
       const f = f0.id === 'shrine' && shrineAt ? { ...f0, x: shrineAt.x, y: shrineAt.y } : f0;
       parts.push(scene.add.image(f.x * s, f.y * s, FACILITY_TEX[f.id]).setOrigin(0.5, 1).setScale(icon * 0.7));
@@ -88,7 +91,8 @@ export class MeetingMap {
   worldAt(screenX: number, screenY: number): Point | null {
     const x = (screenX - this.container.x) / this.scale;
     const y = (screenY - this.container.y) / this.scale;
-    if (x < FIELD.left || x > FIELD.right || y < FIELD.top || y > FIELD.bottom) return null;
+    const { field } = this.map;
+    if (x < field.left || x > field.right || y < field.top || y > field.bottom) return null;
     return { x, y };
   }
 

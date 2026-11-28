@@ -1,6 +1,7 @@
 // 役の発表：「きみは 王様」「きみは 市民」（友達と遊ぶとき、王様でない人）か「きみは スパイ」。スパイをここで決めて、採取場に渡す
 import Phaser from 'phaser';
-import { COLORS, PLAYERS, ELEMENT_NAMES, ELEMENTS, KING_PART, MISSIONS, NET, PLAYER_ELEMENT, PLAYER_PART, RITE, SCREEN, SPOT } from '../game/config';
+import { COLORS, PLAYERS, ELEMENT_NAMES, ELEMENTS, KING_PART, MISSIONS, NET, PLAYER_ELEMENT, PLAYER_PART, SCREEN } from '../game/config';
+import { gameMap } from '../game/maps';
 import { planBoard, type BoardPlan } from '../game/board';
 import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
@@ -277,6 +278,7 @@ export class RoleScene extends Phaser.Scene {
 /** 届いた「始める」の知らせが、こわれていないか（席の数と配り方の形を確かめる） */
 function validGo(msg: GoWire, seats: number): boolean {
   const p = msg.plan;
+  const { altars, spotSites } = gameMap();
   return (
     Array.isArray(msg.els) &&
     msg.els.length === seats &&
@@ -291,11 +293,11 @@ function validGo(msg: GoWire, seats: number): boolean {
     // 王様の儀式は、王様1人で、5つの祭壇を1つずつ（ほかのミッションは、ちがう2人）
     p.types.every((t, i) =>
       t === 'rite'
-        ? Array.isArray(p.pairs[i]) && p.pairs[i][0] === p.pairs[i][1] && Array.isArray(p.sites[i]) && p.sites[i].length === RITE.altars.length && new Set(p.sites[i]).size === RITE.altars.length
+        ? Array.isArray(p.pairs[i]) && p.pairs[i][0] === p.pairs[i][1] && Array.isArray(p.sites[i]) && p.sites[i].length === altars.length && new Set(p.sites[i]).size === altars.length
         : Array.isArray(p.pairs[i]) && p.pairs[i][0] !== p.pairs[i][1],
     ) &&
     p.pairs.every((x) => Array.isArray(x) && x.length === 2 && x.every((n) => Number.isInteger(n) && n >= 0 && n < seats)) &&
-    // 王様の儀式の「場所」は祭壇の番号（RITE.altars）、ほかはスイッチの候補の番号（SPOT.sites）
-    p.sites.every((x, i) => Array.isArray(x) && x.every((n) => Number.isInteger(n) && n >= 0 && n < (p.types[i] === 'rite' ? RITE.altars.length : SPOT.sites.length)))
+    // 場所の番号は、この試合の地図の祭壇かスイッチ候補を指す
+    p.sites.every((x, i) => Array.isArray(x) && x.every((n) => Number.isInteger(n) && n >= 0 && n < (p.types[i] === 'rite' ? altars.length : spotSites.length)))
   );
 }

@@ -1,6 +1,7 @@
 // リザルト：勝ち負け、スパイの正体、スパイがいつどこで何をしたかの振り返り、「もう1回」
 import Phaser from 'phaser';
-import { COLORS, LANDMARKS, SCREEN } from '../game/config';
+import { COLORS, SCREEN } from '../game/config';
+import { gameMap } from '../game/maps';
 import type { MatchState, OutcomeReason, Pawn } from '../game/match';
 import { PateView } from './PateView';
 import { countMatch, type ScoreData } from './ScoreScene';
@@ -47,6 +48,7 @@ export class ResultScene extends Phaser.Scene {
   create(data: ResultData): void {
     fitCamera(this); // 内部の細かさに合わせてカメラを拡大する（座標は 360×640 のまま）
     const { match, player } = data;
+    const { landmarks } = gameMap();
     const o = match.outcome!;
     const spy = match.pawns.find((p) => p.isSpy)!;
     const playerWon = (o.winner === 'spy') === player.isSpy;
@@ -76,12 +78,12 @@ export class ResultScene extends Phaser.Scene {
       .text(150, 175, `スパイの正体は\n${spy === player ? 'きみ' : `${partName(spy)}のパテ`}！`, { fontFamily: FONT, fontSize: '18px', fontStyle: 'bold', color: INK, padding: { x: 8, y: 6 } })
       .setOrigin(0, 0);
     this.add
-      .text(150, 238, `設計図のカケラ ${match.spy.fragments}/${LANDMARKS.length}`, { fontFamily: FONT, fontSize: '14px', fontStyle: 'bold', color: INK, padding: { x: 8, y: 4 } })
+      .text(150, 238, `設計図のカケラ ${match.spy.fragments}/${landmarks.length}`, { fontFamily: FONT, fontSize: '14px', fontStyle: 'bold', color: INK, padding: { x: 8, y: 4 } })
       .setOrigin(0, 0);
 
     // 振り返り：スパイがしたこと・会議の結果を、時間の順に
     const lines: { t: number; text: string }[] = [];
-    const lmName = (id?: string) => LANDMARKS.find((l) => l.id === id)?.name ?? '';
+    const lmName = (id?: string) => landmarks.find((l) => l.id === id)?.name ?? '';
     for (const ev of match.spy.log) {
       const who = ev.witnesses.length > 0 ? `（${ev.witnesses.length}体が見ていた）` : '';
       if (ev.kind === 'scan') lines.push({ t: ev.time, text: `${lmName(ev.landmarkId)}を スキャン${who}` });
