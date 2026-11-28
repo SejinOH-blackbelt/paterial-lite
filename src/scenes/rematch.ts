@@ -6,10 +6,10 @@
 // ・途中から新しい人が入るのは、中継サーバーの変更がいるので、まだ（ルームは試合が始まると締め切られる）。
 import type Phaser from 'phaser';
 import { NET } from '../game/config';
-import { matchSecondsFrom } from '../game/match';
+import { mapIdFrom } from '../game/maps';
 import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
-import type { NetGame } from '../net/netGame';
+import { netGameFromStart, type NetGame } from '../net/netGame';
 import type { RelayClient } from '../net/relay';
 import type { NetMessage, StartWire } from '../net/sync';
 import type { RoleData } from './RoleScene';
@@ -27,7 +27,7 @@ export function validRematch(prev: number[], m: StartWire, you: number): boolean
   if (!Array.isArray(m.seats) || m.seats.length !== prev.length) return false;
   if (!m.seats.every((id, i) => Number.isInteger(id) && (id === prev[i] || (id === 0 && i !== 0)))) return false;
   if (!Number.isInteger(m.spy) || m.spy < 0 || m.spy >= m.seats.length || !Number.isInteger(m.seed)) return false;
-  return m.seats.indexOf(you) >= 0;
+  return m.seats.indexOf(you) >= 0 && mapIdFrom(m.map) === m.map;
 }
 
 /** 試合のあいだに届いた「もう1試合」の知らせ（画面の切りかえのすきまで、受けとり損ねないように取っておく） */
@@ -48,11 +48,6 @@ export function keepRematch(net: NetGame): void {
   });
 }
 
-/** 「match」の知らせから、次の試合の NetGame を作る */
-function netFrom(net: NetGame, m: StartWire): NetGame {
-  return { relay: net.relay, seats: m.seats, mySeat: m.seats.indexOf(net.relay.you), spy: m.spy, seed: m.seed, seconds: matchSecondsFrom(m.len) };
-}
-
 /**
  * 試合のあとの画面（リザルト・スコア）で、親機の「もう1試合」を待つ。届いたら役の発表へ。
  * 通信が切れたら onClosed（親機が抜けた など）。画面を閉じるときに、待つのをやめる
@@ -64,7 +59,7 @@ export function listenRematch(scene: Phaser.Scene, net: NetGame, onClosed: () =>
     gone = true;
     off();
     pending.delete(net.relay);
-    scene.scene.start('Role', { spyIndex: m.spy, net: netFrom(net, m) } satisfies RoleData);
+    scene.scene.start('Role', { spyIndex: m.spy, net: netGameFromStart(net.relay, m) } satisfies RoleData);
   };
   const off = net.relay.listen((from, data) => {
     const m = data as NetMessage;
@@ -88,8 +83,8 @@ export function startRematch(scene: Phaser.Scene, net: NetGame): boolean {
   if (seats.filter((id) => id !== 0).length < 2) return false;
   const seed = Math.floor(Math.random() * 2 ** 31);
   const spy = chooseSpy(seats.length, createRng(seed ^ 0x5eed));
-  const msg: StartWire = { k: 'match', v: NET.version, seats, spy, seed, len: net.seconds };
+  const msg: StartWire = { k: 'match', v: NET.version, seats, spy, seed, len: net.seconds, map: net.mapId };
   net.relay.send('all', msg);
-  scene.scene.start('Role', { spyIndex: spy, net: netFrom(net, msg) } satisfies RoleData);
+  scene.scene.start('Role', { spyIndex: spy, net: netGameFromStart(net.relay, msg) } satisfies RoleData);
   return true;
 }

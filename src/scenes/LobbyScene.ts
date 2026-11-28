@@ -3,8 +3,9 @@ import Phaser from 'phaser';
 import QRCode from 'qrcode';
 import { BOT_PROFILES, COLORS, MATCH, NET, PLAYERS, PLAYER_PART, SCREEN } from '../game/config';
 import { matchSecondsFrom, nextMatchSeconds } from '../game/match';
+import { mapIdFrom, mapList, type MapId } from '../game/maps';
 import { inviteUrl, RelayClient, type JoinError } from '../net/relay';
-import type { NetGame } from '../net/netGame';
+import { netGameFromStart } from '../net/netGame';
 import { assignSeats, type StartWire } from '../net/sync';
 import { createRng } from '../game/random';
 import { chooseSpy } from '../game/spy';
@@ -46,6 +47,7 @@ export class LobbyScene extends Phaser.Scene {
   private chosenCount: number = PLAYERS.default;
   /** 試合の長さ（秒。親機が選ぶ） */
   private seconds: number = MATCH.timeLimit;
+  private mapId: MapId = 'classic';
   private countText: Phaser.GameObjects.Text | null = null;
   private code = '';
 
@@ -56,6 +58,7 @@ export class LobbyScene extends Phaser.Scene {
   create(data: LobbyData): void {
     this.chosenCount = (this.registry.get('pawnCount') as number | undefined) ?? PLAYERS.default;
     this.seconds = matchSecondsFrom(this.registry.get('matchSeconds'));
+    this.mapId = mapIdFrom(this.registry.get('mapId'));
     this.countText = null;
     fitCamera(this); // 内部の細かさに合わせてカメラを拡大する（座標は 360×640 のまま）
     makeTextures(this);
@@ -173,6 +176,11 @@ export class LobbyScene extends Phaser.Scene {
           this.showMenu('ゲームが新しくなっています。\nページを読みこみ直してから、もう一度入ってね');
           return;
         }
+        if (mapIdFrom(m.map) !== m.map) {
+          relay.close();
+          this.showMenu('地図の情報を 受け取れませんでした。\nもう一度 入ってね');
+          return;
+        }
         this.goRole(m);
       }
     });
@@ -229,6 +237,14 @@ export class LobbyScene extends Phaser.Scene {
       this.seats.push({ view, tag });
     }
     if (relay.isHost) {
+      const maps = mapList();
+      const mapButtons = maps.map((map, i) => this.add2(textButton(this, 105 + i * 150, 574, 140, 32, map.name, COLORS.uiPaperEdge, () => {
+        this.mapId = map.id;
+        this.registry.set('mapId', map.id);
+        showMaps();
+      }, 13)));
+      const showMaps = () => mapButtons.forEach((b, i) => b.setAlpha(maps[i].id === this.mapId ? 1 : 0.45));
+      showMaps();
       this.startButton = this.add2(textButton(this, 230, 530, 170, 50, 'はじめる', COLORS.uiHoney, () => this.start(), 20));
     } else {
       this.add2(label(this, 230, 530, 'ルームを作った人が\nはじめるのを 待っています', 12, INK).setStroke(INK, 0));
@@ -248,7 +264,7 @@ export class LobbyScene extends Phaser.Scene {
     // 親機を先頭に、入った順に並べる
     const members = [...relay.members].sort((a, b) => Number(b.host) - Number(a.host) || a.id - b.id);
     const count = this.matchCount();
-    this.countText?.setText(relay.isHost ? `${count}人・${this.seconds / 60}分` : '人数と長さは 親機が決めます');
+    this.countText?.setText(relay.isHost ? `${count}人・${this.seconds / 60}分` : '人数・長さ・地図は 親機が決めます');
     this.seats.forEach((seat, i) => {
       const m = members[i];
       // 子機は親機が選んだ人数を知らないので、Bot の席は出さない（集まった人だけ）
@@ -303,7 +319,7 @@ export class LobbyScene extends Phaser.Scene {
     const seats = assignSeats(relay.host, relay.members.map((m) => m.id), count);
     const seed = Math.floor(Math.random() * 2 ** 31);
     const spy = chooseSpy(count, createRng(seed ^ 0x5eed));
-    const msg: StartWire = { k: 'match', v: NET.version, seats, spy, seed, len: this.seconds };
+    const msg: StartWire = { k: 'match', v: NET.version, seats, spy, seed, len: this.seconds, map: this.mapId };
     relay.send('all', msg);
     this.goRole(msg);
   }
@@ -311,7 +327,7 @@ export class LobbyScene extends Phaser.Scene {
   /** 席などが決まったので、役の発表へ（中継の接続は試合へ持っていく） */
   private goRole(m: StartWire): void {
     const relay = this.relay!;
-    const net: NetGame = { relay, seats: m.seats, mySeat: m.seats.indexOf(relay.you), spy: m.spy, seed: m.seed, seconds: matchSecondsFrom(m.len) };
+    const net = netGameFromStart(relay, m);
     this.relay = null; // この画面を閉じても、接続は切らない
     this.scene.start('Role', { spyIndex: m.spy, net } satisfies RoleData);
   }

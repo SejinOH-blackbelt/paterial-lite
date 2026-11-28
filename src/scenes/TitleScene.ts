@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 import logoUrl from '../assets/logo.jpg';
 import { COLORS, MATCH, PLAYERS, PLAYER_ELEMENT, PLAYER_PART, SCREEN } from '../game/config';
 import { matchSecondsFrom } from '../game/match';
+import { mapIdFrom, mapList } from '../game/maps';
 import { roomFromUrl } from '../net/relay';
 import type { LobbyData } from './LobbyScene';
 import { makePartTextures } from './partTextures';
@@ -98,7 +99,7 @@ export class TitleScene extends Phaser.Scene {
       return o;
     };
     add(this.add.rectangle(0, 0, SCREEN.width, SCREEN.height, COLORS.ink, 0.6).setOrigin(0).setInteractive());
-    add(panel(this, x, 336, 290, 280, COLORS.uiPaper));
+    add(panel(this, x, 350, 302, 318, COLORS.uiPaper));
     add(label(this, x, 238, '何人で あそぶ？', 20, INK).setStroke(INK, 0));
     add(label(this, x, 266, 'きみ以外は Bot', 12, INK).setStroke(INK, 0));
     const num = add(label(this, x, 316, '', 34, INK).setStroke('#fff8e8', 4));
@@ -121,12 +122,21 @@ export class TitleScene extends Phaser.Scene {
     );
     const showLength = () => lengthButtons.forEach((b, i) => b.setAlpha((MATCH.lengths as readonly number[])[i] === seconds ? 1 : 0.45));
     showLength();
-    add(textButton(this, x + 64, 436, 120, 44, 'はじめる', COLORS.uiHoney, () => {
+    let mapId = mapIdFrom(this.registry.get('mapId'));
+    const maps = mapList();
+    const mapButtons = maps.map((map, i) => add(textButton(this, x - 68 + i * 136, 422, 128, 38, map.name, COLORS.uiPaperEdge, () => {
+      mapId = map.id;
+      showMaps();
+    }, 13)));
+    const showMaps = () => mapButtons.forEach((b, i) => b.setAlpha(maps[i].id === mapId ? 1 : 0.45));
+    showMaps();
+    add(textButton(this, x + 64, 474, 120, 44, 'はじめる', COLORS.uiHoney, () => {
       this.registry.set('pawnCount', count); // 次も同じ人数から
       this.registry.set('matchSeconds', seconds); // 次も同じ長さから（「もう1試合」も）
+      this.registry.set('mapId', mapId);
       this.scene.start('Role', { pawnCount: count });
     }, 17));
-    add(textButton(this, x - 70, 436, 100, 40, 'もどる', COLORS.uiPaper, () => {
+    add(textButton(this, x - 70, 474, 100, 40, 'もどる', COLORS.uiPaper, () => {
       for (const o of parts) o.destroy();
     }, 14));
     show();

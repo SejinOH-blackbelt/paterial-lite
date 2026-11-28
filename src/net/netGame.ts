@@ -1,5 +1,8 @@
 // 友達と遊ぶ試合の情報（画面から画面へ渡す）
 import type { RelayClient } from './relay';
+import { matchSecondsFrom } from '../game/match';
+import { mapIdFrom, type MapId } from '../game/maps';
+import type { StartWire } from './sync';
 
 export interface NetGame {
   relay: RelayClient;
@@ -13,6 +16,14 @@ export interface NetGame {
   seed: number;
   /** 試合の長さ（秒。親機が選ぶ） */
   seconds: number;
+  mapId: MapId;
+}
+
+export function netGameFromStart(relay: RelayClient, m: StartWire): NetGame {
+  return {
+    relay, seats: m.seats, mySeat: m.seats.indexOf(relay.you), spy: m.spy, seed: m.seed,
+    seconds: matchSecondsFrom(m.len), mapId: mapIdFrom(m.map),
+  };
 }
 
 /** 親機か */

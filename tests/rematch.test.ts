@@ -3,7 +3,7 @@ import { NET } from '../src/game/config';
 import type { StartWire } from '../src/net/sync';
 import { seatsAfterLeave, validRematch } from '../src/scenes/rematch';
 
-const msg = (seats: unknown, spy = 1, seed = 5): StartWire => ({ k: 'match', v: NET.version, seats: seats as number[], spy, seed });
+const msg = (seats: unknown, spy = 1, seed = 5): StartWire => ({ k: 'match', v: NET.version, seats: seats as number[], spy, seed, map: 'island' });
 
 describe('友達と遊ぶときの「もう1試合」', () => {
   it('抜けた人の席は Bot（0）にする。席の番号はずらさない（合計の点がほかの人とずれないように）', () => {

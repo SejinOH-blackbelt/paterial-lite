@@ -316,6 +316,8 @@ export interface StartWire {
   seed: number;
   /** 試合の長さ（秒。5分版か長い版） */
   len?: number;
+  /** 親機が選んだマップ */
+  map: import('../game/maps').MapId;
 }
 
 /** 子機 → 親機：最初のエレメントを選び終えた（選んだエレメント：ELEMENTS の番号） */
