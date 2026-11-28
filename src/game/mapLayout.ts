@@ -179,11 +179,24 @@ function inPolygon(point: MapPoint, polygon: readonly MapPoint[]): boolean {
 const roadSegments = [...MAP_ROADS, ...MAP_BRIDGES].flatMap(({ points, width }) =>
   points.slice(1).map((b, index) => ({ a: points[index], b, radius: width / 2 })));
 
+/**
+ * その体（element）で、その場所を歩けるか（使い手の決定 Nov 29）。
+ * 島の陸地はどこでも自由に歩ける。エレメントのゾーンの中だけは、その体でないと入れない
+ * （ほかの体は、ゾーンを横切る道と橋なら通れる）。海は歩けない
+ */
 export function canWalk(point: MapPoint, element?: ElementId): boolean {
   if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || !inPolygon(point, MAP_OUTLINE)) return false;
   if (distance(point, MAP_CENTER) <= PLAZA_RADIUS ||
       roadSegments.some(({ a, b, radius }) => distanceToSegment(point, a, b) <= radius + EPSILON)) return true;
-  return ELEMENT_ZONES.some((zone) => zone.element === element && inPolygon(point, zone.polygon));
+  const zone = ELEMENT_ZONES.find((z) => inPolygon(point, z.polygon));
+  return !zone || zone.element === element;
+}
+
+/** a から b へ、まっすぐ歩いて通れるか（途中を細かく区切って、どこも歩けるか確かめる） */
+function straightWalkable(a: MapPoint, b: MapPoint, element?: ElementId): boolean {
+  const steps = Math.max(1, Math.ceil(distance(a, b) / 8));
+  for (let i = 1; i < steps; i++) if (!canWalk(pointAt(a, b, i / steps), element)) return false;
+  return true;
 }
 
 interface GraphEdge { readonly from: number; readonly to: number; readonly length: number; readonly element?: ElementId }
@@ -243,6 +256,8 @@ function polygonCuts(a: MapPoint, b: MapPoint, polygon: readonly MapPoint[]): nu
 }
 
 function canJoin(a: MapPoint, b: MapPoint, element: ElementId | undefined, roadsOnly: boolean): boolean {
+  // 道だけで比べるとき以外は、陸地をまっすぐ歩けるかで決める（ゾーンの外は自由に歩ける）
+  if (!roadsOnly) return straightWalkable(a, b, element);
   // 広場の円と道の丸い区間は凸形なので、両端が同じ区間なら途中も通れる。
   const publicPath = (distance(a, MAP_CENTER) <= PLAZA_RADIUS && distance(b, MAP_CENTER) <= PLAZA_RADIUS) ||
     roadSegments.some(({ a: p, b: q, radius }) =>
@@ -265,6 +280,8 @@ export function findMapRoute(
   from: MapPoint, to: MapPoint, element?: ElementId, { roadsOnly = false } = {},
 ): MapRoute | null {
   if (!canWalk(from, element) || !canWalk(to, element)) return null;
+  // まっすぐ歩いて行けるなら、それがいちばん短い
+  if (!roadsOnly && straightWalkable(from, to, element)) return { points: [from, to], distance: distance(from, to) };
   const routeNodes = [...MAP_GRAPH.nodes];
   const routeEdges = MAP_GRAPH.edges.filter((edge) => !edge.element || (!roadsOnly && edge.element === element));
 
@@ -272,11 +289,11 @@ export function findMapRoute(
     const index = nodeIndexes.get(key(point));
     if (index !== undefined) return index;
     const added = routeNodes.length;
-    routeNodes.forEach((other, i) => {
-      if (canJoin(point, other, element, roadsOnly)) {
-        routeEdges.push({ from: added, to: i, length: distance(point, other) });
-      }
-    });
+    // 近い点から順に、まっすぐ行ける点とつなぐ（重くならないように、近い 24 点まで）
+    const order = routeNodes.map((other, i) => ({ i, d: distance(point, other) })).sort((x, y) => x.d - y.d).slice(0, 24);
+    for (const { i, d } of order) {
+      if (canJoin(point, routeNodes[i], element, roadsOnly)) routeEdges.push({ from: added, to: i, length: d });
+    }
     routeNodes.push(point);
     return added;
   }

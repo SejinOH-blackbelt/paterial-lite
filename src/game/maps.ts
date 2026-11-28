@@ -2,7 +2,7 @@
 // ・地図の上の物の場所（スイッチの候補・採取場・施設・名物・依代の祠・宝物庫・出口・土の祠・祭壇・Bot の最初の場所・ゾーン）を、地図ごとに持つ。
 // ・試合を始めるときに setGameMap で使う地図を決め、ルールと画面は gameMap() から場所を読む。
 // ・「いつもの地図」は config.ts の値そのまま（遊び方は変えない）。
-// ・walk / route がある地図は、道とゾーンの外を歩けない（島の地図）。ない地図は、採取場の四角の中ならどこでも歩ける。
+// ・walk / route がある地図（島の地図）は、陸地は自由に歩けて、エレメントのゾーンの中だけは、その体でないと入れない（道と橋は誰でも通れる）。ない地図は、採取場の四角の中ならどこでも歩ける。
 import { FACILITIES, FIELD, LANDMARKS, RESOURCE_POINTS, RITE, SPOT, TREASURE, WORLD, YORISHIRO, ZONES } from './config';
 import type { ElementId } from './elements';
 import type { Point } from './movement';
@@ -52,7 +52,7 @@ export interface GameMap {
   name: string;
   /** 地図ぜんたいの広さと、カメラが下の端より下まで動ける幅 */
   world: { width: number; height: number; cameraBottomPad: number };
-  /** 歩ける四角（この外には出られない。walk がある地図は、さらに道とゾーンだけ） */
+  /** 歩ける四角（この外には出られない。walk がある地図は、さらに walk の決まりで歩ける場所だけ） */
   field: { left: number; right: number; top: number; bottom: number };
   zones: readonly MapZone[];
   /** スイッチを置ける場所の候補（ゾーンごと） */

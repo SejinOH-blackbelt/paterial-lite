@@ -102,3 +102,51 @@ describe('五つ浜の地図', () => {
     expect(findMapRoute(MAP_CENTER, ELEMENT_ZONES[0].label, 'water')).toBeNull();
   });
 });
+
+describe('五つ浜の歩ける場所（使い手の決定 Nov 29：ゾーンの外は自由に歩ける）', () => {
+  // 島の中で、広場・道・橋・ゾーンのどれでもない陸地の点をさがす
+  const inside = (p: { x: number; y: number }) => {
+    let c = false;
+    for (let i = 0, j = MAP_OUTLINE.length - 1; i < MAP_OUTLINE.length; j = i++) {
+      const a = MAP_OUTLINE[j];
+      const b = MAP_OUTLINE[i];
+      if ((a.y > p.y) !== (b.y > p.y) && p.x < a.x + ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y)) c = !c;
+    }
+    return c;
+  };
+  const inZone = (p: { x: number; y: number }) =>
+    ELEMENT_ZONES.some(({ polygon }) => {
+      let c = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const a = polygon[j];
+        const b = polygon[i];
+        if ((a.y > p.y) !== (b.y > p.y) && p.x < a.x + ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y)) c = !c;
+      }
+      return c;
+    });
+  const openLand: { x: number; y: number }[] = [];
+  for (let x = 0; x < MAP_WORLD.width; x += 40) for (let y = 0; y < MAP_WORLD.height; y += 40) {
+    const p = { x, y };
+    const nearRoad = MAP_ROADS.some(({ points, width }) => points.some((q) => Math.hypot(q.x - x, q.y - y) < width + 40));
+    if (inside(p) && !inZone(p) && !nearRoad && Math.hypot(x - MAP_CENTER.x, y - MAP_CENTER.y) > 160) openLand.push(p);
+  }
+
+  it('ゾーンの外の陸地は、どの体でも歩ける', () => {
+    expect(openLand.length).toBeGreaterThan(20);
+    for (const body of bodies) for (const p of openLand) expect(canWalk(p, body), `${body} ${p.x},${p.y}`).toBe(true);
+    for (const p of openLand) expect(canWalk(p)).toBe(true); // 体のない土の精なども
+  });
+
+  it('ゾーンの中は、その体だけ（ほかの体は入れない）', () => {
+    for (const { element, label } of ELEMENT_ZONES) {
+      for (const body of bodies) expect(canWalk(label, body)).toBe(body === element);
+    }
+  });
+
+  it('陸地は、道を通らずにまっすぐ歩ける（いちばん近い陸地どうし）', () => {
+    const a = openLand[0];
+    const b = openLand.find((p) => Math.hypot(p.x - a.x, p.y - a.y) === 40)!;
+    const route = findMapRoute(a, b, 'water');
+    expect(route?.points).toEqual([a, b]);
+  });
+});
