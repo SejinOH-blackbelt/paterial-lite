@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { inviteUrl, relayUrl, roomFromUrl } from '../src/net/relay';
 // @ts-expect-error サーバーは JavaScript で書いている（型の情報はない）
 import { createRooms, MAX_MEMBERS } from '../server/rooms.js';
 
@@ -16,6 +17,14 @@ function setup() {
 }
 
 describe('中継サーバーのルーム', () => {
+  it('ローカルの中継先を指定しているとき、招待 URL を開く側にも伝わる', () => {
+    const url = new URL(inviteUrl('ABCD', {
+      origin: 'http://192.168.0.5:5173', pathname: '/', search: '?relay=ws://192.168.0.5:8787',
+    }));
+    expect(roomFromUrl(url)).toBe('ABCD');
+    expect(relayUrl(url)).toBe('ws://192.168.0.5:8787');
+  });
+
   it('親機が再募集した試合間だけ新しく入れ、次の試合でまた締め切る', () => {
     const { rooms, people } = setup();
     const [a, b, c, d] = people;

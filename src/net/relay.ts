@@ -172,8 +172,11 @@ export class RelayClient {
 }
 
 /** ルームに招待する URL（QR にする）。いまのページの URL に ?room=合言葉 を付ける */
-export function inviteUrl(code: string, loc: { origin: string; pathname: string } = location): string {
-  return `${loc.origin}${loc.pathname}?room=${code}`;
+export function inviteUrl(code: string, loc: { origin: string; pathname: string; search?: string } = location): string {
+  const query = new URLSearchParams({ room: code });
+  const relay = new URLSearchParams(loc.search).get('relay');
+  if (relay) query.set('relay', relay);
+  return `${loc.origin}${loc.pathname}?${query}`;
 }
 
 /** URL の ?room= にある合言葉（なければ null） */
