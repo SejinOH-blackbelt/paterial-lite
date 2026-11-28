@@ -6,14 +6,15 @@
 // ・スキャンやイタズラの瞬間、近くにいたパテは「目撃者」になる（会議の推理に使う）
 // ・塗りは時間とともに剥がれ、塗りムラ（元のグレー）が大きくなる
 
-import { LANDMARKS, SPY } from './config';
+import { SPY } from './config';
+import { gameMap, type MapLandmark } from './maps';
 import { checkTimeout, createScanGame, type QuizContext, type ScanGame } from './scanGame';
 import type { Harvester } from './harvest';
 import { watchersOf } from './vision';
 import type { Point } from './movement';
 import type { Rng } from './random';
 
-export type Landmark = (typeof LANDMARKS)[number];
+export type Landmark = MapLandmark;
 
 /** スパイがしたことの記録（リザルトの振り返りと、会議の推理に使う） */
 export interface SpyEvent {
@@ -87,7 +88,7 @@ export function isLocked(s: SpyState, id: string, now: number): boolean {
 
 /** p の近くにある、まだスキャンしていない（失敗の待ち時間中でもない）名物（なければ null） */
 export function scannableLandmark(s: SpyState, p: Point, now: number): Landmark | null {
-  return LANDMARKS.find((l) => !s.scanned.has(l.id) && !isLocked(s, l.id, now) && dist(l, p) <= SPY.scanRadius) ?? null;
+  return gameMap().landmarks.find((l) => !s.scanned.has(l.id) && !isLocked(s, l.id, now) && dist(l, p) <= SPY.scanRadius) ?? null;
 }
 
 /** スパイがスキャンを始められるか（名物のそば・立ち止まっている・置物でない） */
@@ -136,7 +137,7 @@ export function pawnsNear(all: readonly Harvester[], p: Point, r: number, except
 export function updateScan(s: SpyState, all: readonly Harvester[], now: number): SpyEvent | null {
   if (!s.scan) return null;
   const h = s.spy;
-  const l = LANDMARKS.find((x) => x.id === s.scan!.landmarkId)!;
+  const l = gameMap().landmarks.find((x) => x.id === s.scan!.landmarkId)!;
   if (h.frozen || h.walker.target || h.driving || h.session || h.task || h.possess || dist(l, h.walker.pos) > SPY.scanRadius) {
     s.scan = null; // 動いた（スティックで少し動いただけでも）・採取を始めた → 中断
     return null;

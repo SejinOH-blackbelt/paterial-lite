@@ -1,7 +1,9 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { ZONES, PLAYERS, TREASURE, SPOT as SPOT_RULE, BOT, BOT_PROFILES, COLORS, FACILITIES, KING_PART, LANDMARKS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, YORISHIRO, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, GREET, RESOURCE_NAMES, RESOURCE_POINTS, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION, WORLD } from '../game/config';
+import { PLAYERS, TREASURE, SPOT as SPOT_RULE, BOT, BOT_PROFILES, COLORS, KING_PART, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, GREET, RESOURCE_NAMES, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION } from '../game/config';
+import { gameMap } from '../game/maps';
+import { YORISHIRO as YORISHIRO_RULE } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
 import {
   createHarvester,
@@ -168,24 +170,12 @@ interface PateEntity {
 const COMMAND_TONES = [523.25, 587.33, 659.25, 783.99, 880] as const;
 
 /** 住民Botの最初の位置（採取場にばらけて立つ） */
-const BOT_STARTS = [
-  { x: 120, y: 470 },
-  { x: 560, y: 380 },
-  { x: 440, y: 760 },
-  { x: 250, y: 900 },
-  { x: 600, y: 1100 },
-  // 7人目から（人数を増やしたとき）
-  { x: 500, y: 620 },
-  { x: 200, y: 680 },
-  { x: 330, y: 260 },
-  { x: 620, y: 880 },
-] as const;
+// Bot とプレイヤーの最初の場所は、地図ごとの設定（gameMap().botStarts・playerStart）
 /** 宝物庫と出口を選ぶ乱数のたねに混ぜる数（試合の乱数と別の並びにするため） */
 const TREASURE_SEED_SALT = 0x7e45a5;
 /** 王様の声のパターンを選ぶ乱数のたねに混ぜる数（試合の乱数・宝物庫の乱数と別にする） */
 const KING_VOICE_SEED_SALT = 0x7a1c3;
 /** プレイヤーの最初の位置（鳥居の少し下） */
-const PLAYER_START = { x: 350, y: 720 } as const;
 
 export class FieldScene extends Phaser.Scene {
   /** プレイヤーのパテ（pates[0]） */
@@ -367,7 +357,7 @@ export class FieldScene extends Phaser.Scene {
     makeSpyTextures(this);
     makeFacilityTextures(this);
     makeTreasureTextures(this);
-    drawGround(this, WORLD.width, WORLD.height);
+    drawGround(this, gameMap());
     makeElementPictures(this);
     this.drawZones();
 
@@ -380,7 +370,7 @@ export class FieldScene extends Phaser.Scene {
     this.bgm.play('field', this.origin);
     this.events.once('shutdown', () => this.bgm.stop());
 
-    for (const r of RESOURCE_POINTS) {
+    for (const r of gameMap().resourcePoints) {
       const img = this.add.image(r.x, r.y, ELEMENT_RES_TEX[r.kind]).setOrigin(0.5, 1).setDepth(r.y);
       // 空のあいだだけ出す札（「からっぽ」と、元に戻るまでの秒数）
       const emptyText = label(this, r.x, r.y - RES_SIZE.h - 26, '', 12).setDepth(8001).setVisible(false);
@@ -388,34 +378,35 @@ export class FieldScene extends Phaser.Scene {
       label(this, r.x, r.y + 12, RESOURCE_NAMES[r.kind], 10).setDepth(r.y + 1).setAlpha(0.85);
     }
 
-    for (const l of LANDMARKS) {
+    for (const l of gameMap().landmarks) {
       this.landmarks.set(l.id, this.add.image(l.x, l.y, LANDMARK_TEX[l.id]).setOrigin(0.5, 1).setDepth(l.y));
     }
 
     // 施設（窯・製造所・鋳造所・土の祠）と、その名前の札
     // （土の祠は、王様が選んだ場所に、試合を作ったあとで置く）
-    for (const f of FACILITIES) {
+    for (const f of gameMap().facilities) {
       if (f.id === 'shrine') continue;
       this.add.image(f.x, f.y, FACILITY_TEX[f.id]).setOrigin(0.5, 1).setDepth(f.y);
       label(this, f.x, f.y - FACILITY_SIZE.h - 8, f.name, 12).setDepth(8700);
     }
     // 依代（よりしろ）の祠：魂が別のエレメントの体に乗りうつる場所（施設から遠いところ）
-    this.add.image(YORISHIRO.x, YORISHIRO.y, DRESSING_TEX).setOrigin(0.5, 1).setDepth(YORISHIRO.y);
-    label(this, YORISHIRO.x, YORISHIRO.y - FACILITY_SIZE.h - 8, '依代の祠', 12).setDepth(8700);
+    const yori = gameMap().yorishiro;
+    this.add.image(yori.x, yori.y, DRESSING_TEX).setOrigin(0.5, 1).setDepth(yori.y);
+    label(this, yori.x, yori.y - FACILITY_SIZE.h - 8, '依代の祠', 12).setDepth(8700);
     this.facilityMarks = this.add.graphics().setDepth(8701);
 
     // パテ6体：プレイヤー1体 + 住民Bot 5体
     // 友達と遊ぶときは、みんなで同じ乱数のたねを使い、最初のようす（塗りムラの位置など）をそろえる
     this.rng = createRng(this.net ? this.net.seed : Date.now());
     this.pates = [];
-    this.addPate(createHarvester(createWalker({ ...PLAYER_START })), PLAYER_PART, PLAYER_ELEMENT, null, 'player');
+    this.addPate(createHarvester(createWalker({ ...gameMap().playerStart })), PLAYER_PART, PLAYER_ELEMENT, null, 'player');
     // 人数：友達と遊ぶときは席の数、ひとりのときは選んだ数（6〜10）
     const count = this.net ? this.net.seats.length : this.pawnCount;
     BOT_PROFILES.slice(0, count - 1).forEach((profile, i) => {
       // 友達が座った席は Bot にしない（その人のスマホが動かす）
       const human = !!this.net && this.net.seats[i + 1] !== 0;
-      const bot = human ? null : createBot(profile, BOT_STARTS[i]);
-      this.addPate(bot ? bot.h : createHarvester(createWalker({ ...BOT_STARTS[i] })), profile.part, profile.element, bot, profile.id);
+      const bot = human ? null : createBot(profile, gameMap().botStarts[i % gameMap().botStarts.length]);
+      this.addPate(bot ? bot.h : createHarvester(createWalker({ ...gameMap().botStarts[i % gameMap().botStarts.length] })), profile.part, profile.element, bot, profile.id);
     });
     this.player = this.pates[this.me].h;
     this.pateSprite = this.pates[this.me].view;
@@ -439,7 +430,7 @@ export class FieldScene extends Phaser.Scene {
       .setScrollFactor(0);
     this.updateMaterials(false);
     // 採取場は画面より広いので、カメラが自分のパテを追いかける（採取場の端より外は映さない）
-    this.camTarget = this.add.zone(PLAYER_START.x, PLAYER_START.y, 1, 1);
+    this.camTarget = this.add.zone(gameMap().playerStart.x, gameMap().playerStart.y, 1, 1);
     this.followCamera(1); // 最初は、すぐに自分のパテのところへ
     this.setupFog();
     this.setupHud();
@@ -562,13 +553,13 @@ export class FieldScene extends Phaser.Scene {
    */
   private drawZones(): void {
     const g = this.add.graphics().setDepth(-500);
-    for (const z of ZONES) {
+    for (const z of gameMap().zones) {
       const color = ELEMENT_COLOR[z.element];
-      g.fillStyle(color, 0.16).fillRoundedRect(z.x, z.y, z.w, z.h, 28);
-      g.lineStyle(3, color, 0.7).strokeRoundedRect(z.x, z.y, z.w, z.h, 28);
-      g.lineStyle(1.5, COLORS.ink, 0.35).strokeRoundedRect(z.x - 2, z.y - 2, z.w + 4, z.h + 4, 30);
-      const tag = this.add.image(z.x + z.w / 2, z.y + 2, ELEMENT_PICTURE(z.element)).setScale(0.42).setDepth(z.y + 1);
-      label(this, z.x + z.w / 2, z.y + 24, z.name, 12).setDepth(z.y + 1);
+      const pts = z.polygon.map((p) => new Phaser.Math.Vector2(p.x, p.y));
+      g.fillStyle(color, 0.16).fillPoints(pts, true);
+      g.lineStyle(3, color, 0.7).strokePoints(pts, true);
+      const tag = this.add.image(z.label.x, z.label.y - 16, ELEMENT_PICTURE(z.element)).setScale(0.42).setDepth(z.label.y + 1);
+      label(this, z.label.x, z.label.y + 6, z.name, 12).setDepth(z.label.y + 1);
       void tag;
     }
   }
@@ -1081,7 +1072,7 @@ export class FieldScene extends Phaser.Scene {
       case 'tap': {
         if (host ? msg.s !== fromSeat : fromSeat !== 0 || msg.s === this.me) return;
         const e = this.pates[msg.s];
-        const r = RESOURCE_POINTS[msg.p];
+        const r = gameMap().resourcePoints[msg.p];
         if (!e || !r) return;
         if (host) {
           // 子機が叩いた分だけ、素材ポイントの残りを減らす（空になったら、戻る時刻を決める）
@@ -1270,7 +1261,7 @@ export class FieldScene extends Phaser.Scene {
   /** 叩いたことを伝える（自分・Bot） */
   private shareTap(h: Harvester, j: TapEvent['j'], pointId: string | undefined, used: number, gain: number): void {
     if (!this.net || !pointId) return;
-    this.netShare({ k: 'tap', s: this.seatOf(h), j, p: RESOURCE_POINTS.findIndex((r) => r.id === pointId), u: used, g: gain } satisfies TapEvent);
+    this.netShare({ k: 'tap', s: this.seatOf(h), j, p: gameMap().resourcePoints.findIndex((r) => r.id === pointId), u: used, g: gain } satisfies TapEvent);
   }
 
   /** ミッションの出来事を伝える（自分・Bot） */
@@ -1414,7 +1405,7 @@ export class FieldScene extends Phaser.Scene {
     g.clear();
     const w = 36;
     const h = 6;
-    for (const r of RESOURCE_POINTS) {
+    for (const r of gameMap().resourcePoints) {
       const stock = this.field.stock[r.id];
       const max = STOCK.max[r.kind];
       const regenAt = this.field.regenAt[r.id];
@@ -1767,7 +1758,7 @@ export class FieldScene extends Phaser.Scene {
         return true;
       }
       const far = Math.hypot(guard.x - h.walker.pos.x, guard.y - h.walker.pos.y) > 6;
-      if (far) setTarget(h.walker, guard);
+      if (far) setTarget(h.walker, guard, h.element);
       else if (!h.walker.target) {
         const v = this.match.treasure.vault;
         h.walker.heading = Math.atan2(v.y - h.walker.pos.y, v.x - h.walker.pos.x);
@@ -1782,7 +1773,7 @@ export class FieldScene extends Phaser.Scene {
       this.doStop(e.pawn, target, heard);
       return true;
     }
-    setTarget(h.walker, target.h.walker.pos);
+    setTarget(h.walker, target.h.walker.pos, h.element);
     return true;
   }
 
@@ -1967,7 +1958,7 @@ export class FieldScene extends Phaser.Scene {
         this.introAdd(this.add.text(cx + 120, y - 18, '大変', { fontFamily: 'sans-serif', fontSize: '13px', fontStyle: 'bold', color: '#fff8e8' }).setOrigin(0.5).setResolution(2));
         return;
       }
-      const zone = ZONES.find((z) => z.element === t.element);
+      const zone = gameMap().zones.find((z) => z.element === t.element);
       this.introAdd(this.add.rectangle(cx, y, 312, 84, ELEMENT_COLOR[t.element], 0.14).setStrokeStyle(2, ELEMENT_COLOR[t.element], 0.9));
       this.introAdd(this.add.image(cx - 124, y, ELEMENT_PICTURE(t.element)).setScale(0.72));
       this.introAdd(this.add.text(cx - 86, y - 30, t.name, { fontFamily: 'sans-serif', fontSize: '16px', fontStyle: 'bold', color: INK }).setResolution(2));
@@ -2670,7 +2661,7 @@ export class FieldScene extends Phaser.Scene {
       kickFromShrine(me, this.audio.heardTime());
       this.closeYorishiro();
       this.audio.zukoo();
-      this.popText(`まちがえすぎて 祠から追い出された…（${YORISHIRO.lockSeconds}秒）`, '#b3322a', 14, 6);
+      this.popText(`まちがえすぎて 祠から追い出された…（${YORISHIRO_RULE.lockSeconds}秒）`, '#b3322a', 14, 6);
     }
     this.yoriView?.update();
   }
@@ -2768,9 +2759,10 @@ export class FieldScene extends Phaser.Scene {
    */
   private followCamera(lerp: number): void {
     const cam = this.cameras.main;
-    const tx = Phaser.Math.Clamp(this.camTarget.x - SCREEN.width / 2, 0, WORLD.width - SCREEN.width);
+    const world = gameMap().world;
+    const tx = Phaser.Math.Clamp(this.camTarget.x - SCREEN.width / 2, 0, world.width - SCREEN.width);
     // 下は、地図の端より少し下まで動ける（いちばん下にある物が、画面下のボタンに隠れないように）
-    const ty = Phaser.Math.Clamp(this.camTarget.y - SCREEN.height / 2, 0, WORLD.height - SCREEN.height + WORLD.cameraBottomPad);
+    const ty = Phaser.Math.Clamp(this.camTarget.y - SCREEN.height / 2, 0, world.height - SCREEN.height + world.cameraBottomPad);
     cam.setScroll(cam.scrollX + (tx - cam.scrollX) * lerp, cam.scrollY + (ty - cam.scrollY) * lerp);
   }
 

@@ -5,7 +5,7 @@
 import Phaser from 'phaser';
 import { COLORS, SCREEN } from '../game/config';
 import type { Rng } from '../game/random';
-import { botTreasurePlan, DEFAULT_SHRINE, EXIT_SITES, exitChoices, exitsAllowed, SHRINE_SITES, vaultChoices, type ExitSite, type ShrineSite, type TreasurePlan, type VaultSite } from '../game/treasure';
+import { botTreasurePlan, defaultShrine, exitSites, exitChoices, exitsAllowed, shrineSites, vaultChoices, type ExitSite, type ShrineSite, type TreasurePlan, type VaultSite } from '../game/treasure';
 import { MeetingMap } from './MeetingMap';
 import { FACILITY_TEX, makeFacilityTextures } from './facilityTextures';
 import { makeResourceTextures } from './resourceTextures';
@@ -44,11 +44,11 @@ export function openTreasurePicker(scene: Phaser.Scene, rng: Rng, done: (plan: T
 
   let vault: VaultSite | null = null;
   let exits: ExitSite[] = [];
-  let shrine: ShrineSite = DEFAULT_SHRINE;
+  let shrine: ShrineSite = defaultShrine();
   let finished = false;
 
   // 土の祠の候補（緑の丸）。いまの場所は祠の絵がはっきり、ほかはうすく出る
-  const shrineMarks = SHRINE_SITES.map((site) => {
+  const shrineMarks = shrineSites().map((site) => {
     const p = at(site);
     const img = add(scene.add.image(p.x, p.y + 2, FACILITY_TEX.shrine).setOrigin(0.5, 1).setScale(0.32));
     const ring = add(scene.add.circle(p.x, p.y - 8, 13, 0x5c9b5a, 0.6).setStrokeStyle(2, COLORS.ink).setInteractive({ useHandCursor: true }));
@@ -70,7 +70,7 @@ export function openTreasurePicker(scene: Phaser.Scene, rng: Rng, done: (plan: T
     });
     return { v, ring, img };
   });
-  const exitMarks = EXIT_SITES.map((e) => {
+  const exitMarks = exitSites().map((e) => {
     const p = at(e);
     const box = add(scene.add.rectangle(p.x, p.y - 10, 26, 26, COLORS.landmarkVermilion, 0.85).setStrokeStyle(3, COLORS.ink).setInteractive({ useHandCursor: true }));
     const img = add(scene.add.image(p.x, p.y + 4, EXIT_TEX).setOrigin(0.5, 1).setScale(0.55).setVisible(false));

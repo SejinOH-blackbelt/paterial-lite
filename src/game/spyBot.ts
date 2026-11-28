@@ -4,7 +4,8 @@
 // ・試合の途中から、目撃者がいないときだけイタズラ（置物にする）をする
 // ・M10：名物をいくつかスキャンしたら（または残り時間が少なくなったら）宝物庫へ行き、誰も見ていなければ宝を盗んで、近い出口へ逃げる
 
-import { LANDMARKS, SCAN_GAME, SPY, SPY_BOT } from './config';
+import { SCAN_GAME, SPY, SPY_BOT } from './config';
+import { gameMap } from './maps';
 import { updateBot, type Bot, type BotTapEvent } from './bot';
 import type { Board } from './board';
 import type { FieldState, Harvester } from './harvest';
@@ -31,7 +32,7 @@ export function createSpyBotMind(): SpyBotMind {
 
 /** 名物をスキャンするときに立つ場所（名物の少し下） */
 export function landmarkSpot(id: string) {
-  const l = LANDMARKS.find((x) => x.id === id)!;
+  const l = gameMap().landmarks.find((x) => x.id === id)!;
   return { x: l.x, y: l.y + 22 };
 }
 
@@ -99,7 +100,7 @@ export function updateSpyBot(
     h.claim = null;
     if (!h.walker.target) {
       const e = nearestExit(heist.treasure, h.walker.pos);
-      setTarget(h.walker, { x: e.x, y: e.y });
+      setTarget(h.walker, { x: e.x, y: e.y }, h.element);
     }
     return out;
   }
@@ -113,7 +114,7 @@ export function updateSpyBot(
     h.task = null;
     h.claim = null;
     h.waitingFor = null;
-    setTarget(h.walker, vaultSpot(heist.treasure));
+    setTarget(h.walker, vaultSpot(heist.treasure), h.element);
     bot.mode = 'idle';
     return out;
   }
@@ -169,22 +170,22 @@ export function updateSpyBot(
     // 宝を盗みに行くか：全部スキャンした・残り時間が少ない・いくつかスキャンしたあとの気まぐれ
     if (heist && !heist.treasure.stolen) {
       const n = spy.scanned.size;
-      const go = n >= LANDMARKS.length || heist.timeLeft < SPY_BOT.heistTimeLeft || (n >= SPY_BOT.heistAfterScans && rng() < SPY_BOT.heistChance);
+      const go = n >= gameMap().landmarks.length || heist.timeLeft < SPY_BOT.heistTimeLeft || (n >= SPY_BOT.heistAfterScans && rng() < SPY_BOT.heistChance);
       if (go) {
         mind.heist = true;
         mind.goal = null;
         h.claim = null;
-        setTarget(h.walker, vaultSpot(heist.treasure));
+        setTarget(h.walker, vaultSpot(heist.treasure), h.element);
         bot.mode = 'idle';
         return out;
       }
     }
-    const left = LANDMARKS.filter((l) => !spy.scanned.has(l.id) && !isLocked(spy, l.id, now));
+    const left = gameMap().landmarks.filter((l) => !spy.scanned.has(l.id) && !isLocked(spy, l.id, now));
     if (left.length > 0 && rng() < SPY_BOT.scanChance) {
       const l = left[Math.floor(rng() * left.length)];
       mind.goal = l.id;
       h.claim = null;
-      setTarget(h.walker, landmarkSpot(l.id));
+      setTarget(h.walker, landmarkSpot(l.id), h.element);
       bot.mode = 'idle';
       return out;
     }

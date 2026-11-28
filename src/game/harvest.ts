@@ -1,6 +1,7 @@
 // 素材ポイントと採取の流れのルール。画面表示（Phaser）には依存しません。
 
-import { ELEMENTS, FIELD, RESOURCE, RESOURCE_POINTS, STOCK } from './config';
+import { ELEMENTS, RESOURCE, RESOURCE_POINTS, STOCK } from './config';
+import { gameMap, type MapResource } from './maps';
 import type { ElementId } from './elements';
 import type { Possession } from './yorishiro';
 import { faceTo, facingFor, steerWalker, setTarget, type Point, type Walker } from './movement';
@@ -9,7 +10,7 @@ import type { Rng } from './random';
 import { startSession, tapSession, type HarvestSession, type TapResult } from './rhythm';
 
 export type ResourceKind = (typeof RESOURCE_POINTS)[number]['kind'];
-export type ResourcePoint = (typeof RESOURCE_POINTS)[number];
+export type ResourcePoint = MapResource;
 
 /** 素材を集めるパテ（プレイヤーも、あとで Bot も同じ形を使う） */
 export interface Harvester {
@@ -79,7 +80,7 @@ export function createHarvester(walker: Walker, element: ElementId = 'earth', mi
 
 export function createFieldState(): FieldState {
   const f: FieldState = { stock: {}, regenAt: {} };
-  for (const r of RESOURCE_POINTS) {
+  for (const r of gameMap().resourcePoints) {
     f.stock[r.id] = STOCK.max[r.kind];
     f.regenAt[r.id] = null;
   }
@@ -87,12 +88,12 @@ export function createFieldState(): FieldState {
 }
 
 export function pointById(id: string): ResourcePoint {
-  return RESOURCE_POINTS.find((r) => r.id === id)!;
+  return gameMap().resourcePoints.find((r) => r.id === id)!;
 }
 
 /** 空になって時間がたったポイントを元に戻す。毎コマ呼ぶ */
 export function updateFieldState(f: FieldState, now: number): void {
-  for (const r of RESOURCE_POINTS) {
+  for (const r of gameMap().resourcePoints) {
     const at = f.regenAt[r.id];
     if (at !== null && now >= at) {
       f.stock[r.id] = STOCK.max[r.kind];
@@ -108,7 +109,7 @@ export function standSpot(r: ResourcePoint): Point {
 
 /** 使用中のポイントのそばで待つ場所（立つ場所の少し右） */
 export function waitSpot(r: ResourcePoint): Point {
-  return { x: Math.min(FIELD.right, r.x + RESOURCE.waitOffsetX), y: r.y + RESOURCE.standOffsetY };
+  return { x: Math.min(gameMap().field.right, r.x + RESOURCE.waitOffsetX), y: r.y + RESOURCE.standOffsetY };
 }
 
 /** ほかのパテが使っている（使う予定の）ポイントか */
@@ -118,13 +119,13 @@ export function claimedByOther(all: readonly Harvester[], id: string, me: Harves
 
 /** タップした場所にある素材ポイント（なければ null） */
 export function resourceAtTap(p: Point): ResourcePoint | null {
-  return RESOURCE_POINTS.find((r) => Math.hypot(r.x - p.x, r.y - RESOURCE.tapCenterUp - p.y) <= RESOURCE.tapRadius) ?? null;
+  return gameMap().resourcePoints.find((r) => Math.hypot(r.x - p.x, r.y - RESOURCE.tapCenterUp - p.y) <= RESOURCE.tapRadius) ?? null;
 }
 
 /** いる場所から採取できる素材ポイント（足元から useRadius 以内でいちばん近いもの。正面でなくても、横や後ろからでもよい） */
 export function nearbyPoint(p: Point): ResourcePoint | null {
   // 足元からの近さ（どちら側でも）と、正面の立つ位置からの近さ（前と同じ広さ）の、どちらかに入ればよい
-  const near = RESOURCE_POINTS.map((r) => {
+  const near = gameMap().resourcePoints.map((r) => {
     const s = standSpot(r);
     const around = Math.hypot(r.x - p.x, r.y - p.y) / RESOURCE.useRadius;
     const front = Math.hypot(s.x - p.x, s.y - p.y) / RESOURCE.frontRadius;
@@ -156,16 +157,16 @@ export function moveHarvester(h: Harvester, p: Point, all: readonly Harvester[])
   h.waitingFor = null;
   const r = resourceAtTap(p);
   if (!r) {
-    setTarget(h.walker, p);
+    setTarget(h.walker, p, h.element);
     return 'walk';
   }
   if (claimedByOther(all, r.id, h)) {
     h.waitingFor = r.id;
-    setTarget(h.walker, waitSpot(r));
+    setTarget(h.walker, waitSpot(r), h.element);
     return 'wait';
   }
   h.claim = r.id;
-  setTarget(h.walker, standSpot(r));
+  setTarget(h.walker, standSpot(r), h.element);
   return 'harvest';
 }
 
@@ -201,7 +202,7 @@ export function updateHarvester(h: Harvester, f: FieldState, all: readonly Harve
     if (!claimedByOther(all, id, h) && f.stock[id] > 0) {
       h.waitingFor = null;
       h.claim = id;
-      setTarget(h.walker, standSpot(pointById(id)));
+      setTarget(h.walker, standSpot(pointById(id)), h.element);
     }
     return null;
   }
@@ -229,7 +230,7 @@ export function driveHarvester(h: Harvester, dx: number, dy: number, dtSeconds: 
   h.possess = null;
   h.claim = null;
   h.waitingFor = null;
-  steerWalker(h.walker, dx, dy, dtSeconds, speed);
+  steerWalker(h.walker, dx, dy, dtSeconds, speed, h.element);
 }
 
 /**

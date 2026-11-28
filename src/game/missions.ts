@@ -4,7 +4,8 @@
 // ・スパイは「本当にやる」か「ふりをする」を選べる。ふりはスイッチが入らない（資源も使わない）
 // ・プレイヤーはミニゲームを遊ぶ。Botは決まった時間がたつと終わる（ときどきまちがえて、やり直す）
 
-import { AFFINITY, FACILITIES, FACILITY, MATCH, MISSION_BOT, RITE, SPOT, VISION } from './config';
+import { AFFINITY, FACILITY, MATCH, MISSION_BOT, RITE, SPOT, VISION } from './config';
+import { gameMap, type MapFacility } from './maps';
 import { isRite, missionComplete, missionType, spotNear, type Board, type MissionInst } from './board';
 import { affinity, type Affinity } from './elements';
 import type { Harvester } from './harvest';
@@ -12,7 +13,7 @@ import { createMissionGame, type MissionGame } from './missionGames';
 import { faceTo, facingFor, type Point } from './movement';
 import type { Rng } from './random';
 
-export type Facility = (typeof FACILITIES)[number];
+export type Facility = MapFacility;
 export type FacilityId = Facility['id'];
 
 /** スイッチの前でミッションをしているところ */
@@ -47,7 +48,7 @@ export interface MissionEvent {
 const dist = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 
 export function facilityById(id: string): Facility {
-  return FACILITIES.find((f) => f.id === id)!;
+  return gameMap().facilities.find((f) => f.id === id)!;
 }
 
 /** 施設の前の、パテが立つ場所 */
@@ -64,7 +65,7 @@ export function facilityCenter(f: Facility): Point {
 export function facilityNear(p: Point, shrineAt?: Point): Facility | null {
   // 真ん中からの近さ（どちら側でも）と、正面の立つ位置からの近さ（前と同じ広さ）の、どちらかに入ればよい
   // 土の祠は、王様が選んだ場所（shrineAt）にあるものとして測る
-  const list = FACILITIES.map((f) => (f.id === 'shrine' && shrineAt ? ({ ...f, x: shrineAt.x, y: shrineAt.y } as Facility) : f));
+  const list = gameMap().facilities.map((f) => (f.id === 'shrine' && shrineAt ? ({ ...f, x: shrineAt.x, y: shrineAt.y } as Facility) : f));
   const near = list.map((f) => ({
     f,
     d: Math.min(dist(facilityCenter(f), p) / FACILITY.useRadius, dist(facilityStand(f), p) / FACILITY.frontRadius),

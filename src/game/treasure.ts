@@ -6,11 +6,13 @@
 //  - 出口2つは、同じ辺に置けない
 // プレイヤーがスパイのとき（王様が Bot のとき）は、王様 Bot が決まりの中からでたらめに選びます。
 
-import { FIELD, TREASURE } from './config';
+import { TREASURE } from './config';
+import { gameMap } from './maps';
 import type { Point } from './movement';
 import type { Rng } from './random';
 
-export type Side = 'top' | 'bottom' | 'left' | 'right';
+/** 出口がある辺（いつもの地図は上下左右。島の地図は岬の方角）。同じ辺に出口2つは置けない */
+export type Side = string;
 
 export interface VaultSite {
   id: string;
@@ -77,16 +79,18 @@ export function alarmChance(scannedCount: number): number {
   return table[Math.max(0, Math.min(table.length - 1, scannedCount))];
 }
 
-export const VAULT_SITES: readonly VaultSite[] = TREASURE.vaultSites;
-export const EXIT_SITES: readonly ExitSite[] = TREASURE.exitSites;
-export const SHRINE_SITES: readonly ShrineSite[] = TREASURE.shrineSites;
-/** 土の祠のいつもの場所 */
-export const DEFAULT_SHRINE: ShrineSite = SHRINE_SITES[0];
+/** いまの地図の、宝物庫・出口・土の祠の候補 */
+export const vaultSites = (): readonly VaultSite[] => gameMap().vaultSites;
+export const exitSites = (): readonly ExitSite[] => gameMap().exitSites;
+export const shrineSites = (): readonly ShrineSite[] => gameMap().shrineSites;
+/** 土の祠のいつもの場所（いまの地図の候補の1つめ） */
+export const defaultShrine = (): ShrineSite => gameMap().shrineSites[0];
 
 /** 宝物庫をその場所に置けるか（採取場のふちから edgeMargin 以上、内側） */
 export function vaultAllowed(p: Point): boolean {
   const m = TREASURE.edgeMargin;
-  return p.x >= FIELD.left + m && p.x <= FIELD.right - m && p.y >= FIELD.top + m && p.y <= FIELD.bottom - m;
+  const f = gameMap().field;
+  return p.x >= f.left + m && p.x <= f.right - m && p.y >= f.top + m && p.y <= f.bottom - m;
 }
 
 /** 出口2つの組み合わせが決まりに合うか（ちがう場所で、同じ辺ではない） */
@@ -101,12 +105,12 @@ export function planAllowed(plan: TreasurePlan): boolean {
 
 /** 置ける宝物庫の候補 */
 export function vaultChoices(): VaultSite[] {
-  return VAULT_SITES.filter((v) => vaultAllowed(v));
+  return vaultSites().filter((v) => vaultAllowed(v));
 }
 
 /** 1つめの出口を選んだあとに、2つめとして選べる出口（first が null なら全部） */
 export function exitChoices(first: ExitSite | null): ExitSite[] {
-  return EXIT_SITES.filter((e) => first === null || exitsAllowed(first, e));
+  return exitSites().filter((e) => first === null || exitsAllowed(first, e));
 }
 
 /** 王様 Bot の選び方：決まりに合う中から、でたらめに選ぶ（出口は、宝物庫から遠いものを選ぶ） */
@@ -121,7 +125,7 @@ export function botTreasurePlan(rng: Rng): TreasurePlan {
   const all: TreasurePlan[] = [];
   for (const vault of vaultChoices()) {
     // 王様 Bot は、土の祠をいつもの場所に置く
-    for (const a of EXIT_SITES) for (const b of exitChoices(a)) if (a.id < b.id) all.push({ vault, exits: [a, b], shrine: DEFAULT_SHRINE });
+    for (const a of exitSites()) for (const b of exitChoices(a)) if (a.id < b.id) all.push({ vault, exits: [a, b], shrine: defaultShrine() });
   }
   const far = all.filter((p) => p.exits.every((e) => Math.hypot(e.x - p.vault.x, e.y - p.vault.y) >= TREASURE.botExitMinDistance));
   const plan = pick(far.length > 0 ? far : all);
@@ -143,11 +147,11 @@ export function planToIds(plan: TreasurePlan): TreasureIds {
 export function planFromIds(ids: TreasureIds): TreasurePlan | null {
   // 通信で届いた中身は形がくずれていることもあるので、出口がちょうど2つかを先に確かめる
   if (!ids || !Array.isArray(ids.e) || ids.e.length !== 2) return null;
-  const vault = VAULT_SITES.find((v) => v.id === ids.v);
-  const a = EXIT_SITES.find((e) => e.id === ids.e[0]);
-  const b = EXIT_SITES.find((e) => e.id === ids.e[1]);
+  const vault = vaultSites().find((v) => v.id === ids.v);
+  const a = exitSites().find((e) => e.id === ids.e[0]);
+  const b = exitSites().find((e) => e.id === ids.e[1]);
   // 土の祠：省いたときは、いつもの場所。知らない id なら、こわれた知らせとして受けつけない
-  const shrine = ids.s === undefined ? DEFAULT_SHRINE : SHRINE_SITES.find((s) => s.id === ids.s);
+  const shrine = ids.s === undefined ? defaultShrine() : shrineSites().find((s) => s.id === ids.s);
   if (!vault || !a || !b || !shrine) return null;
   const plan: TreasurePlan = { vault, exits: [a, b], shrine };
   return planAllowed(plan) ? plan : null;

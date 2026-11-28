@@ -1,7 +1,8 @@
 // 1試合のルール（ミッション・国の仕事ゲージ・勝敗・呼び出し・会議・投票・罰金と賠償・Botの疑い度）。
 // 画面表示（Phaser）には依存しません。
 
-import { BOT, KING_ORDER, LANDMARKS, MATCH, MISS_SOUND, RITE, SUPPORT, SUSPICION } from './config';
+import { BOT, KING_ORDER, MATCH, MISS_SOUND, RITE, SUPPORT, SUSPICION } from './config';
+import { gameMap } from './maps';
 import { boardGauge, isRite, missionComplete, type Board } from './board';
 import { createFieldState, giveHeld, takeHeld, totalHeld, type FieldState, type Harvester } from './harvest';
 import { facilityById, facilityNear, facilityStand, type MissionEvent } from './missions';
@@ -282,7 +283,7 @@ export function timeLeft(m: MatchState, now: number): number {
 
 // ---------- 呼び出し ----------
 
-const torii = LANDMARKS.find((l) => l.id === 'torii')!;
+const torii = () => gameMap().landmarks.find((l) => l.id === 'torii')!;
 
 /** p が呼び出せる置物（近くにある、まだ知られていない置物）。なければ null */
 export function reportableBody(m: MatchState, p: Pawn): Harvester | null {
@@ -524,7 +525,7 @@ export function regroup(m: MatchState): void {
   const r = MATCH.regroupRadius * Math.max(1, alive.length / 6);
   alive.forEach((p, i) => {
     const a = (i / alive.length) * Math.PI * 2 + Math.PI / 2;
-    p.h.walker.pos = { x: torii.x + Math.cos(a) * r, y: torii.y + 30 + Math.sin(a) * r * 0.6 };
+    p.h.walker.pos = { x: torii().x + Math.cos(a) * r, y: torii().y + 30 + Math.sin(a) * r * 0.6 };
     p.h.walker.target = null;
     faceTo(p.h.walker, 'down');
   });
@@ -628,5 +629,5 @@ export function botWantsToReport(m: MatchState, now: number, visionRadius: numbe
 
 /** Bot が呼び出しに向かうときなどに使う：鳥居のそばの位置 */
 export function toriiSpot(): Point {
-  return { x: torii.x, y: torii.y + 24 };
+  return { x: torii().x, y: torii().y + 24 };
 }

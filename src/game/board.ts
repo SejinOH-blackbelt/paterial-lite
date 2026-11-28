@@ -11,6 +11,7 @@ import { ELEMENTS, MATCH, MISSION_DEAL, MISSION_WEIGHT, MISSIONS, RITE, SPOT } f
 import { affinity, type ElementId, type MissionId, type MissionKind } from './elements';
 import type { Point } from './movement';
 import type { Rng } from './random';
+import { gameMap } from './maps';
 
 /** ミッションの種類の情報。王様の儀式は、祭壇ごとにエレメント（ゾーン）がちがうので element が null */
 export interface MissionType {
@@ -50,7 +51,7 @@ export interface Board {
 export interface BoardPlan {
   types: MissionKind[];
   pairs: [number, number][];
-  /** ミッションごとの、スイッチの場所（SPOT.sites の番号） */
+  /** ミッションごとの、スイッチの場所（gameMap().spotSites の番号。王様の儀式は gameMap().altars の番号） */
   sites: number[][];
 }
 
@@ -165,16 +166,17 @@ function chooseTypes(pairs: [number, number][], elements: (ElementId | null)[], 
 /** スイッチの場所を選ぶ。そのエレメントのゾーンの中から選び、同じミッションのスイッチどうしは、できるだけ SPOT.spreadMin 以上離す */
 function chooseSites(types: MissionId[], rng: Rng): number[][] {
   const all = shuffle(
-    SPOT.sites.map((_, i) => i),
+    gameMap().spotSites.map((_, i) => i),
     rng,
   );
   // ゾーンごとの空いている場所（ミッションのスイッチは、そのエレメントのゾーンの中から選ぶ）
   const freeByZone = new Map<string, number[]>();
   for (const i of all) {
-    const z = SPOT.sites[i].zone;
+    const z = gameMap().spotSites[i].zone;
     freeByZone.set(z, [...(freeByZone.get(z) ?? []), i]);
   }
-  const d = (i: number, j: number) => Math.hypot(SPOT.sites[i].x - SPOT.sites[j].x, SPOT.sites[i].y - SPOT.sites[j].y);
+  const sites = gameMap().spotSites;
+  const d = (i: number, j: number) => Math.hypot(sites[i].x - sites[j].x, sites[i].y - sites[j].y);
   // 同じ種類のミッションが多くて場所が足りないときは、1つあたりのスイッチを減らす（場所を分け合う）
   const sameCount = new Map<MissionId, number>();
   for (const t of types) sameCount.set(t, (sameCount.get(t) ?? 0) + 1);
@@ -226,7 +228,7 @@ export function planBoard(elements: ElementId[], rng: Rng, king: number | null =
   if (hasKing) {
     types.push('rite');
     pairs.push([king, king]);
-    sites.push(RITE.altars.map((_, i) => i)); // 王様の儀式の「場所」は RITE.altars の番号
+    sites.push(gameMap().altars.map((_, i) => i)); // 王様の儀式の「場所」は祭壇の番号（gameMap().altars）
   }
   return { types, pairs, sites };
 }
@@ -240,10 +242,11 @@ export function buildBoard(plan: BoardPlan): Board {
       pair: [plan.pairs[id][0], plan.pairs[id][1]],
       spots: plan.sites[id].map((s): Spot => {
         if (type === 'rite') {
-          const a = RITE.altars[s];
+          const a = gameMap().altars[s];
           return { x: a.x, y: a.y, element: a.zone, on: false, credit: 0 };
         }
-        return { x: SPOT.sites[s].x, y: SPOT.sites[s].y, element: missionType(type).element!, on: false, credit: 0 };
+        const site = gameMap().spotSites[s];
+        return { x: site.x, y: site.y, element: missionType(type).element!, on: false, credit: 0 };
       }),
     })),
   };

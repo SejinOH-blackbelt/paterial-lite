@@ -5,7 +5,8 @@
 // ・親機は、全員のようす（スナップショット）を少しずつ（1秒に何回か）みんなに送る。
 // ・時刻はスマホごとに「音の時計」がちがうので、送るときは「いまから何秒後／何秒前」に直して送る。
 
-import { ELEMENTS, RESOURCE_POINTS } from '../game/config';
+import { ELEMENTS } from '../game/config';
+import { gameMap } from '../game/maps';
 import type { Board, BoardPlan } from '../game/board';
 import type { FieldState, Harvester } from '../game/harvest';
 import type { Facing } from '../game/movement';
@@ -127,7 +128,7 @@ export interface HeistWire {
 
 /** パテのようすを送る形にする */
 export function pawnToWire(h: Harvester, walking: boolean, now = 0): PawnWire {
-  const r = h.session ? RESOURCE_POINTS.findIndex((p) => p.id === h.session!.pointId) : -1;
+  const r = h.session ? gameMap().resourcePoints.findIndex((p) => p.id === h.session!.pointId) : -1;
   return {
     x: Math.round(h.walker.pos.x * 10) / 10,
     y: Math.round(h.walker.pos.y * 10) / 10,
@@ -156,7 +157,7 @@ export function applyWireToPawn(h: Harvester, w: PawnWire, makeSession: (pointId
   h.walker.facing = FACINGS[w.f] ?? h.walker.facing;
   h.frozen = w.fr >= 1;
   h.departed = w.fr === 2;
-  const pointId = w.h >= 0 ? RESOURCE_POINTS[w.h]?.id ?? null : null;
+  const pointId = w.h >= 0 ? gameMap().resourcePoints[w.h]?.id ?? null : null;
   if (!pointId) h.session = null;
   else if (h.session?.pointId !== pointId) h.session = makeSession(pointId);
   h.claim = pointId;
@@ -177,8 +178,8 @@ export function applyWireToPawn(h: Harvester, w: PawnWire, makeSession: (pointId
 /** 素材ポイントの残りを送る形にする */
 export function fieldToWire(f: FieldState, now: number): { st: number[]; rg: number[] } {
   return {
-    st: RESOURCE_POINTS.map((r) => f.stock[r.id]),
-    rg: RESOURCE_POINTS.map((r) => {
+    st: gameMap().resourcePoints.map((r) => f.stock[r.id]),
+    rg: gameMap().resourcePoints.map((r) => {
       const at = f.regenAt[r.id];
       return at === null ? -1 : Math.max(0, Math.round((at - now) * 10) / 10);
     }),
@@ -187,7 +188,7 @@ export function fieldToWire(f: FieldState, now: number): { st: number[]; rg: num
 
 /** 届いた素材ポイントの残りを当てはめる（戻る時刻は、こちらの時計に直す） */
 export function applyFieldWire(f: FieldState, st: number[], rg: number[], now: number): void {
-  RESOURCE_POINTS.forEach((r, i) => {
+  gameMap().resourcePoints.forEach((r, i) => {
     if (typeof st[i] === 'number') f.stock[r.id] = st[i];
     f.regenAt[r.id] = typeof rg[i] === 'number' && rg[i] >= 0 ? now + rg[i] : null;
   });

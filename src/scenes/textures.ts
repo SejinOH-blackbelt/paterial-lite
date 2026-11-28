@@ -1,6 +1,8 @@
 // パテの部品と採取場の地面を、絵本の挿絵として描く。
 import type Phaser from 'phaser';
 import { COLORS, FACILITIES, FIELD, LANDMARKS, RESOURCE_POINTS, RENDER } from '../game/config';
+import type { GameMap } from '../game/maps';
+import { drawIslandGround } from './islandGround';
 
 export const TEX = {
   pateBody: 'pate-body',
@@ -257,7 +259,17 @@ function printShape(ctx: CanvasRenderingContext2D, path: string, fill: string | 
 }
 
 /** 採取場の砂地、石畳と外周を木版画風に描く */
-export function drawGround(scene: Phaser.Scene, width: number, height: number): void {
+/** 地面を描く（地図ごと。島の地図は islandGround.ts） */
+export function drawGround(scene: Phaser.Scene, map: GameMap): void {
+  if (map.id === 'island') {
+    drawIslandGround(scene, map);
+    return;
+  }
+  drawClassicGround(scene, map.world.width, map.world.height);
+}
+
+/** いつもの地図の地面（採取場の四角・空と遠山・石畳） */
+function drawClassicGround(scene: Phaser.Scene, width: number, height: number): void {
   const bake = (key: string, depth: number, draw: (ctx: CanvasRenderingContext2D) => void) => {
     const old = scene.textures.exists(key) ? scene.textures.get(key).getSourceImage() : null;
     if (!old || old.width !== width || old.height !== height) {

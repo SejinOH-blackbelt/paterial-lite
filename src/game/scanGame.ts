@@ -3,7 +3,8 @@
 // ・まねっこ：名物の4か所が音と一緒に順番に光る。同じ順にタップできたら成功
 // ・1回でも間違える・時間切れになると失敗（その名物は、そのラウンドのあいだスキャンできない）
 
-import { COUNTRIES, HOME_COUNTRY, LANDMARKS, SCAN_GAME } from './config';
+import { COUNTRIES, HOME_COUNTRY, SCAN_GAME } from './config';
+import { gameMap } from './maps';
 import type { Rng } from './random';
 
 export interface QuizQuestion {
@@ -77,9 +78,9 @@ export function makeQuiz(ctx: QuizContext, rng: Rng, count: number = SCAN_GAME.q
       return choiceQuestion(rng, 'いま 国の仕事ゲージは どのくらい？', bands[band], bands);
     },
     () => {
-      const l = LANDMARKS.find((x) => x.id === ctx.landmarkId);
+      const l = gameMap().landmarks.find((x) => x.id === ctx.landmarkId);
       if (!l) return null;
-      const names = [...LANDMARKS.map((x) => x.name), '雪化粧温泉旅館'];
+      const names = [...gameMap().landmarks.map((x) => x.name), '雪化粧温泉旅館'];
       return choiceQuestion(rng, 'いま スキャンしている名物は？', l.name, names);
     },
   ];

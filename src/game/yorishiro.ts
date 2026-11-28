@@ -2,6 +2,7 @@
 // 乗りうつりはコマンド入力。エレメントごとに決まった順でボタンを押す。速いほど早く乗りうつれる。
 // まちがえたら最初から。何回もまちがえると祠から追い出され、しばらく入れない。
 import { YORISHIRO, YORISHIRO_COMMANDS } from './config';
+import { gameMap } from './maps';
 import type { ElementId } from './elements';
 import type { Harvester } from './harvest';
 import { faceTo, facingFor, type Point } from './movement';
@@ -29,7 +30,7 @@ export type CommandStep = 'ok' | 'miss' | 'done' | 'kicked' | 'ignored';
 
 /** 祠の真ん中 */
 export function shrineCenter(): Point {
-  return { x: YORISHIRO.x, y: YORISHIRO.y - YORISHIRO.centerUp };
+  return { x: gameMap().yorishiro.x, y: gameMap().yorishiro.y - YORISHIRO.centerUp };
 }
 
 /** 祠のそばにいるか */

@@ -3,7 +3,8 @@
 // 資源がそろったら、まだ入っていないスイッチへ運んでミッションをします（相方が向かっているスイッチは避ける）。
 // スパイBotは、スイッチで「本当にやる」か「ふりをする」かを選びます。
 
-import { BOT, FIELD, MISSION_BOT, RESOURCE, RESOURCE_POINTS, YORISHIRO } from './config';
+import { BOT, MISSION_BOT, RESOURCE } from './config';
+import { gameMap } from './maps';
 import { isRite, missionComplete, missionType, type Board } from './board';
 import { bestElementFor, type ElementId, type MissionId } from './elements';
 import { startPossess, updateBotPossess } from './yorishiro';
@@ -62,7 +63,7 @@ function stepAside(bot: Bot, rng: Rng): void {
   const { x, y } = bot.h.walker.pos;
   const a = rng() * Math.PI * 2;
   const d = between(rng, BOT.stepAsideMin, BOT.stepAsideMax);
-  setTarget(bot.h.walker, { x: x + Math.cos(a) * d, y: y + Math.sin(a) * d });
+  setTarget(bot.h.walker, { x: x + Math.cos(a) * d, y: y + Math.sin(a) * d }, bot.h.element);
   bot.mode = 'wander';
 }
 
@@ -71,7 +72,7 @@ export function freePoints(bot: Bot, field: FieldState, all: readonly Harvester[
   const { x, y } = bot.h.walker.pos;
   // ほかのパテが使っている・順番を待っているポイントは選ばない（順番待ちのパテを優先する）
   const waited = (id: string) => all.some((o) => o !== bot.h && o.waitingFor === id);
-  return RESOURCE_POINTS.filter(
+  return gameMap().resourcePoints.filter(
     (r) => field.stock[r.id] > 0 && !claimedByOther(all, r.id, bot.h) && !waited(r.id) && (!kinds || kinds.includes(r.kind)),
   ).sort(
     (a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y),
@@ -97,9 +98,19 @@ export function neededKinds(h: Harvester, board: Board, all: readonly Harvester[
   return [...kinds];
 }
 
+/** 地図の中の、その体で歩ける場所をでたらめに1つ（歩ける場所が見つからなければ、地図のまん中） */
+function randomWalkable(element: ElementId, rng: Rng): Point {
+  const m = gameMap();
+  for (let i = 0; i < 40; i++) {
+    const p = { x: between(rng, m.field.left, m.field.right), y: between(rng, m.field.top, m.field.bottom) };
+    if (!m.walk || m.walk(p, element)) return p;
+  }
+  return { x: (m.field.left + m.field.right) / 2, y: (m.field.top + m.field.bottom) / 2 };
+}
+
 /** 採取場のどこかへ歩く（着いたらひと休み） */
 function wander(bot: Bot, rng: Rng): void {
-  setTarget(bot.h.walker, { x: between(rng, FIELD.left, FIELD.right), y: between(rng, FIELD.top, FIELD.bottom) });
+  setTarget(bot.h.walker, randomWalkable(bot.h.element, rng), bot.h.element);
   bot.h.claim = null;
   bot.mode = 'wander';
 }
@@ -125,7 +136,7 @@ function chooseSpot(bot: Bot, board: Board, all: readonly Harvester[], now: numb
     const to = bestElementFor(left, h.element);
     if (to !== h.element) {
       bot.changeTo = to;
-      setTarget(h.walker, { x: YORISHIRO.x, y: YORISHIRO.y + 34 });
+      setTarget(h.walker, { x: gameMap().yorishiro.x, y: gameMap().yorishiro.y + 34 }, h.element);
       bot.mode = 'toShrine';
       return true;
     }
@@ -136,7 +147,7 @@ function chooseSpot(bot: Bot, board: Board, all: readonly Harvester[], now: numb
   const target = [...pool].sort((a, b) => Math.hypot(a.at.x - x, a.at.y - y) - Math.hypot(b.at.x - x, b.at.y - y))[0];
   h.claim = null;
   h.aim = { mission: target.mission.id, spot: target.spot };
-  setTarget(h.walker, spotStand(target.at));
+  setTarget(h.walker, spotStand(target.at), h.element);
   bot.mode = 'toSpot';
   return true;
 }
@@ -201,7 +212,7 @@ export function updateBot(bot: Bot, field: FieldState, board: Board, all: readon
     bot.lastLap = Math.max(bot.lastLap, result.pass); // 実際に判定された通過
     bot.tapsLeft--;
     // ミッションに必要な数が集まったら、加工しに行くため採取を切り上げる
-    const kind = RESOURCE_POINTS.find((r) => r.id === pointId)!.kind;
+    const kind = gameMap().resourcePoints.find((r) => r.id === pointId)!.kind;
     const enough = !neededKinds(h, board, all).includes(kind);
     if (enough) bot.tapsLeft = 0;
     if (bot.tapsLeft <= 0 && h.session) {
@@ -269,7 +280,7 @@ export function updateBot(bot: Bot, field: FieldState, board: Board, all: readon
   }
   // 空いているポイントがなければ、使われているポイントのそばで順番を待つ（ほかに待っている人がいないところ）
   const { x, y } = h.walker.pos;
-  const busy = RESOURCE_POINTS.filter(
+  const busy = gameMap().resourcePoints.filter(
     (r) => need.includes(r.kind) && field.stock[r.id] > 0 && !all.some((o) => o !== h && o.waitingFor === r.id),
   ).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
   if (busy.length > 0) {
