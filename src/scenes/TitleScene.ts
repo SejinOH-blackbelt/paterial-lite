@@ -1,5 +1,6 @@
 // タイトル画面：ロゴ、跳ねるパテ、「あそぶ」「あそびかた」
 import Phaser from 'phaser';
+import { preloadPateArt } from './pateArt';
 import logoUrl from '../assets/logo.jpg';
 import { COLORS, PLAYERS, PLAYER_ELEMENT, PLAYER_PART, SCREEN } from '../game/config';
 import { roomFromUrl } from '../net/relay';
@@ -38,6 +39,7 @@ export class TitleScene extends Phaser.Scene {
   }
 
   preload(): void {
+    preloadPateArt(this);
     if (!this.textures.exists('logo')) this.load.image('logo', logoUrl);
   }
 

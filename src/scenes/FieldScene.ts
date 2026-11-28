@@ -2597,7 +2597,7 @@ export class FieldScene extends Phaser.Scene {
       e.view.setElement(e.h.element);
     }
     e.view.setPosition(x, y);
-    e.view.setFacing(e.h.walker.facing);
+    e.view.setFacing(e.h.walker.facing, e.h.walker.heading);
     e.view.update(dt, isWalking(e.h.walker) || (e.h === this.player && this.driving && !e.h.frozen) || (this.remoteWalking.get(e.h) ?? false));
     e.shadow.setPosition(x, y - 1).setScale(1 - e.view.bounce * PATE.shadowShrink);
     // 下にいるものほど手前に表示する
