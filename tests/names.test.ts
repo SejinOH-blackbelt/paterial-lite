@@ -21,5 +21,11 @@ it('モチーフの希望を優先し、10席でもかぶらない飾りを配�
   const parts = assignMotifs(['catCap', 'catCap', 'beret', 'crown', ...Array(6).fill(undefined)]);
   expect(parts[0]).toBe('catCap');
   expect(parts[2]).toBe('beret');
-  expect(new Set(parts)).toEqual(new Set(MOTIFS));
+  expect(new Set(parts)).toEqual(new Set(MOTIFS.filter((part) => part !== 'plain')));
+});
+
+it('プレーンを選んだ席は、希望が重なっても飾りなしになる', () => {
+  const parts = assignMotifs(['plain', 'plain', 'catCap', undefined]);
+  expect(parts.slice(0, 3)).toEqual(['plain', 'plain', 'catCap']);
+  expect(parts[3]).not.toBe('plain');
 });

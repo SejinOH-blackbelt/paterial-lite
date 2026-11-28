@@ -1,7 +1,7 @@
 // パテ1体の「見た目」。胴体・腕・足を別々の部品にして、動き（アニメーション）を付けやすくしています。
 // 位置の計算はしません。src/game 側で決めた位置をもらって表示するだけです。
 import Phaser from 'phaser';
-import { KING_PART, PATE } from '../game/config';
+import { KING_PART, PATE, PLAIN_MOTIF } from '../game/config';
 import type { Facing } from '../game/movement';
 import { elementKey, makeElementTextures, makeStrikeTexture, STRIKE_TEX, type Element } from './elementTextures';
 import { PART_ORIGIN_Y, partKey, type HeadPart } from './partTextures';
@@ -80,6 +80,8 @@ export class PateView extends Phaser.GameObjects.Container {
   setHeadPart(part: HeadPart): void {
     this.wearsScarf = part === 'redKerchief' || part.endsWith('Scarf');
     this.headPart?.destroy();
+    this.headPart = null;
+    if (part === PLAIN_MOTIF) return;
     this.headPart = this.scene.add.image(0, 0, partKey(part)).setOrigin(0.5, this.wearsScarf ? 5 / 32 : PART_ORIGIN_Y);
     (this.isStatue ? this : this.upperBody).add(this.headPart);
     this.placeHeadPart();

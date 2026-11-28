@@ -1,6 +1,6 @@
 // 役の発表：「きみは 王様」「きみは 市民」（友達と遊ぶとき、王様でない人）か「きみは スパイ」。スパイをここで決めて、採取場に渡す
 import Phaser from 'phaser';
-import { COLORS, PLAYERS, ELEMENT_NAMES, ELEMENTS, MISSIONS, MOTIF_PICK_SECONDS, NET, PLAYER_ELEMENT, PLAYER_PART, SCREEN } from '../game/config';
+import { COLORS, PLAYERS, ELEMENT_NAMES, ELEMENTS, MISSIONS, MOTIF_PICK_SECONDS, NET, PLAIN_MOTIF, PLAYER_ELEMENT, PLAYER_PART, SCREEN } from '../game/config';
 import { gameMap, setGameMap } from '../game/maps';
 import { SCORE_TOTALS_KEY } from '../game/score';
 import { planBoard, type BoardPlan } from '../game/board';
@@ -12,6 +12,7 @@ import { ELEMENT_PICTURE as ELEMENT_ICON, makeElementPictures as makeElementIcon
 import { randomElement, type ElementId } from '../game/elements';
 import { assignMotifs, MOTIFS, motifFrom, partName, sanitizeName, type Motif } from '../game/names';
 import { partKey } from './partTextures';
+import { TEX } from './textures';
 import { loadPlayerName } from './playerName';
 import type { NetGame } from '../net/netGame';
 import type { GoWire, NetMessage, ReadyWire } from '../net/sync';
@@ -73,13 +74,13 @@ export class RoleScene extends Phaser.Scene {
   private pickMotif(done: () => void): void {
     const x = SCREEN.width / 2;
     let chosen = motifFrom(this.registry.get('motif')) ?? PLAYER_PART;
-    const card = panel(this, x, 318, 332, 350, COLORS.uiPaper);
-    const title = label(this, x, 174, '帽子・スカーフを えらぼう', 21, INK).setStroke(INK, 0);
+    const card = panel(this, x, 320, 332, 390, COLORS.uiPaper);
+    const title = label(this, x, 153, '服装を えらぼう', 21, INK).setStroke(INK, 0);
     const choices = MOTIFS.map((part, i) => {
-      const px = 52 + (i % 5) * 64;
-      const py = 244 + Math.floor(i / 5) * 86;
-      const tile = this.add.rectangle(px, py, 56, 74, COLORS.uiCream).setInteractive({ useHandCursor: true });
-      const art = this.add.image(px, py - 10, partKey(part)).setDisplaySize(39, 33);
+      const px = 70 + (i % 4) * 73;
+      const py = 220 + Math.floor(i / 4) * 80;
+      const tile = this.add.rectangle(px, py, 65, 74, COLORS.uiCream).setInteractive({ useHandCursor: true });
+      const art = this.add.image(px, py - 10, part === PLAIN_MOTIF ? TEX.pateBody : partKey(part)).setDisplaySize(39, 33);
       const name = label(this, px, py + 19, partName(part), 11, INK).setStroke(INK, 0);
       tile.on('pointerdown', () => {
         chosen = part;
@@ -88,7 +89,7 @@ export class RoleScene extends Phaser.Scene {
       return { tile, art, name, part };
     });
     const refresh = () => choices.forEach(({ tile, part }) => tile.setStrokeStyle(part === chosen ? 3 : 1, part === chosen ? COLORS.uiWood : COLORS.uiPaperEdge));
-    const note = label(this, x, 378, `${MOTIF_PICK_SECONDS}秒で 選んだ飾りに決定`, 12, INK).setStroke(INK, 0);
+    const note = label(this, x, 435, `${MOTIF_PICK_SECONDS}秒で 決定`, 12, INK).setStroke(INK, 0);
     let picked = false;
     const finish = () => {
       if (picked) return;
@@ -104,7 +105,7 @@ export class RoleScene extends Phaser.Scene {
       [card, title, note, button].forEach((o) => o.destroy());
       this.time.delayedCall(0, done);
     };
-    const button = textButton(this, x, 432, 140, 44, 'これにする', COLORS.uiHoney, finish, 17);
+    const button = textButton(this, x, 475, 140, 44, 'これにする', COLORS.uiHoney, finish, 17);
     const timer = this.time.delayedCall(MOTIF_PICK_SECONDS * 1000, finish);
     refresh();
   }

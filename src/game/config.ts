@@ -174,7 +174,7 @@ export const NET = {
    * ゲームのルールの版。友達と遊ぶとき、親機と子機でちがったら、読みこみ直してもらう
    * （ルールや通信の中身を変えたら、1 つ上げる）
    */
-  version: 13,
+  version: 14,
   /** ようすを送る間隔（秒）。短いほど動きがなめらかだが、通信が増える */
   sendInterval: 0.1,
   /** 親機が、みんながエレメントを選び終えるのを待つ最長の秒数（抜けた人がいても始められるように） */
@@ -259,7 +259,8 @@ export const RESOURCE_REACTION = {
 } as const;
 
 /** パテを見分ける帽子とスカーフ、王様の冠 */
-export const HEAD_PARTS = ['redKerchief', 'strawHat', 'bowScarf', 'pomCap', 'dotScarf', 'beret', 'stripeScarf', 'headband', 'topHat', 'catCap', 'crown'] as const;
+export const PLAIN_MOTIF = 'plain';
+export const HEAD_PARTS = ['redKerchief', 'strawHat', 'bowScarf', 'pomCap', 'dotScarf', 'beret', 'stripeScarf', 'headband', 'topHat', 'catCap', 'crown', PLAIN_MOTIF] as const;
 /** 王様パテがかぶる頭のパーツ */
 export const KING_PART = 'crown';
 export const PLAYER_PART = HEAD_PARTS[0];
@@ -800,6 +801,7 @@ export const PART_NAMES = {
   headband: 'ユズ',
   topHat: 'ゴマ',
   catCap: 'ミケ',
+  [PLAIN_MOTIF]: 'プレーン',
   crown: '王様', // 王冠をかぶったパテは「王様」と呼ぶ
 } as const;
 
@@ -818,6 +820,7 @@ export const CHARACTERS = {
   headband: { color: 0xb93835, profile: 'がんばり屋。はちまきは本気の印' },
   topHat: { color: 0x343c59, profile: 'すまし屋。でも実はさみしがり' },
   catCap: { color: 0xeb997c, profile: '気まぐれ。ねこが大好き' },
+  [PLAIN_MOTIF]: { color: 0xa16946, profile: '飾りなしのパテ' },
   crown: { color: 0xc8922e, profile: '和の国の王様。みんなを見守る' },
 } as const;
 

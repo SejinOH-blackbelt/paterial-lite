@@ -1,6 +1,6 @@
 // パテの名前（画面表示 Phaser には依存しない）。
 // プレイヤーは自分の名前を入れられる（タイトル画面）。入れていないパテは、頭の飾りで決まる呼び名（ポン・ムギ…、王冠なら「王様」）。
-import { CHARACTERS, HEAD_PARTS, KING_PART, PART_NAMES } from './config';
+import { CHARACTERS, HEAD_PARTS, KING_PART, PART_NAMES, PLAIN_MOTIF } from './config';
 
 export const MOTIFS = HEAD_PARTS.filter((part) => part !== KING_PART);
 export type Motif = (typeof MOTIFS)[number];
@@ -9,12 +9,12 @@ export function motifFrom(raw: unknown): Motif | undefined {
   return MOTIFS.find((part) => part === raw);
 }
 
-/** 人の希望を先に入れ、重複した席と Bot に空いている飾りを配る。 */
+/** 人の希望を先に入れ、重複した席と Bot に空いている飾りを配る。飾りなしは何人でも選べる。 */
 export function assignMotifs(preferences: readonly unknown[]): Motif[] {
-  const free = new Set(MOTIFS);
+  const free = new Set<Motif>(MOTIFS.filter((part) => part !== PLAIN_MOTIF));
   const chosen = preferences.map((raw) => {
     const part = motifFrom(raw);
-    return part && free.delete(part) ? part : undefined;
+    return part === PLAIN_MOTIF || (part && free.delete(part)) ? part : undefined;
   });
   return chosen.map((part, seat) => {
     if (part) return part;

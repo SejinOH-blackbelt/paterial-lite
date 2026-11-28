@@ -1,7 +1,7 @@
 // 採取場の画面。見た目・音・タッチ操作だけを担当し、
 // ルールは src/game（movement / harvest / rhythm / spy / match）に任せます。
 import Phaser from 'phaser';
-import { PLAYERS, TREASURE, SPOT as SPOT_RULE, BOT, BOT_PROFILES, COLORS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, ELEMENT_NAMES, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, GREET, RESOURCE_NAMES, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION } from '../game/config';
+import { PLAYERS, TREASURE, SPOT as SPOT_RULE, BOT, BOT_PROFILES, COLORS, MATCH, MISS_SOUND, NET, PATE, HUD_BUTTONS, ELEMENT_NAMES, PLAIN_MOTIF, PLAYER_ELEMENT, PLAYER_PART, SUPPORT, GREET, RESOURCE_NAMES, RESOURCE_REACTION, SCREEN, SPY, STOCK, VISION } from '../game/config';
 import { gameMap } from '../game/maps';
 import { YORISHIRO as YORISHIRO_RULE } from '../game/config';
 import { createBot, updateBot, type Bot, type BotTapEvent } from '../game/bot';
@@ -2016,11 +2016,13 @@ export class FieldScene extends Phaser.Scene {
 
   /** 名前をつける：人が座っている席は、その人が入れた名前（入れていなければ頭の飾りの呼び名のまま） */
   private applyNames(): void {
+    const plainCount = this.pates.filter((e) => e.pawn.part === PLAIN_MOTIF).length;
     this.pates.forEach((e, seat) => {
       const human = this.net ? this.net.seats[seat] !== 0 : seat === this.me;
       if (!human) return;
       const name = this.net ? sanitizeName(this.seatNames?.[seat]) : loadPlayerName();
       if (name) e.pawn.name = name;
+      else if (e.pawn.part === PLAIN_MOTIF && plainCount > 1) e.pawn.name = `プレーン${seat + 1}`;
     });
   }
 
