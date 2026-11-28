@@ -117,7 +117,12 @@ export const MAP_RESOURCES: readonly AreaPlace[] = areas.flatMap((area) => area.
 export const SWITCH_CANDIDATES: readonly AreaPlace[] = areas.flatMap((area) => area.switches);
 export const MAP_BRIDGES: readonly Bridge[] = areas.map((area) => area.bridge);
 export const EXIT_CANDIDATES = areas.map((area) => area.exit);
-const [fire, water, earth, wind] = areas;
+const [fire, water, earth, wind, thunder] = areas;
+
+export const EXTRA_RESOURCES = [fire.rearBank, earth.rearBank];
+export const ISLAND_ALTARS = areas.map(({ at, zone }) => ({ ...at(0, 140), zone: zone.element }));
+export const ISLAND_FACILITIES = [fire.fork, water.fork, thunder.fork];
+export const ISLAND_SHRINE_SITES = areas.map(({ at }) => at(0, 65));
 
 export const EARTH_SHRINE: Place = { id: 'earth-shrine', name: '土の祠', ...polar(-90, 23) };
 export const YORISHIRO_SHRINE: Place = { id: 'yorishiro', name: '依代の祠', ...polar(90, 177) };
@@ -174,7 +179,7 @@ function inPolygon(point: MapPoint, polygon: readonly MapPoint[]): boolean {
 const roadSegments = [...MAP_ROADS, ...MAP_BRIDGES].flatMap(({ points, width }) =>
   points.slice(1).map((b, index) => ({ a: points[index], b, radius: width / 2 })));
 
-export function canWalk(point: MapPoint, element: ElementId): boolean {
+export function canWalk(point: MapPoint, element?: ElementId): boolean {
   if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || !inPolygon(point, MAP_OUTLINE)) return false;
   if (distance(point, MAP_CENTER) <= PLAZA_RADIUS ||
       roadSegments.some(({ a, b, radius }) => distanceToSegment(point, a, b) <= radius + EPSILON)) return true;
@@ -237,7 +242,7 @@ function polygonCuts(a: MapPoint, b: MapPoint, polygon: readonly MapPoint[]): nu
   return cuts;
 }
 
-function canJoin(a: MapPoint, b: MapPoint, element: ElementId, roadsOnly: boolean): boolean {
+function canJoin(a: MapPoint, b: MapPoint, element: ElementId | undefined, roadsOnly: boolean): boolean {
   const cuts = [0, ...polygonCuts(a, b, MAP_OUTLINE), 1].sort((x, y) => x - y);
   if (cuts.slice(1).some((t, i) => !inPolygon(pointAt(a, b, (cuts[i] + t) / 2), MAP_OUTLINE))) return false;
   // 広場の円と道の丸い区間は凸形なので、両端が同じ区間なら途中も通れる。
@@ -257,7 +262,7 @@ export interface MapRoute { readonly points: readonly MapPoint[]; readonly dista
 // 道の交点と専用の近道を結び、ダイクストラ法で距離が最小の経路を返す。
 // 途中の座標からは、直線で安全に入れる地点を入口にする。
 export function findMapRoute(
-  from: MapPoint, to: MapPoint, element: ElementId, { roadsOnly = false } = {},
+  from: MapPoint, to: MapPoint, element?: ElementId, { roadsOnly = false } = {},
 ): MapRoute | null {
   if (!canWalk(from, element) || !canWalk(to, element)) return null;
   const routeNodes = [...MAP_GRAPH.nodes];

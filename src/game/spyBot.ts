@@ -10,7 +10,7 @@ import { updateBot, type Bot, type BotTapEvent } from './bot';
 import type { Board } from './board';
 import type { FieldState, Harvester } from './harvest';
 import { watchersOf } from './vision';
-import { setTarget } from './movement';
+import { publicStand, setTarget } from './movement';
 import type { Rng } from './random';
 import type { TreasureState } from './treasure';
 import { isLocked, prank, prankTarget, startScan, updateScan, type SpyEvent, type SpyState } from './spy';
@@ -33,7 +33,7 @@ export function createSpyBotMind(): SpyBotMind {
 /** 名物をスキャンするときに立つ場所（名物の少し下） */
 export function landmarkSpot(id: string) {
   const l = gameMap().landmarks.find((x) => x.id === id)!;
-  return { x: l.x, y: l.y + 22 };
+  return publicStand(l, 0, 22);
 }
 
 /** 宝を盗む・逃げるために、試合から教えてもらうこと（M10） */
@@ -49,7 +49,7 @@ export interface HeistContext {
 
 /** 宝物庫で盗むときに立つ場所（宝物庫の少し下） */
 export function vaultSpot(t: TreasureState) {
-  return { x: t.vault.x, y: t.vault.y + 20 };
+  return publicStand(t.vault, 0, 20);
 }
 
 /** いちばん近い出口 */

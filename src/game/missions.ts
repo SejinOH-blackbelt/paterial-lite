@@ -10,7 +10,7 @@ import { isRite, missionComplete, missionType, spotNear, type Board, type Missio
 import { affinity, type Affinity } from './elements';
 import type { Harvester } from './harvest';
 import { createMissionGame, type MissionGame } from './missionGames';
-import { faceTo, facingFor, type Point } from './movement';
+import { faceTo, facingFor, publicStand, type Point } from './movement';
 import type { Rng } from './random';
 
 export type Facility = MapFacility;
@@ -53,7 +53,7 @@ export function facilityById(id: string): Facility {
 
 /** 施設の前の、パテが立つ場所 */
 export function facilityStand(f: Facility): Point {
-  return { x: f.x, y: f.y + FACILITY.standOffsetY };
+  return publicStand(f, 0, FACILITY.standOffsetY);
 }
 
 /** 施設の真ん中（距離を測る点） */

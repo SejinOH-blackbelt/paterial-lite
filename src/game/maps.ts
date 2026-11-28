@@ -6,6 +6,7 @@
 import { FACILITIES, FIELD, LANDMARKS, RESOURCE_POINTS, RITE, SPOT, TREASURE, WORLD, YORISHIRO, ZONES } from './config';
 import type { ElementId } from './elements';
 import type { Point } from './movement';
+import { canWalk, EARTH_SHRINE, ELEMENT_ZONES, EXIT_CANDIDATES, EXTRA_RESOURCES, findMapRoute, ISLAND_ALTARS, ISLAND_FACILITIES, ISLAND_SHRINE_SITES, MAP_CENTER, MAP_LANDMARKS, MAP_RESOURCES, MAP_WORLD, SWITCH_CANDIDATES, VAULT_CANDIDATES, YORISHIRO_SHRINE } from './mapLayout';
 
 export type MapId = 'classic' | 'island';
 
@@ -43,7 +44,7 @@ export interface MapPlace extends Point {
   id: string;
 }
 export interface MapExit extends MapPlace {
-  side: 'top' | 'bottom' | 'left' | 'right';
+  side: string;
 }
 
 export interface GameMap {
@@ -75,9 +76,9 @@ export interface GameMap {
   /** Bot の最初の場所（人数ぶん） */
   botStarts: readonly Point[];
   /** その体（element）で、その場所を歩けるか。null なら四角の中ならどこでも */
-  walk: ((p: Point, element: ElementId) => boolean) | null;
+  walk: ((p: Point, element?: ElementId) => boolean) | null;
   /** from から to への道すじ（通る点の並び。to をふくむ）。null なら、まっすぐ */
-  route: ((from: Point, to: Point, element: ElementId) => Point[] | null) | null;
+  route: ((from: Point, to: Point, element?: ElementId) => Point[] | null) | null;
 }
 
 const rect = (x: number, y: number, w: number, h: number): Point[] => [
@@ -120,12 +121,47 @@ export const CLASSIC_MAP: GameMap = {
   route: null,
 };
 
+const islandResources = (kind: 'earth' | 'fire', extra: Point) => [
+  ...MAP_RESOURCES.filter((r) => r.element === kind), extra,
+];
+const [islandTorii, islandGear, islandKettle] = MAP_LANDMARKS;
+export const ISLAND_MAP: GameMap = {
+  id: 'island',
+  name: '五つ浜',
+  world: { ...MAP_WORLD, cameraBottomPad: WORLD.cameraBottomPad },
+  field: { left: 0, top: 0, right: MAP_WORLD.width, bottom: MAP_WORLD.height },
+  zones: ELEMENT_ZONES,
+  spotSites: SWITCH_CANDIDATES.map(({ x, y, element }) => ({ x, y, zone: element })),
+  resourcePoints: RESOURCE_POINTS.map(({ id, kind }, i) => ({
+    ...islandResources(kind, EXTRA_RESOURCES[kind === 'fire' ? 0 : 1])[i % 3], id, kind,
+  })),
+  facilities: FACILITIES.map(({ id, name }, i) => ({ ...(ISLAND_FACILITIES[i] ?? EARTH_SHRINE), id, name })),
+  landmarks: [
+    { ...islandGear, id: 'karakuri' },
+    { ...islandTorii, id: 'torii' },
+    { ...islandKettle, id: 'kama' },
+  ],
+  yorishiro: YORISHIRO_SHRINE,
+  vaultSites: VAULT_CANDIDATES,
+  exitSites: EXIT_CANDIDATES,
+  shrineSites: [EARTH_SHRINE, ...ISLAND_SHRINE_SITES.map((p, i) => ({ ...p, id: `shrine-${i + 1}` }))],
+  altars: ISLAND_ALTARS,
+  playerStart: MAP_CENTER,
+  botStarts: Array.from({ length: 9 }, (_, i) => ({
+    x: MAP_CENTER.x + Math.cos(i * Math.PI * 2 / 9) * 85,
+    y: MAP_CENTER.y + Math.sin(i * Math.PI * 2 / 9) * 85,
+  })),
+  walk: canWalk,
+  route: (from, to, element) => findMapRoute(from, to, element)?.points.slice(1) ?? null,
+};
+
 const MAPS = new Map<MapId, GameMap>([[CLASSIC_MAP.id, CLASSIC_MAP]]);
 
 /** 地図を足す（島の地図など。maps に登録すると選べるようになる） */
 export function registerMap(map: GameMap): void {
   MAPS.set(map.id, map);
 }
+registerMap(ISLAND_MAP);
 
 /** 選べる地図の一覧 */
 export function mapList(): GameMap[] {

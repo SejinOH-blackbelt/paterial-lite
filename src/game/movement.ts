@@ -14,6 +14,8 @@ export interface Point {
 export type Facing = 'down' | 'up' | 'left' | 'right';
 
 export interface Walker {
+  /** 王家の体はエレメント専用の近道を通れない */
+  royal?: boolean;
   /** 今いる場所 */
   pos: Point;
   /** 向かっている場所（なければ立ち止まっている）。道にそって歩くときは、次に曲がる点 */
@@ -60,26 +62,27 @@ export function clampToField(p: Point): Point {
 
 /**
  * 新しい目的地を決める。地図に道すじ（route）があれば、その体（element）で通れる道にそって歩く
- * （道すじが見つからなければ、まっすぐ）
+ * 道のある地図で行けない場所を指したら、その場で止まる。
  */
 export function setTarget(w: Walker, p: Point, element?: ElementId): void {
   const goal = clampToField(p);
   const route = gameMap().route;
-  const points = route && element ? route(w.pos, goal, element) : null;
-  if (points && points.length > 0) {
-    w.target = points[0];
-    w.path = points.slice(1);
-  } else {
-    w.target = goal;
-    w.path = [];
-  }
-  turnToward(w, w.target.x - w.pos.x, w.target.y - w.pos.y);
+  const points = route ? route(w.pos, goal, w.royal ? undefined : element) : [goal];
+  w.target = points?.[0] ?? null;
+  w.path = points?.slice(1) ?? [];
+  if (w.target) turnToward(w, w.target.x - w.pos.x, w.target.y - w.pos.y);
 }
 
 /** その体（element）で、その場所を歩けるか（地図に決まりがなければ、どこでも） */
 export function walkable(p: Point, element?: ElementId): boolean {
   const walk = gameMap().walk;
-  return !walk || !element || walk(p, element);
+  return !walk || walk(p, element);
+}
+
+/** 道が狭いときは、施設の足元を全員が使える立ち位置にする */
+export function publicStand(p: Point, dx: number, dy: number): Point {
+  const offset = { x: p.x + dx, y: p.y + dy };
+  return walkable(offset) ? offset : { x: p.x, y: p.y };
 }
 
 /** 進む向き（dx, dy）へ体を向ける */
@@ -109,9 +112,10 @@ export function steerWalker(w: Walker, dx: number, dy: number, dtSeconds: number
   const move = Math.min(1, len) * speed * dtSeconds;
   const next = clampToField({ x: w.pos.x + (dx / len) * move, y: w.pos.y + (dy / len) * move });
   // 歩けない場所（道とゾーンの外）には入らない。斜めに当たったときは、壁にそってすべる
-  if (walkable(next, element)) w.pos = next;
-  else if (walkable({ x: next.x, y: w.pos.y }, element)) w.pos = { x: next.x, y: w.pos.y };
-  else if (walkable({ x: w.pos.x, y: next.y }, element)) w.pos = { x: w.pos.x, y: next.y };
+  const body = w.royal ? undefined : element;
+  if (walkable(next, body)) w.pos = next;
+  else if (walkable({ x: next.x, y: w.pos.y }, body)) w.pos = { x: next.x, y: w.pos.y };
+  else if (walkable({ x: w.pos.x, y: next.y }, body)) w.pos = { x: w.pos.x, y: next.y };
 }
 
 /**

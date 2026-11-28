@@ -7,6 +7,7 @@
 //   ちがったら「ぬれぎぬ」で、会議のぬれぎぬと同じだけ王様の支持度が下がる（そのあと少しのあいだは呼び止められない）
 // ・スパイは呼び止められない（わざと外して支持度を下げられてしまうため）
 
+import { publicStand } from './movement';
 import { PATE, SUPPORT, TREASURE } from './config';
 import type { MatchState, Pawn } from './match';
 import type { Rng } from './random';
@@ -194,7 +195,7 @@ export function botChaseTarget(m: MatchState, p: Pawn, now: number, dt: number, 
 export function botGuardSpot(m: MatchState, p: Pawn): { x: number; y: number } | null {
   if (p.isSpy || p.h.frozen || m.phase !== 'play' || !m.treasure.stolen || !m.knowsStolen.has(p)) return null;
   if (m.treasure.carrier === null) return null;
-  if (m.treasure.alarmAt === null) return { x: m.treasure.vault.x, y: m.treasure.vault.y + 20 };
+  if (m.treasure.alarmAt === null) return publicStand(m.treasure.vault, 0, 20);
   const e = m.treasure.exits[m.pawns.indexOf(p) % 2];
   return { x: e.x, y: e.y };
 }

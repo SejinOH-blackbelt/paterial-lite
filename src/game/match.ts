@@ -155,7 +155,10 @@ export function kingSeat(humans: boolean[], spy: number): number {
 export function chooseKing(pawns: Pawn[]): Pawn {
   // 人が動かす市民（先頭から）がいればその人、いなければ（ひとりでスパイのとき）最初の市民
   const king = pawns.find((p) => p.isPlayer && !p.isSpy) ?? pawns.find((p) => !p.isSpy)!;
-  for (const p of pawns) p.isKing = p === king;
+  for (const p of pawns) {
+    p.isKing = p === king;
+    p.h.walker.royal = p.isKing;
+  }
   return king;
 }
 
@@ -523,9 +526,10 @@ export function resolveMeeting(m: MatchState, now: number, rng?: Rng, order: Paw
 export function regroup(m: MatchState): void {
   const alive = m.pawns.filter((p) => !p.h.frozen);
   const r = MATCH.regroupRadius * Math.max(1, alive.length / 6);
+  const center = gameMap().walk ? gameMap().playerStart : { x: torii().x, y: torii().y + 30 };
   alive.forEach((p, i) => {
     const a = (i / alive.length) * Math.PI * 2 + Math.PI / 2;
-    p.h.walker.pos = { x: torii().x + Math.cos(a) * r, y: torii().y + 30 + Math.sin(a) * r * 0.6 };
+    p.h.walker.pos = { x: center.x + Math.cos(a) * r, y: center.y + Math.sin(a) * r * 0.6 };
     p.h.walker.target = null;
     faceTo(p.h.walker, 'down');
   });

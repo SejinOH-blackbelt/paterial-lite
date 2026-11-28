@@ -10,7 +10,7 @@ import { bestElementFor, type ElementId, type MissionId } from './elements';
 import { startPossess, updateBotPossess } from './yorishiro';
 import { createHarvester, harvestTap, moveHarvester, claimedByOther, type FieldState, type Harvester, type HarvestResult } from './harvest';
 import { materialsShort, missionAffinity, myMissions, spotBusy, startMission, type MissionTask } from './missions';
-import { createWalker, setTarget, type Point } from './movement';
+import { createWalker, publicStand, setTarget, type Point } from './movement';
 import { between, gaussian, intBetween, type Rng } from './random';
 import { beatInterval, nearestPass, nextPass, passTime } from './rhythm';
 
@@ -99,7 +99,7 @@ export function neededKinds(h: Harvester, board: Board, all: readonly Harvester[
 }
 
 /** 地図の中の、その体で歩ける場所をでたらめに1つ（歩ける場所が見つからなければ、地図のまん中） */
-function randomWalkable(element: ElementId, rng: Rng): Point {
+function randomWalkable(element: ElementId | undefined, rng: Rng): Point {
   const m = gameMap();
   for (let i = 0; i < 40; i++) {
     const p = { x: between(rng, m.field.left, m.field.right), y: between(rng, m.field.top, m.field.bottom) };
@@ -110,13 +110,13 @@ function randomWalkable(element: ElementId, rng: Rng): Point {
 
 /** 採取場のどこかへ歩く（着いたらひと休み） */
 function wander(bot: Bot, rng: Rng): void {
-  setTarget(bot.h.walker, randomWalkable(bot.h.element, rng), bot.h.element);
+  setTarget(bot.h.walker, randomWalkable(bot.h.walker.royal ? undefined : bot.h.element, rng), bot.h.element);
   bot.h.claim = null;
   bot.mode = 'wander';
 }
 
 /** スイッチの前に立つ場所（スイッチの少し下） */
-const spotStand = (p: Point): Point => ({ x: p.x, y: p.y + 22 });
+const spotStand = (p: Point): Point => publicStand(p, 0, 22);
 
 /**
  * 次に入れるスイッチを選んで向かう。向かったら true。
@@ -136,7 +136,7 @@ function chooseSpot(bot: Bot, board: Board, all: readonly Harvester[], now: numb
     const to = bestElementFor(left, h.element);
     if (to !== h.element) {
       bot.changeTo = to;
-      setTarget(h.walker, { x: gameMap().yorishiro.x, y: gameMap().yorishiro.y + 34 }, h.element);
+      setTarget(h.walker, publicStand(gameMap().yorishiro, 0, 34), h.element);
       bot.mode = 'toShrine';
       return true;
     }

@@ -4,7 +4,7 @@ import { ELEMENTS, RESOURCE, RESOURCE_POINTS, STOCK } from './config';
 import { gameMap, type MapResource } from './maps';
 import type { ElementId } from './elements';
 import type { Possession } from './yorishiro';
-import { faceTo, facingFor, steerWalker, setTarget, type Point, type Walker } from './movement';
+import { faceTo, facingFor, publicStand, steerWalker, setTarget, type Point, type Walker } from './movement';
 import type { MissionTask } from './missions';
 import type { Rng } from './random';
 import { startSession, tapSession, type HarvestSession, type TapResult } from './rhythm';
@@ -104,12 +104,12 @@ export function updateFieldState(f: FieldState, now: number): void {
 
 /** パテが採取のときに立つ場所（素材の少し下） */
 export function standSpot(r: ResourcePoint): Point {
-  return { x: r.x, y: r.y + RESOURCE.standOffsetY };
+  return publicStand(r, 0, RESOURCE.standOffsetY);
 }
 
 /** 使用中のポイントのそばで待つ場所（立つ場所の少し右） */
 export function waitSpot(r: ResourcePoint): Point {
-  return { x: Math.min(gameMap().field.right, r.x + RESOURCE.waitOffsetX), y: r.y + RESOURCE.standOffsetY };
+  return publicStand(r, Math.min(gameMap().field.right - r.x, RESOURCE.waitOffsetX), RESOURCE.standOffsetY);
 }
 
 /** ほかのパテが使っている（使う予定の）ポイントか */
